@@ -1,2 +1,2 @@
-ERR: json: unknown field "rtspEncryption"
-ERR: json: unknown field "rtspEncryption"
+2026/05/10 13:34:45 ERR listen udp :8000: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+2026/05/10 13:54:09 ERR listen udp :8000: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.

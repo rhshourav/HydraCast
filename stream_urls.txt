@@ -1,0 +1,19 @@
+# HydraCast 3.0.0 — Stream URLs
+# Generated: 2026-05-10 14:06:41
+
+[Stream_1]
+  RTSP (local)    : rtsp://127.0.0.1:8554/stream
+  RTSP (external) : rtsp://192.168.19.44:8554/stream
+
+[Stream_2]
+  RTSP (local)    : rtsp://127.0.0.1:8555/ch2
+  RTSP (external) : rtsp://192.168.19.44:8555/ch2
+
+[Stream_3]
+  RTSP (local)    : rtsp://127.0.0.1:8556/ch3
+  RTSP (external) : rtsp://192.168.19.44:8556/ch3
+
+[Stream_4]
+  RTSP (local)    : rtsp://127.0.0.1:8557/ch4
+  RTSP (external) : rtsp://192.168.19.44:8557/ch4
+  HLS             : http://192.168.19.44:18557/ch4/index.m3u8

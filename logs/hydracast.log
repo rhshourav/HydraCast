@@ -1,8 +1,149 @@
-2026-05-10 12:24:49,645  INFO     [Stream_1] MediaMTX PID 25448 on :8554
-2026-05-10 12:24:51,176  INFO     [Stream_1] FFmpeg PID 16256
-2026-05-10 12:24:51,177  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/live
-2026-05-10 12:33:17,399  INFO     [Stream_1] Restarting …
-2026-05-10 12:33:18,051  INFO     [Stream_1] Stream stopped.
-2026-05-10 12:33:20,266  INFO     [Stream_1] MediaMTX PID 18260 on :8554
-2026-05-10 12:33:21,827  INFO     [Stream_1] FFmpeg PID 3892
-2026-05-10 12:33:21,828  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/live
+2026-05-10 13:34:45,360  INFO     [Stream_1] MediaMTX PID 9444 on :8554
+2026-05-10 13:34:45,362  INFO     [Stream_1] MediaMTX PID 23592 on :8554
+2026-05-10 13:34:45,860  ERROR    [Stream_1] MediaMTX exited immediately (code 1)
+2026-05-10 13:34:45,862  INFO     [Stream_1] Waiting for MediaMTX to bind :8554 …
+2026-05-10 13:34:45,883  INFO     [Stream_1] FFmpeg PID 15200
+2026-05-10 13:34:45,883  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/live
+2026-05-10 13:35:41,831  INFO     [Stream_4] Restarting …
+2026-05-10 13:35:42,831  INFO     [Stream_4] Stream stopped.
+2026-05-10 13:35:43,667  ERROR    [Stream_4] File not found: \media\recordings\demo.mp4
+2026-05-10 13:35:44,117  INFO     [Stream_4] Restarting …
+2026-05-10 13:35:45,121  INFO     [Stream_4] Stream stopped.
+2026-05-10 13:35:45,922  ERROR    [Stream_4] File not found: \media\recordings\demo.mp4
+2026-05-10 13:36:19,491  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:21,276  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:21,728  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:22,180  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:22,631  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:23,088  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:23,535  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:23,988  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:24,440  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:24,892  INFO     [Stream_1] Stream stopped.
+2026-05-10 13:36:24,892  INFO     [Stream_4] Stream stopped.
+2026-05-10 14:05:21,730  INFO     Web UI running on http://0.0.0.0:8080
+2026-05-10 14:05:22,955  INFO     [Stream_1] MediaMTX PID 19244 on :8554
+2026-05-10 14:05:23,621  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:05:26,727  INFO     [Stream_1] FFmpeg PID 26264
+2026-05-10 14:05:26,728  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:06:39,265  INFO     [Stream_1] Seeking to 00:20:00 …
+2026-05-10 14:06:39,325  ERROR    [Stream_1] FFmpeg exited code 1
+2026-05-10 14:06:39,326  WARNING  [Stream_1] Auto-restart #1 in 5s …
+2026-05-10 14:06:39,980  INFO     [Stream_1] FFmpeg PID 22016
+2026-05-10 14:06:44,348  INFO     [Stream_1] Restarting …
+2026-05-10 14:06:45,450  INFO     [Stream_1] Stream stopped.
+2026-05-10 14:06:46,473  INFO     [Stream_1] MediaMTX PID 26240 on :8554
+2026-05-10 14:06:46,923  INFO     [Stream_1] MediaMTX PID 26584 on :8554
+2026-05-10 14:06:47,003  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:06:47,038  INFO     [Stream_1] FFmpeg PID 2492
+2026-05-10 14:06:47,038  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:06:47,240  INFO     [Stream_1] Stream stopped.
+2026-05-10 14:06:47,459  ERROR    [Stream_1] MediaMTX exited immediately (code 1)
+2026-05-10 14:06:47,872  WARNING  [Stream_1] Port 8554 occupied — killing orphan …
+2026-05-10 14:06:48,140  ERROR    [Stream_1] [vost#0:0/libx264 @ 000002e0d7aad400] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/rtsp @ 000002e0d5af0a80] Error muxing a packet
+[out#0/rtsp @ 000002e0
+2026-05-10 14:06:48,140  WARNING  [Stream_1] Auto-restart #2 in 10s …
+2026-05-10 14:06:49,241  INFO     [Stream_1] MediaMTX PID 26032 on :8554
+2026-05-10 14:06:49,648  INFO     [Stream_1] Stream stopped.
+2026-05-10 14:06:49,743  ERROR    [Stream_1] MediaMTX exited immediately (code 1)
+2026-05-10 14:06:49,799  INFO     [Stream_1] MediaMTX PID 26096 on :8554
+2026-05-10 14:06:50,327  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:06:50,351  INFO     [Stream_1] FFmpeg PID 24904
+2026-05-10 14:06:50,351  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:06:55,599  INFO     [Stream_1] Stream stopped.
+2026-05-10 14:07:00,326  INFO     Web UI running on http://0.0.0.0:8080
+2026-05-10 14:07:00,890  INFO     [Stream_1] MediaMTX PID 26544 on :8554
+2026-05-10 14:07:01,485  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:07:01,520  INFO     [Stream_1] FFmpeg PID 5124
+2026-05-10 14:07:01,520  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:10:40,450  INFO     [Stream_1] Seeking to 00:00:00 …
+2026-05-10 14:10:40,523  ERROR    [Stream_1] FFmpeg exited code 1
+2026-05-10 14:10:40,523  WARNING  [Stream_1] Auto-restart #1 in 5s …
+2026-05-10 14:10:41,194  INFO     [Stream_1] FFmpeg PID 16924
+2026-05-10 14:10:46,186  ERROR    [Stream_1] [vost#0:0/libx264 @ 000001f40dfa2ac0] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/rtsp @ 000001f40def3600] Error muxing a packet
+[out#0/rtsp @ 000001f4
+2026-05-10 14:10:46,187  WARNING  [Stream_1] Auto-restart #2 in 10s …
+2026-05-10 14:10:46,731  INFO     [Stream_1] MediaMTX PID 17712 on :8554
+2026-05-10 14:10:47,239  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:10:47,273  INFO     [Stream_1] FFmpeg PID 19100
+2026-05-10 14:10:47,273  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:10:57,327  ERROR    [Stream_1] [vost#0:0/libx264 @ 00000295a2549fc0] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/rtsp @ 00000295a2480a40] Error muxing a packet
+[out#0/rtsp @ 00000295
+2026-05-10 14:10:57,327  WARNING  [Stream_1] Auto-restart #3 in 20s …
+2026-05-10 14:10:57,757  INFO     [Stream_1] MediaMTX PID 15752 on :8554
+2026-05-10 14:10:58,284  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:10:58,323  INFO     [Stream_1] FFmpeg PID 6592
+2026-05-10 14:10:58,324  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:11:19,669  ERROR    [Stream_1] [vost#0:0/libx264 @ 0000018769137340] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/rtsp @ 00000187690b0280] Error muxing a packet
+[out#0/rtsp @ 00000187
+2026-05-10 14:11:19,669  WARNING  [Stream_1] Auto-restart #4 in 40s …
+2026-05-10 14:11:20,112  INFO     [Stream_1] MediaMTX PID 11420 on :8554
+2026-05-10 14:11:20,622  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:11:20,650  INFO     [Stream_1] FFmpeg PID 19256
+2026-05-10 14:11:20,651  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:11:21,128  INFO     [Stream_1] Seeking to 00:00:20 …
+2026-05-10 14:11:21,190  ERROR    [Stream_1] FFmpeg exited code 1
+2026-05-10 14:11:21,190  WARNING  [Stream_1] Auto-restart #4 in 40s …
+2026-05-10 14:11:21,906  INFO     [Stream_1] FFmpeg PID 6504
+2026-05-10 14:12:03,932  ERROR    [Stream_1] [vost#0:0/libx264 @ 000001a82d7c2f00] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/rtsp @ 000001a82d4c10c0] Error muxing a packet
+[out#0/rtsp @ 000001a8
+2026-05-10 14:12:03,933  WARNING  [Stream_1] Auto-restart #5 in 60s …
+2026-05-10 14:12:04,361  INFO     [Stream_1] MediaMTX PID 19916 on :8554
+2026-05-10 14:12:04,881  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:12:04,913  INFO     [Stream_1] FFmpeg PID 20268
+2026-05-10 14:12:04,913  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:12:05,872  INFO     [Stream_1] MediaMTX PID 25692 on :8554
+2026-05-10 14:12:06,389  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:12:06,445  INFO     [Stream_1] FFmpeg PID 5852
+2026-05-10 14:12:06,445  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:12:07,161  ERROR    [Stream_1] [vost#0:0/libx264 @ 00000206cca05bc0] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/rtsp @ 00000206cada3100] Error muxing a packet
+[out#0/rtsp @ 00000206
+2026-05-10 14:12:07,162  WARNING  [Stream_1] Auto-restart #6 in 120s …
+2026-05-10 14:12:29,741  WARNING  [Stream_1] Port 8554 occupied — killing orphan …
+2026-05-10 14:12:29,996  ERROR    [Stream_1] [vost#0:0/libx264 @ 0000017c6253dac0] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/rtsp @ 0000017c62481540] Error muxing a packet
+[out#0/rtsp @ 0000017c
+2026-05-10 14:12:29,997  WARNING  [Stream_1] Auto-restart #6 in 120s …
+2026-05-10 14:12:31,080  INFO     [Stream_1] MediaMTX PID 19916 on :8554
+2026-05-10 14:12:31,600  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:12:32,439  INFO     [Stream_1] FFmpeg PID 23592
+2026-05-10 14:12:32,439  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:13:09,553  ERROR    [Stream_1] [vost#0:0/libx264 @ 000001cb2dd81900] Error submitting a packet to the muxer: Broken pipe
+    Last message repeated 1 times
+[out#0/rtsp @ 000001cb2bd21040] Error muxing a packet
+[out#0/rtsp @ 000001cb
+2026-05-10 14:13:09,553  WARNING  [Stream_1] Auto-restart #7 in 120s …
+2026-05-10 14:13:10,010  INFO     [Stream_1] MediaMTX PID 25764 on :8554
+2026-05-10 14:13:10,518  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 14:13:10,549  INFO     [Stream_1] FFmpeg PID 26396
+2026-05-10 14:13:10,549  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 14:13:33,348  INFO     [Stream_1] Stream stopped.
+2026-05-10 15:01:39,256  INFO     Web UI running on http://0.0.0.0:8080
+2026-05-10 15:01:40,195  INFO     [Stream_1] MediaMTX PID 25280 on :8554
+2026-05-10 15:01:40,696  INFO     [Stream_1] Waiting for MediaMTX :8554 …
+2026-05-10 15:01:40,719  INFO     [Stream_1] FFmpeg PID 26548
+2026-05-10 15:01:40,719  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/stream
+2026-05-10 15:01:52,047  INFO     [Stream_1] Seeking to 00:00:20 …
+2026-05-10 15:01:52,551  INFO     [Stream_1] FFmpeg PID 19516
+2026-05-10 15:02:26,588  INFO     [Stream_1] Seeking to 00:00:30 …
+2026-05-10 15:02:27,104  INFO     [Stream_1] FFmpeg PID 6528
+2026-05-10 15:02:56,748  INFO     [Stream_1] Seeking to 00:10:00 …
+2026-05-10 15:02:57,260  INFO     [Stream_1] FFmpeg PID 24872
+2026-05-10 15:03:23,961  INFO     [Stream_1] Seeking to 00:11:15 …
+2026-05-10 15:03:24,470  INFO     [Stream_1] FFmpeg PID 17348
+2026-05-10 15:03:47,270  INFO     [Stream_1] Seeking to 00:39:47 …
+2026-05-10 15:03:47,783  INFO     [Stream_1] FFmpeg PID 17964
+2026-05-10 15:07:27,585  INFO     [Stream_1] Stream stopped.
