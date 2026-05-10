@@ -1,0 +1,5 @@
+stream_name,port,file_path,weekdays,start_position,enabled
+Stream_1,8554,/path/to/video.mp4,ALL,00:00:00,true
+Stream_2,8555,/path/to/clip.mkv,Mon|Wed|Fri,00:05:30,true
+Stream_3,8556,C:\Videos\show.avi,Sat|Sun,00:00:00,false
+Stream_4,8557,/media/recordings/demo.mp4,Weekdays,00:10:00,true
