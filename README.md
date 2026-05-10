@@ -53,4 +53,4 @@ Streams are configured via `streams.csv`. If this file is missing, HydraCast wil
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the GPL 3.0 License.
