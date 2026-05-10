@@ -675,6 +675,22 @@ class CSVManager:
             if c.port in seen:
                 raise ValueError(f"Duplicate port {c.port}: '{c.name}' and '{seen[c.port]}'.")
             seen[c.port] = c.name
+
+        # Ensure at least a 10-port gap between streams.
+        # Each MediaMTX uses port (RTSP), port+1 (RTP UDP), port+2 (RTCP UDP).
+        # HLS uses port+10000. Streams closer than 10 ports risk RTP/RTCP collisions.
+        sorted_ports = sorted((c.port, c.name) for c in configs)
+        for i in range(len(sorted_ports) - 1):
+            p1, n1 = sorted_ports[i]
+            p2, n2 = sorted_ports[i + 1]
+            if p2 - p1 < 10:
+                logging.warning(
+                    "CSV: Ports %d (%s) and %d (%s) are only %d apart — "
+                    "RTP/RTCP companion ports may collide. "
+                    "Recommended gap is >=10 (e.g. 8554, 8564, 8574 ...).",
+                    p1, n1, p2, n2, p2 - p1,
+                )
+
         if not configs: raise ValueError("No valid streams in streams.csv.")
         return configs
 
@@ -760,6 +776,22 @@ class MediaMTXConfig:
 
         MediaMTXConfig._purge_stale(port)
 
+        # ── Each stream's MediaMTX gets its own port block derived from the
+        #    RTSP port so multiple instances never fight over the same socket.
+        #
+        #    Base RTSP port  : port        (e.g. 8554)
+        #    RTSP UDP RTP    : port + 1    (e.g. 8555)  ← rtpAddress
+        #    RTSP UDP RTCP   : port + 2    (e.g. 8556)  ← rtcpAddress
+        #    API             : port + 3    (e.g. 8557)  ← disabled by default
+        #    HLS             : port +10000 (e.g. 18554) ← only if hls_enabled
+        #
+        #    Ports +1 and +2 are standard RTSP RTP/RTCP companion ports.
+        #    We keep them explicit so they don't collide with the next stream.
+        #    API / metrics / pprof / WebRTC / SRT are all disabled.
+
+        rtp_addr  = f"{addr}:{port + 1}"
+        rtcp_addr = f"{addr}:{port + 2}"
+
         if cfg.hls_enabled:
             proto_section = (
                 f"hls: true\n"
@@ -789,11 +821,19 @@ class MediaMTXConfig:
             f"logDestinations: [file]\n"
             f"logFile: {str(log_f).replace(chr(92), '/')}\n"
             f"\n"
+            # ── RTSP: bind only this stream's port ──────────────────────────
             f"rtspAddress: {addr}:{port}\n"
+            f"rtpAddress: {rtp_addr}\n"
+            f"rtcpAddress: {rtcp_addr}\n"
             f"readTimeout: 15s\n"
             f"writeTimeout: 15s\n"
             f"writeQueueSize: 1024\n"
             f"udpMaxPayloadSize: 1472\n"
+            f"\n"
+            # ── Disable every shared listener so instances don't collide ────
+            f"api: false\n"
+            f"metrics: false\n"
+            f"pprof: false\n"
             f"\n"
             f"{proto_section}"
         )
@@ -1118,24 +1158,54 @@ class StreamWorker:
                 proc = subprocess.Popen([str(MEDIAMTX_BIN), str(cfg_file)], **kw)
             self.state.mtx_proc = proc
             self._log(f"MediaMTX PID {proc.pid} on :{self.state.config.port}")
-            time.sleep(0.5)
-            if proc.poll() is not None:
-                stderr_out = (proc.stderr.read() or b"").decode(errors="replace").strip()
-                msg = f"MediaMTX exited immediately (code {proc.returncode})"
-                if stderr_out: msg += f": {stderr_out[:300]}"
-                self.state.status = StreamStatus.ERROR
-                self.state.error_msg = msg; self._log(msg, "ERROR"); return False
 
-            def _drain(p):
+            # Wait up to 1.5 s for stable startup (longer than before to tolerate
+            # slower hardware; most exit-immediately failures happen in <0.3 s).
+            deadline = time.time() + 1.5
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.1)
+
+            if proc.poll() is not None:
+                stderr_out = b""
+                try:
+                    # read() is safe here: process is already dead
+                    stderr_out = proc.stderr.read() or b""
+                except Exception:
+                    pass
+                stderr_txt = stderr_out.decode(errors="replace").strip()
+
+                # Also check the log file for clues
+                log_tail = ""
+                try:
+                    with open(log_f) as lf2:
+                        lines = lf2.readlines()
+                        log_tail = "".join(lines[-8:]).strip()
+                except Exception:
+                    pass
+
+                detail = stderr_txt or log_tail or "(no output captured)"
+                msg = (
+                    f"MediaMTX exited immediately (code {proc.returncode}). "
+                    f"Hint: {detail[:400]}"
+                )
+                self.state.status    = StreamStatus.ERROR
+                self.state.error_msg = msg
+                self._log(msg, "ERROR")
+                return False
+
+            def _drain(p: subprocess.Popen) -> None:
                 try:
                     for raw in p.stderr:
-                        line = raw.decode(errors="replace").strip() if isinstance(raw,bytes) else raw.strip()
+                        line = (raw.decode(errors="replace") if isinstance(raw, bytes) else raw).strip()
                         if line: logging.warning("MTX stderr [%d]: %s", p.pid, line)
-                except Exception: pass
+                except Exception:
+                    pass
             threading.Thread(target=_drain, args=(proc,), daemon=True).start()
             return True
         except Exception as exc:
-            self.state.status = StreamStatus.ERROR
+            self.state.status    = StreamStatus.ERROR
             self.state.error_msg = f"MediaMTX launch failed: {exc}"
             self._log(self.state.error_msg, "ERROR"); return False
 
