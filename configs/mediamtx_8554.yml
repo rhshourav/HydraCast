@@ -1,0 +1,18 @@
+# HydraCast auto-generated — Stream_1 (:8554)
+logLevel: error
+logDestinations: [file]
+logFile: D:/GITHUB/HydraCast/logs/mediamtx_8554.log
+
+rtspAddress: :8554
+rtspEncryption: no
+readTimeout: 15s
+writeTimeout: 15s
+writeQueueSize: 1024
+udpMaxPayloadSize: 1472
+
+hls: no
+webrtc: no
+srt: no
+
+paths:
+  live: {}

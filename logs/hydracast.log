@@ -1,0 +1,8 @@
+2026-05-10 12:24:49,645  INFO     [Stream_1] MediaMTX PID 25448 on :8554
+2026-05-10 12:24:51,176  INFO     [Stream_1] FFmpeg PID 16256
+2026-05-10 12:24:51,177  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/live
+2026-05-10 12:33:17,399  INFO     [Stream_1] Restarting …
+2026-05-10 12:33:18,051  INFO     [Stream_1] Stream stopped.
+2026-05-10 12:33:20,266  INFO     [Stream_1] MediaMTX PID 18260 on :8554
+2026-05-10 12:33:21,827  INFO     [Stream_1] FFmpeg PID 3892
+2026-05-10 12:33:21,828  INFO     [Stream_1] Live → rtsp://127.0.0.1:8554/live
