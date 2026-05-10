@@ -10,26 +10,26 @@
 #
 #  HydraCast  —  Multi-Stream RTSP Weekly Scheduler
 #  Author  : rhshourav
-#  Version : 3.0.0
+#  Version : 3.1.0
 #  GitHub  : https://github.com/rhshourav/HydraCast
 #  License : MIT
 #
-#  v3.0 changelog
-#  ──────────────
-#  CHANGED  RTSP path is now port-based (rtsp://ip:PORT) — /live suffix removed
-#  NEW      Multi-video playlists per port (sequential + optional shuffle)
-#  NEW      One-shot event scheduler: play a specific file at a specific datetime
-#           with configurable post-action (resume / stop / black)
-#  NEW      Seek controls in TUI: ←/→ ±10s, Shift+←/→ ±60s, [G] type timestamp
-#  NEW      Embedded web UI on port 8080:
-#             • Upload panel (any FFmpeg-supported format)
-#             • Media library with metadata (duration, size, codec)
-#             • streams.csv live editor (table UI)
-#             • Playlist builder (drag-to-reorder)
-#             • One-shot event scheduler
-#  FIXED    MediaMTX v1.9.x YAML compat (no deprecated fields)
-#  FIXED    Orphan process detection + port-wait before FFmpeg connects
-#  FIXED    Start/Stop/Restart TUI buttons actually wired to correct streams
+#  v3.1 changelog (fixes over v3.0)
+#  ─────────────────────────────────
+#  FIXED    Seek race condition: _seeking Event flag prevents _monitor()
+#           from triggering auto-restart when FFmpeg is killed intentionally
+#           for a seek operation → no more phantom auto-restart loops
+#  FIXED    _start_lock prevents concurrent start() calls colliding
+#  FIXED    _monitor() captures proc reference; ignores exits from replaced procs
+#  FIXED    restart_count resets to 0 on a clean successful start
+#  FIXED    SyntaxWarning: \W → \\W in Python strings containing JS regex
+#  FIXED    Multiple MediaMTX instances: _auto_restart kills existing before spawn
+#  IMPROVED Web UI: inline seek slider per stream, stream detail modal,
+#           system stats panel, per-level log filtering, security headers,
+#           upload size cap, path-traversal guard, rate-limit headers
+#  NEW      GET /api/system_stats — CPU / RAM / disk
+#  NEW      GET /api/stream_detail?name=X — full state + playlist + log tail
+#  NEW      GET /api/logs with ?level=INFO&stream=X&n=200 filter params
 # =============================================================================
 
 import os
@@ -100,7 +100,7 @@ import psutil
 # CONSTANTS & PATHS
 # =============================================================================
 APP_NAME   = "HydraCast"
-APP_VER    = "3.0.0"
+APP_VER    = "3.1.0"
 APP_AUTHOR = "rhshourav"
 APP_GITHUB = "https://github.com/rhshourav/HydraCast"
 
@@ -119,6 +119,7 @@ MEDIA_DIR   = BASE_DIR / "media"
 CSV_FILE    = BASE_DIR / "streams.csv"
 EVENTS_FILE = BASE_DIR / "events.csv"
 WEB_PORT    = 8080
+UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB hard cap
 
 for _d in (BIN_DIR, CONFIGS_DIR, LOGS_DIR, MEDIA_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -163,16 +164,13 @@ CG = "bright_green"; CR = "bright_red"; CY = "yellow"
 CC = "bright_cyan";  CW = "white";       CD = "dim white"
 CM = "bright_magenta"; CB = "bright_blue"
 
-# Global CLI flags
 NO_FIREWALL = False
 LISTEN_ADDR = "0.0.0.0"
-
-# Global manager reference (for web UI access)
 _MANAGER: Optional["StreamManager"] = None
 
 
 # =============================================================================
-# DATA MODELS
+# DATA MODELS  (unchanged from v3.0)
 # =============================================================================
 class StreamStatus(Enum):
     STOPPED   = ("●", "dim white",    "STOPPED")
@@ -193,38 +191,36 @@ class StreamStatus(Enum):
 
 @dataclass
 class OneShotEvent:
-    """A single video to play once at a specific datetime."""
     event_id:    str
-    stream_name: str          # which stream (port) it belongs to
+    stream_name: str
     file_path:   Path
-    play_at:     datetime     # exact datetime to trigger
-    post_action: str          # "resume" | "stop" | "black"
+    play_at:     datetime
+    post_action: str
     played:      bool = False
     start_pos:   str  = "00:00:00"
 
 
 @dataclass
 class PlaylistItem:
-    file_path:     Path
-    start_position: str = "00:00:00"  # HH:MM:SS seek start within this file
-    weight:        int  = 1           # future: weighted random
+    file_path:      Path
+    start_position: str = "00:00:00"
+    weight:         int = 1
 
 
 @dataclass
 class StreamConfig:
     name:           str
     port:           int
-    playlist:       List[PlaylistItem]   # v3: one or more files
+    playlist:       List[PlaylistItem]
     weekdays:       List[int]
     enabled:        bool
-    shuffle:        bool  = False        # v3: randomise playlist order
-    stream_path:    str   = ""           # v3: custom RTSP path (empty = use port only)
+    shuffle:        bool  = False
+    stream_path:    str   = ""
     video_bitrate:  str   = "2500k"
     audio_bitrate:  str   = "128k"
     hls_enabled:    bool  = False
     row_index:      int   = 0
 
-    # ── derived helpers ───────────────────────────────────────────────────────
     @property
     def rtsp_path(self) -> str:
         return self.stream_path if self.stream_path else "stream"
@@ -279,10 +275,10 @@ class StreamState:
     error_msg:        str                       = ""
     started_at:       Optional[datetime]        = None
     restart_count:    int                       = 0
-    playlist_index:   int                       = 0      # current file in playlist
+    playlist_index:   int                       = 0
     playlist_order:   List[int]                 = field(default_factory=list)
-    seek_target:      Optional[float]           = None   # seconds; set by TUI seek
-    oneshot_active:   bool                      = False  # currently playing a one-shot
+    seek_target:      Optional[float]           = None
+    oneshot_active:   bool                      = False
     log:              List[str]                 = field(default_factory=list)
     _lock:            threading.Lock            = field(default_factory=threading.Lock)
 
@@ -367,8 +363,19 @@ def _fmt_duration(s: float) -> str:
     return f"{s//3600:02d}:{(s%3600)//60:02d}:{s%60:02d}"
 
 
+def _safe_path(p: Path, root: Path) -> Optional[Path]:
+    """Return resolved path only if it is inside root; else None (path-traversal guard)."""
+    try:
+        resolved = p.resolve()
+        root_resolved = root.resolve()
+        resolved.relative_to(root_resolved)
+        return resolved
+    except (ValueError, RuntimeError):
+        return None
+
+
 # =============================================================================
-# FIREWALL MANAGER  (unchanged from v2)
+# FIREWALL MANAGER
 # =============================================================================
 class FirewallManager:
     _linux_tool: Optional[str] = None
@@ -378,7 +385,7 @@ class FirewallManager:
         if NO_FIREWALL:
             console.print(f"[{CD}]ℹ  Firewall config skipped (--no-firewall).[/]")
             return
-        if IS_WIN:   cls._windows(ports, console)
+        if IS_WIN:     cls._windows(ports, console)
         elif IS_LINUX: cls._linux(ports, console)
         elif IS_MAC:
             console.print(f"[{CY}]⚠  macOS: manually allow TCP {', '.join(map(str, ports))} in Firewall settings.[/]")
@@ -419,7 +426,7 @@ class FirewallManager:
             console.print(f"[{CY}]⚠  Not root — run: sudo ufw allow <port>/tcp[/]")
             return
         tool = cls._detect_linux_tool()
-        if tool == "ufw":      cls._ufw(ports, console)
+        if tool == "ufw":         cls._ufw(ports, console)
         elif tool == "firewalld": cls._firewalld(ports, console)
         elif tool == "iptables":  cls._iptables(ports, console)
 
@@ -534,13 +541,6 @@ class DependencyManager:
 # =============================================================================
 # CSV / EVENTS MANAGER
 # =============================================================================
-# streams.csv columns (v3):
-#   stream_name, port, files, weekdays, enabled, shuffle,
-#   stream_path, video_bitrate, audio_bitrate, hls_enabled
-#
-# files column: semicolon-separated list of  path[@HH:MM:SS]  entries
-# Example: /media/a.mp4@00:05:00;/media/b.mkv@00:00:00
-
 CSV_COLUMNS = [
     "stream_name","port","files","weekdays","enabled",
     "shuffle","stream_path","video_bitrate","audio_bitrate","hls_enabled",
@@ -553,8 +553,6 @@ CSV_TEMPLATE_ROWS = [
     ["Stream_4","8557","/media/show.mp4","Weekdays","true","false","ch4","2500k","128k","true"],
 ]
 
-# events.csv columns:
-#   event_id, stream_name, file_path, play_at (YYYY-MM-DD HH:MM:SS), post_action, start_pos
 EVENTS_COLUMNS = ["event_id","stream_name","file_path","play_at","post_action","start_pos"]
 
 
@@ -598,7 +596,6 @@ class CSVManager:
 
     @staticmethod
     def parse_files(raw: str) -> List[PlaylistItem]:
-        """Parse semicolon-separated  path[@HH:MM:SS]  entries."""
         items: List[PlaylistItem] = []
         for part in raw.split(";"):
             part = part.strip()
@@ -608,7 +605,6 @@ class CSVManager:
                 path_str = path_str.strip(); pos = pos.strip()
             else:
                 path_str = part; pos = "00:00:00"
-            # normalize pos
             try:
                 parts = pos.split(":")
                 if len(parts) == 1: parts = ["00","00",parts[0]]
@@ -683,7 +679,6 @@ class CSVManager:
                     str(c.hls_enabled).lower(),
                 ])
 
-    # ── Events ────────────────────────────────────────────────────────────────
     @classmethod
     def load_events(cls) -> List[OneShotEvent]:
         if not EVENTS_FILE.exists(): return []
@@ -719,19 +714,17 @@ class CSVManager:
 
     @classmethod
     def add_event(cls, events: List[OneShotEvent], e: OneShotEvent) -> None:
-        events.append(e)
-        cls.save_events(events)
+        events.append(e); cls.save_events(events)
 
     @classmethod
     def mark_event_played(cls, events: List[OneShotEvent], event_id: str) -> None:
         for e in events:
-            if e.event_id == event_id:
-                e.played = True
+            if e.event_id == event_id: e.played = True
         cls.save_events(events)
 
 
 # =============================================================================
-# MEDIAMTX CONFIG  (v1.9.x-compatible)
+# MEDIAMTX CONFIG
 # =============================================================================
 class MediaMTXConfig:
     @staticmethod
@@ -809,7 +802,6 @@ def probe_duration(file_path: Path) -> float:
 
 
 def probe_metadata(file_path: Path) -> Dict[str, Any]:
-    """Return dict with duration, size, codec info."""
     meta: Dict[str, Any] = {
         "duration": 0.0, "size": 0, "video_codec": "", "audio_codec": "",
         "width": 0, "height": 0, "fps": "", "bitrate": 0,
@@ -849,7 +841,7 @@ def probe_metadata(file_path: Path) -> Dict[str, Any]:
 # LOG BUFFER
 # =============================================================================
 class LogBuffer:
-    def __init__(self, capacity: int = 600) -> None:
+    def __init__(self, capacity: int = 1200) -> None:
         self._entries: List[Tuple[str, str]] = []
         self._lock = threading.Lock()
         self._cap  = capacity
@@ -866,9 +858,20 @@ class LogBuffer:
     def all(self) -> "List[Tuple[str, str]]":
         with self._lock: return list(self._entries)
 
+    def filtered(self, level: Optional[str] = None,
+                 stream: Optional[str] = None,
+                 n: int = 500) -> "List[Tuple[str, str]]":
+        with self._lock:
+            entries = list(self._entries)
+        if stream:
+            entries = [(m, l) for m, l in entries if f"[{stream}]" in m]
+        if level and level != "ALL":
+            entries = [(m, l) for m, l in entries if l == level]
+        return entries[-n:]
+
 
 # =============================================================================
-# STREAM WORKER  (manages MediaMTX + FFmpeg, playlist, seek, one-shot)
+# STREAM WORKER  —  v3.1 FIXED
 # =============================================================================
 class StreamWorker:
     MAX_AUTO_RESTARTS = 8
@@ -881,14 +884,16 @@ class StreamWorker:
         self.state  = state
         self.glog   = glog
         self._stop  = threading.Event()
-        self._seek_to: Optional[float] = None
+        # ── v3.1 fixes ────────────────────────────────────────────────────────
+        self._seeking    = threading.Event()   # set during seek; suppresses auto-restart
+        self._start_lock = threading.Lock()    # prevents concurrent start() calls
 
     def _log(self, msg: str, level: str = "INFO") -> None:
         full = f"[{self.state.config.name}] {msg}"
         self.state.log_add(full); self.glog.add(full, level)
         logging.log(
-            logging.WARNING if level=="WARN" else
-            (logging.ERROR if level=="ERROR" else logging.INFO), full)
+            logging.WARNING if level == "WARN" else
+            (logging.ERROR if level == "ERROR" else logging.INFO), full)
 
     # ── Playlist helpers ──────────────────────────────────────────────────────
     def _build_order(self) -> List[int]:
@@ -915,11 +920,21 @@ class StreamWorker:
 
     # ── Public API ────────────────────────────────────────────────────────────
     def start(self, seek_override: Optional[float] = None) -> bool:
+        # FIX: _start_lock prevents two concurrent calls (e.g. manual + auto-restart)
+        if not self._start_lock.acquire(blocking=False):
+            self._log("start() already in progress — skipping duplicate call.", "WARN")
+            return False
+        try:
+            return self._do_start(seek_override)
+        finally:
+            self._start_lock.release()
+
+    def _do_start(self, seek_override: Optional[float] = None) -> bool:
         cfg = self.state.config
         self._stop.clear()
 
         if not cfg.playlist:
-            self.state.status = StreamStatus.ERROR
+            self.state.status    = StreamStatus.ERROR
             self.state.error_msg = "No files in playlist"
             return False
 
@@ -933,13 +948,11 @@ class StreamWorker:
         self.state.status   = StreamStatus.STARTING
         self.state.duration = probe_duration(item.file_path)
 
-        # compute actual seek position
         seek_pos = seek_override
         if seek_pos is None:
-            pos_str  = item.start_position
+            pos_str = item.start_position
             try:
-                h, m, s = pos_str.split(":")
-                seek_pos = int(h)*3600 + int(m)*60 + float(s)
+                h, m, s = pos_str.split(":"); seek_pos = int(h)*3600 + int(m)*60 + float(s)
             except Exception:
                 seek_pos = 0.0
 
@@ -963,10 +976,12 @@ class StreamWorker:
             self.state.error_msg = f"MediaMTX timeout (:{cfg.port})"
             return False
 
-        if not self._start_ffmpeg(item, seek_pos): self._kill_mediamtx(); return False
+        if not self._start_ffmpeg(item, seek_pos):
+            self._kill_mediamtx(); return False
 
-        self.state.status     = StreamStatus.LIVE
-        self.state.started_at = datetime.now()
+        self.state.status      = StreamStatus.LIVE
+        self.state.started_at  = datetime.now()
+        self.state.restart_count = 0   # FIX: reset on clean successful start
         self._log(f"Live → {cfg.rtsp_url}")
         if cfg.hls_enabled: self._log(f"HLS → {cfg.hls_url}")
 
@@ -988,28 +1003,31 @@ class StreamWorker:
     def restart(self, seek: Optional[float] = None) -> None:
         self._log("Restarting …")
         self.stop(); time.sleep(0.8)
-        self.state.restart_count += 1
         self.start(seek_override=seek)
 
     def seek(self, seconds: float) -> None:
-        """Re-launch FFmpeg at a new position without restarting MediaMTX."""
+        """
+        FIX v3.1: Sets _seeking BEFORE killing FFmpeg so _monitor() knows
+        this is an intentional kill, not an error → no phantom auto-restart.
+        """
+        self._seeking.set()                              # ← signal BEFORE kill
         self._log(f"Seeking to {_fmt_duration(seconds)} …")
         self._kill_ffmpeg()
-        time.sleep(0.5)
+        time.sleep(0.4)
         item = self._current_item()
-        if item is None: return
+        if item is None:
+            self._seeking.clear(); return
         self.state.duration = probe_duration(item.file_path)
         self._start_ffmpeg(item, max(0.0, seconds))
+        self._seeking.clear()                            # ← clear AFTER new proc ready
         self.state.status = StreamStatus.LIVE
         threading.Thread(target=self._monitor, daemon=True,
                          name=f"mon-{self.state.config.port}").start()
 
     def play_oneshot(self, event: OneShotEvent) -> None:
-        """Interrupt current stream, play one file once, then follow post_action."""
         self._log(f"One-shot event: {event.file_path.name}", "INFO")
         self.state.oneshot_active = True
-        self._kill_ffmpeg()
-        time.sleep(0.3)
+        self._kill_ffmpeg(); time.sleep(0.3)
 
         try:
             h, m, s = event.start_pos.split(":")
@@ -1021,7 +1039,6 @@ class StreamWorker:
         self.state.duration = probe_duration(item.file_path)
         self._start_ffmpeg(item, seek_secs)
 
-        # Monitor in a thread, then apply post_action
         def _after() -> None:
             proc = self.state.ffmpeg_proc
             if proc:
@@ -1032,16 +1049,16 @@ class StreamWorker:
             if event.post_action == "stop":
                 self.stop()
             elif event.post_action == "black":
-                # play a silent black frame by generating one with lavfi
                 self._play_black()
-            else:  # "resume"
+            else:
                 item2 = self._current_item()
                 if item2:
                     self._start_ffmpeg(item2, 0.0)
                     threading.Thread(target=self._monitor, daemon=True,
                                      name=f"mon-{self.state.config.port}").start()
 
-        threading.Thread(target=_after, daemon=True, name=f"oneshot-{self.state.config.port}").start()
+        threading.Thread(target=_after, daemon=True,
+                         name=f"oneshot-{self.state.config.port}").start()
 
     def _play_black(self) -> None:
         cfg = self.state.config
@@ -1080,6 +1097,7 @@ class StreamWorker:
                 if stderr_out: msg += f": {stderr_out[:300]}"
                 self.state.status = StreamStatus.ERROR
                 self.state.error_msg = msg; self._log(msg, "ERROR"); return False
+
             def _drain(p):
                 try:
                     for raw in p.stderr:
@@ -1095,7 +1113,6 @@ class StreamWorker:
 
     def _start_ffmpeg(self, item: PlaylistItem, seek_pos: float) -> bool:
         cfg = self.state.config
-        # For single-file streams use -stream_loop -1; for playlists handled by monitor
         loop_flag = ["-stream_loop", "-1"] if len(cfg.playlist) == 1 else []
         cmd = [
             str(FFMPEG_PATH), "-hide_banner", "-loglevel", "error",
@@ -1127,7 +1144,7 @@ class StreamWorker:
                 self._log(f"FFmpeg PID {proc.pid}")
             return True
         except Exception as exc:
-            self.state.status = StreamStatus.ERROR
+            self.state.status    = StreamStatus.ERROR
             self.state.error_msg = f"FFmpeg launch failed: {exc}"
             self._log(self.state.error_msg, "ERROR"); return False
 
@@ -1135,22 +1152,30 @@ class StreamWorker:
     def _monitor(self) -> None:
         proc = self.state.ffmpeg_proc
         if proc is None: return
+        my_proc = proc                     # FIX: capture reference at start
         buf: Dict[str,str] = {}
+
         while not self._stop.is_set():
-            if proc.poll() is not None: break
+            if my_proc.poll() is not None: break
+            # FIX: if seek replaced the proc, our job here is done
+            if self.state.ffmpeg_proc is not my_proc: return
             try:
-                line = proc.stdout.readline()
+                line = my_proc.stdout.readline()
                 if not line: time.sleep(0.05); continue
                 m = self._FFMPEG_PROGRESS_RE.match(line.strip())
                 if not m: continue
                 k, v = m.group(1), m.group(2).strip()
                 buf[k] = v
                 if k == "progress": self._apply_progress(buf); buf = {}
-            except Exception: time.sleep(0.05)
+            except Exception:
+                time.sleep(0.05)
 
-        if self._stop.is_set(): return
+        # ── post-exit logic ───────────────────────────────────────────────────
+        if self._stop.is_set():                   return   # deliberate stop
+        if self._seeking.is_set():                return   # FIX: seek will handle it
+        if self.state.ffmpeg_proc is not my_proc: return   # FIX: already replaced
 
-        # FFmpeg finished — check if playlist has more files
+        # Playlist advance for multi-file streams
         if not self.state.oneshot_active and len(self.state.config.playlist) > 1:
             self._advance_playlist()
             next_item = self._current_item()
@@ -1167,11 +1192,12 @@ class StreamWorker:
                                  name=f"mon-{self.state.config.port}").start()
                 return
 
-        ret = proc.returncode if proc.returncode is not None else -1
+        ret = my_proc.returncode if my_proc.returncode is not None else -1
         stderr_txt = ""
         try:
-            if proc.stderr: stderr_txt = proc.stderr.read(400)
+            if my_proc.stderr: stderr_txt = my_proc.stderr.read(400)
         except Exception: pass
+
         if ret in (0, 255):
             self.state.status = StreamStatus.STOPPED
             self._log(f"FFmpeg exited normally (code {ret}).")
@@ -1195,6 +1221,10 @@ class StreamWorker:
         except Exception: pass
 
     def _auto_restart(self) -> None:
+        # FIX: don't auto-restart if a seek is in progress
+        if self._seeking.is_set():
+            self._log("Skipping auto-restart: seek in progress.", "WARN")
+            return
         n = self.state.restart_count
         if n >= self.MAX_AUTO_RESTARTS:
             self._log(f"Max auto-restarts ({self.MAX_AUTO_RESTARTS}) reached.", "ERROR")
@@ -1202,11 +1232,13 @@ class StreamWorker:
         delay = self.BACKOFF[min(n, len(self.BACKOFF)-1)]
         self._log(f"Auto-restart #{n+1} in {delay}s …", "WARN")
         for _ in range(delay*10):
-            if self._stop.is_set(): return
+            if self._stop.is_set() or self._seeking.is_set(): return
             time.sleep(0.1)
-        if not self._stop.is_set():
+        if not self._stop.is_set() and not self._seeking.is_set():
             self.state.restart_count += 1
+            # FIX: kill existing MediaMTX before spawning a new one
             self._kill_mediamtx()
+            time.sleep(0.3)
             self.start()
 
     def _kill_ffmpeg(self) -> None:
@@ -1270,13 +1302,14 @@ class StreamManager:
         if state.status != StreamStatus.LIVE: return
         w = self._workers.get(state.config.name)
         if w:
-            threading.Thread(target=lambda: w.seek(seconds), daemon=True).start()
+            threading.Thread(target=lambda: w.seek(seconds), daemon=True,
+                             name=f"seek-{state.config.port}").start()
 
     def start_all(self) -> None:
         for s in self.states:
-            if not s.config.enabled:        s.status = StreamStatus.DISABLED
+            if not s.config.enabled:           s.status = StreamStatus.DISABLED
             elif s.config.is_scheduled_today(): self.start_stream(s)
-            else:                           s.status = StreamStatus.SCHEDULED
+            else:                               s.status = StreamStatus.SCHEDULED
 
     def stop_all(self) -> None:
         for s in self.states: self.stop_stream(s)
@@ -1301,21 +1334,19 @@ class StreamManager:
                 time.sleep(0.1)
 
     def _event_loop(self) -> None:
-        """Poll for upcoming one-shot events every 5 seconds."""
         while self._running:
             now = datetime.now()
             for ev in self.events:
                 if ev.played: continue
                 delta = (ev.play_at - now).total_seconds()
-                if -10 <= delta <= 5:  # fire within ±10s window
-                    # find the target stream
+                if -10 <= delta <= 5:
                     for s in self.states:
                         if s.config.name == ev.stream_name:
                             w = self._workers.get(s.config.name)
                             if w:
                                 ev.played = True
                                 CSVManager.mark_event_played(self.events, ev.event_id)
-                                self._glog.add(f"[{s.config.name}] Firing one-shot event: {ev.file_path.name}", "INFO")
+                                self._glog.add(f"[{s.config.name}] Firing one-shot: {ev.file_path.name}", "INFO")
                                 threading.Thread(target=lambda w=w, ev=ev: w.play_oneshot(ev),
                                                  daemon=True).start()
                             break
@@ -1359,105 +1390,246 @@ class StreamManager:
 
 
 # =============================================================================
-# WEB UI  (embedded HTTP server on WEB_PORT)
+# WEB UI  —  v3.1 enhanced HTML
+#   NOTE: all JavaScript /regex/ patterns with backslash use \\  so Python
+#   does not emit SyntaxWarning for invalid escape sequences.
 # =============================================================================
 _WEB_MANAGER: Optional[StreamManager] = None
 
-HTML_PAGE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HydraCast Web UI</title>
+# ─── The HTML is assembled from parts so Python escape issues are minimal ─────
+_HTML_STYLE = """
 <style>
-  :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;
-        --text:#e6edf3;--muted:#8b949e;--green:#3fb950;--red:#f85149;
-        --yellow:#d29922;--blue:#58a6ff;--purple:#bc8cff;--cyan:#39d353}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--text);font:14px/1.6 'Segoe UI',system-ui,sans-serif;min-height:100vh}
-  header{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 24px;
-         display:flex;align-items:center;gap:16px}
-  header h1{font-size:20px;color:var(--blue);letter-spacing:.05em}
-  header .ver{color:var(--muted);font-size:12px}
-  nav{display:flex;gap:4px;margin-left:auto}
-  nav button{background:none;border:1px solid var(--border);border-radius:6px;
-             color:var(--muted);padding:6px 14px;cursor:pointer;font-size:13px;transition:.15s}
-  nav button.active,nav button:hover{background:var(--blue);border-color:var(--blue);color:#fff}
-  .container{max-width:1200px;margin:0 auto;padding:20px 24px}
-  .panel{background:var(--bg2);border:1px solid var(--border);border-radius:8px;
-         margin-bottom:20px;overflow:hidden}
-  .panel-header{background:var(--bg3);padding:12px 16px;font-weight:600;
-                border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
-  .panel-body{padding:16px}
-  table{width:100%;border-collapse:collapse}
-  th{text-align:left;padding:8px 12px;color:var(--muted);font-weight:500;font-size:12px;
-     border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.05em}
-  td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px}
-  tr:last-child td{border-bottom:none}
-  tr:hover td{background:rgba(255,255,255,.03)}
-  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
-  .badge-live{background:rgba(63,185,80,.15);color:var(--green);border:1px solid var(--green)}
-  .badge-stopped{background:rgba(139,148,158,.1);color:var(--muted);border:1px solid var(--border)}
-  .badge-error{background:rgba(248,81,73,.15);color:var(--red);border:1px solid var(--red)}
-  .badge-sched{background:rgba(88,166,255,.15);color:var(--blue);border:1px solid var(--blue)}
-  .badge-disabled{background:rgba(139,148,158,.05);color:var(--muted);border:1px dashed var(--border)}
-  .btn{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:5px;
-       border:1px solid var(--border);cursor:pointer;font-size:12px;font-weight:500;
-       background:var(--bg3);color:var(--text);transition:.15s;white-space:nowrap}
-  .btn:hover{border-color:var(--blue);color:var(--blue)}
-  .btn-sm{padding:3px 8px;font-size:11px}
-  .btn-danger:hover{border-color:var(--red);color:var(--red)}
-  .btn-success:hover{border-color:var(--green);color:var(--green)}
-  .btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}
-  .btn-primary:hover{background:#4a94e8;border-color:#4a94e8;color:#fff}
-  input,select,textarea{background:var(--bg3);border:1px solid var(--border);border-radius:5px;
-    color:var(--text);padding:7px 10px;font-size:13px;width:100%;outline:none;font-family:inherit}
-  input:focus,select:focus,textarea:focus{border-color:var(--blue)}
-  label{font-size:12px;color:var(--muted);margin-bottom:4px;display:block}
-  .form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px}
-  .form-group{display:flex;flex-direction:column}
-  .progress-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;flex:1}
-  .progress-fill{height:100%;background:var(--green);border-radius:3px;transition:.5s}
-  .rtsp-url{font-family:'Consolas','Courier New',monospace;font-size:11px;
-            color:var(--cyan);background:var(--bg3);padding:3px 8px;border-radius:4px;
-            cursor:pointer;user-select:all}
-  .tab-content{display:none}.tab-content.active{display:block}
-  .drop-zone{border:2px dashed var(--border);border-radius:8px;padding:40px;text-align:center;
-             color:var(--muted);cursor:pointer;transition:.2s}
-  .drop-zone:hover,.drop-zone.drag-over{border-color:var(--blue);color:var(--blue)}
-  .file-list{list-style:none;margin-top:12px}
-  .file-list li{display:flex;align-items:center;gap:10px;padding:8px 10px;
-                background:var(--bg3);border-radius:5px;margin-bottom:6px;font-size:12px}
-  .upload-progress{height:4px;background:var(--bg);border-radius:2px;flex:1;overflow:hidden}
-  .upload-fill{height:100%;background:var(--blue);transition:.2s}
-  .notify{position:fixed;bottom:24px;right:24px;padding:10px 18px;border-radius:6px;
-          font-size:13px;font-weight:500;z-index:999;transform:translateY(100px);
-          transition:.3s;box-shadow:0 4px 20px rgba(0,0,0,.4)}
-  .notify.show{transform:translateY(0)}
-  .notify.ok{background:#1a3a1a;border:1px solid var(--green);color:var(--green)}
-  .notify.err{background:#3a1a1a;border:1px solid var(--red);color:var(--red)}
-  .seek-bar{display:flex;align-items:center;gap:8px;margin-top:8px}
-  .seek-bar input[type=range]{flex:1;accent-color:var(--blue)}
-  .playlist-item{display:flex;align-items:center;gap:8px;padding:6px 10px;
-                 background:var(--bg3);border-radius:5px;margin-bottom:4px;font-size:12px;
-                 border:1px solid var(--border);cursor:grab}
-  .playlist-item.dragging{opacity:.5}
-  .evt-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px}
-  .evt-pending{background:rgba(88,166,255,.15);color:var(--blue)}
-  .evt-played{background:rgba(139,148,158,.1);color:var(--muted)}
-  @media(max-width:700px){.form-row{grid-template-columns:1fr}}
+:root{
+  --bg:#0a0e14;--bg2:#0d1117;--bg3:#161b22;--bg4:#21262d;
+  --border:#21262d;--border2:#30363d;
+  --text:#cdd6f4;--muted:#6c7086;--faint:#313244;
+  --green:#a6e3a1;--red:#f38ba8;--yellow:#f9e2af;
+  --blue:#89b4fa;--purple:#cba6f7;--cyan:#89dceb;
+  --orange:#fab387;--teal:#94e2d5;--pink:#f5c2e7;
+  --green-dim:rgba(166,227,161,.12);--red-dim:rgba(243,139,168,.12);
+  --blue-dim:rgba(137,180,250,.12);--yellow-dim:rgba(249,226,175,.12);
+  --radius:8px;--radius-sm:5px;
+  --font-mono:'JetBrains Mono','Cascadia Code','Fira Code',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:13px/1.6 'Inter','Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden}
+
+/* ── Layout ── */
+.shell{display:grid;grid-template-rows:auto 1fr;min-height:100vh}
+header{
+  background:var(--bg2);border-bottom:1px solid var(--border2);
+  padding:0 20px;height:52px;display:flex;align-items:center;gap:14px;
+  position:sticky;top:0;z-index:50;
+}
+header .logo{font-size:20px;font-weight:700;color:var(--blue);letter-spacing:.04em;font-family:var(--font-mono)}
+header .ver{color:var(--muted);font-size:11px;font-family:var(--font-mono)}
+.hdr-stats{display:flex;gap:16px;margin-left:12px}
+.hdr-stat{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.hdr-stat .val{color:var(--text);font-weight:600;font-family:var(--font-mono)}
+.hdr-stat .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot-live{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot-err{background:var(--red);box-shadow:0 0 6px var(--red)}
+nav{display:flex;gap:2px;margin-left:auto}
+nav button{
+  background:none;border:none;border-radius:var(--radius-sm);
+  color:var(--muted);padding:7px 13px;cursor:pointer;font-size:12px;
+  font-weight:500;transition:.15s;letter-spacing:.02em;
+}
+nav button.active{background:var(--blue-dim);color:var(--blue)}
+nav button:hover:not(.active){background:var(--faint);color:var(--text)}
+.container{max-width:1340px;margin:0 auto;padding:18px 20px}
+
+/* ── Panels ── */
+.panel{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);margin-bottom:16px;overflow:hidden}
+.panel-hdr{
+  background:var(--bg3);padding:10px 16px;font-weight:600;font-size:12px;
+  border-bottom:1px solid var(--border2);display:flex;align-items:center;gap:8px;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--muted);
+}
+.panel-hdr .title{color:var(--text)}
+.panel-body{padding:16px}
+
+/* ── Tables ── */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:8px 12px;color:var(--muted);font-weight:500;font-size:11px;
+   border-bottom:1px solid var(--border2);text-transform:uppercase;letter-spacing:.06em}
+td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:rgba(255,255,255,.02)}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.06em}
+.badge::before{content:'●';font-size:8px}
+.badge-LIVE{background:var(--green-dim);color:var(--green);border:1px solid rgba(166,227,161,.3)}
+.badge-STOPPED{background:rgba(108,112,134,.08);color:var(--muted);border:1px solid var(--border2)}
+.badge-ERROR{background:var(--red-dim);color:var(--red);border:1px solid rgba(243,139,168,.3)}
+.badge-SCHED{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(137,180,250,.3)}
+.badge-DISABLED{background:rgba(108,112,134,.05);color:var(--muted);border:1px dashed var(--border2)}
+.badge-STARTING{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(249,226,175,.3)}
+.badge-ONESHOT{background:rgba(203,166,247,.12);color:var(--purple);border:1px solid rgba(203,166,247,.3)}
+
+/* ── Buttons ── */
+.btn{
+  display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:var(--radius-sm);
+  border:1px solid var(--border2);cursor:pointer;font-size:11px;font-weight:600;
+  background:var(--bg4);color:var(--text);transition:.15s;white-space:nowrap;
+  letter-spacing:.02em;font-family:inherit;
+}
+.btn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-dim)}
+.btn-sm{padding:3px 9px;font-size:10px}
+.btn-danger:hover{border-color:var(--red);color:var(--red);background:var(--red-dim)}
+.btn-success:hover{border-color:var(--green);color:var(--green);background:var(--green-dim)}
+.btn-primary{background:rgba(137,180,250,.15);border-color:rgba(137,180,250,.4);color:var(--blue)}
+.btn-primary:hover{background:var(--blue);color:#0a0e14}
+
+/* ── Form elements ── */
+input,select,textarea{
+  background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);
+  color:var(--text);padding:7px 10px;font-size:12px;width:100%;outline:none;
+  font-family:inherit;transition:.15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--blue);background:var(--bg4)}
+label{font-size:11px;color:var(--muted);margin-bottom:4px;display:block;letter-spacing:.03em}
+.form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column}
+.form-hint{font-size:10px;color:var(--muted);margin-top:3px}
+
+/* ── Progress ── */
+.progress-bar{height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;flex:1;min-width:80px}
+.progress-fill{height:100%;border-radius:3px;transition:.6s}
+
+/* ── Range/Seek slider ── */
+.seek-row{display:flex;align-items:center;gap:8px;margin-top:4px}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  flex:1;height:3px;background:var(--bg4);border-radius:2px;
+  outline:none;border:none;padding:0;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+  background:var(--blue);cursor:pointer;transition:.1s;
+}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;border:none;border-radius:50%;background:var(--blue);cursor:pointer}
+
+/* ── Mono values ── */
+.mono{font-family:var(--font-mono);font-size:11px}
+.rtsp-chip{
+  font-family:var(--font-mono);font-size:10px;color:var(--cyan);
+  background:rgba(137,220,235,.08);padding:2px 7px;border-radius:4px;
+  cursor:pointer;border:1px solid rgba(137,220,235,.15);
+  user-select:all;word-break:break-all;
+}
+.rtsp-chip:hover{background:rgba(137,220,235,.18);border-color:var(--cyan)}
+
+/* ── Tabs ── */
+.tab-content{display:none}.tab-content.active{display:block}
+
+/* ── Upload ── */
+.drop-zone{
+  border:2px dashed var(--border2);border-radius:var(--radius);
+  padding:36px;text-align:center;color:var(--muted);cursor:pointer;transition:.2s;
+}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--blue);color:var(--blue);background:var(--blue-dim)}
+.file-list{list-style:none;margin-top:12px}
+.file-list li{
+  display:flex;align-items:center;gap:10px;padding:7px 10px;
+  background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:5px;font-size:11px;
+  border:1px solid var(--border);
+}
+.upload-bar{height:3px;background:var(--bg);border-radius:2px;flex:1;overflow:hidden}
+.upload-fill{height:100%;background:var(--blue);transition:.2s}
+
+/* ── Notifications ── */
+.notify{
+  position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:var(--radius-sm);
+  font-size:12px;font-weight:600;z-index:999;transform:translateY(80px);
+  transition:.25s;box-shadow:0 4px 24px rgba(0,0,0,.5);
+}
+.notify.show{transform:translateY(0)}
+.notify.ok{background:#1a2b1a;border:1px solid var(--green);color:var(--green)}
+.notify.err{background:#2b1a1a;border:1px solid var(--red);color:var(--red)}
+.notify.info{background:#1a1f2b;border:1px solid var(--blue);color:var(--blue)}
+
+/* ── Modal ── */
+.modal-overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  z-index:200;align-items:center;justify-content:center;
+}
+.modal-overlay.open{display:flex}
+.modal{
+  background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);
+  padding:24px;width:640px;max-width:96vw;max-height:90vh;
+  overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.6);
+}
+.modal h3{font-size:16px;margin-bottom:16px;color:var(--text)}
+.modal-close{float:right;cursor:pointer;color:var(--muted);font-size:18px;line-height:1}
+.modal-close:hover{color:var(--red)}
+
+/* ── Stream detail ── */
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.detail-item{background:var(--bg3);border-radius:var(--radius-sm);padding:8px 12px;border:1px solid var(--border)}
+.detail-item .dk{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.detail-item .dv{font-size:13px;font-weight:600;font-family:var(--font-mono)}
+.log-box{
+  background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius-sm);
+  padding:10px;max-height:220px;overflow-y:auto;font-family:var(--font-mono);font-size:11px;
+}
+.log-box .log-info{color:var(--text)}
+.log-box .log-warn{color:var(--yellow)}
+.log-box .log-err{color:var(--red)}
+.playlist-item{
+  display:flex;align-items:center;gap:8px;padding:5px 10px;
+  background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:4px;font-size:11px;
+  border:1px solid var(--border);
+}
+.playlist-item.current{border-color:var(--green);background:var(--green-dim)}
+.playlist-item .pi-idx{color:var(--muted);font-family:var(--font-mono);width:20px}
+
+/* ── Log panel ── */
+.log-controls{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+.log-chip{
+  padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;cursor:pointer;
+  border:1px solid var(--border2);background:var(--bg4);color:var(--muted);transition:.15s;
+  letter-spacing:.05em;
+}
+.log-chip.active-ALL{background:var(--bg4);color:var(--text);border-color:var(--border2)}
+.log-chip.active-INFO{background:var(--blue-dim);color:var(--blue);border-color:rgba(137,180,250,.3)}
+.log-chip.active-WARN{background:var(--yellow-dim);color:var(--yellow);border-color:rgba(249,226,175,.3)}
+.log-chip.active-ERROR{background:var(--red-dim);color:var(--red);border-color:rgba(243,139,168,.3)}
+
+/* ── Sys stats mini bar ── */
+.sys-bar{display:flex;gap:4px;align-items:center}
+.sys-seg{height:14px;border-radius:2px;transition:.4s}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .form-row{grid-template-columns:1fr}
+  .detail-grid{grid-template-columns:1fr}
+  .hdr-stats{display:none}
+  nav button{padding:6px 8px;font-size:11px}
+}
 </style>
-</head>
-<body>
+"""
+
+_HTML_BODY = r"""
+<div class="shell">
 <header>
-  <span style="font-size:24px">🐉</span>
-  <h1>HydraCast</h1>
-  <span class="ver">v3.0.0</span>
+  <span style="font-size:22px">🐉</span>
+  <span class="logo">HydraCast</span>
+  <span class="ver">v3.1</span>
+  <div class="hdr-stats" id="hdr-stats">
+    <div class="hdr-stat"><span class="dot dot-live"></span>Live: <span class="val" id="h-live">—</span></div>
+    <div class="hdr-stat">CPU: <span class="val" id="h-cpu">—</span></div>
+    <div class="hdr-stat">RAM: <span class="val" id="h-ram">—</span></div>
+    <div class="hdr-stat">Disk: <span class="val" id="h-disk">—</span></div>
+    <div class="hdr-stat" id="h-time" style="font-family:var(--font-mono)">—</div>
+  </div>
   <nav>
     <button class="active" onclick="showTab('streams')">Streams</button>
     <button onclick="showTab('upload')">Upload</button>
-    <button onclick="showTab('library')">Media Library</button>
-    <button onclick="showTab('editor')">CSV Editor</button>
+    <button onclick="showTab('library')">Library</button>
+    <button onclick="showTab('editor')">Config</button>
     <button onclick="showTab('events')">Scheduler</button>
     <button onclick="showTab('logs')">Logs</button>
   </nav>
@@ -1465,86 +1637,78 @@ HTML_PAGE = """<!DOCTYPE html>
 
 <div class="container">
 
-<!-- ── STREAMS TAB ── -->
+<!-- ══ STREAMS ══ -->
 <div id="tab-streams" class="tab-content active">
   <div class="panel">
-    <div class="panel-header">🔴 Live Streams
-      <span style="margin-left:auto;display:flex;gap:8px">
-        <button class="btn btn-sm btn-success" onclick="api('start_all')">▶ Start All</button>
-        <button class="btn btn-sm btn-danger" onclick="api('stop_all')">■ Stop All</button>
-        <button class="btn btn-sm" onclick="loadStreams()">↻ Refresh</button>
+    <div class="panel-hdr">
+      <span class="title">Live Streams</span>
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn btn-sm btn-success" onclick="api('start_all')">▶ All</button>
+        <button class="btn btn-sm btn-danger"  onclick="api('stop_all')">■ All</button>
+        <button class="btn btn-sm" onclick="loadStreams()">↻</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);margin:0;cursor:pointer">
+          <input type="checkbox" id="auto-refresh" checked style="width:auto;cursor:pointer" onchange="toggleAutoRefresh(this.checked)">
+          Auto
+        </label>
       </span>
     </div>
-    <div class="panel-body" style="padding:0">
+    <div style="padding:0">
       <table>
         <thead><tr>
-          <th>#</th><th>Name</th><th>Port</th><th>Schedule</th>
-          <th>Status</th><th>Progress</th><th>Position</th><th>FPS</th>
-          <th>RTSP URL</th><th>Actions</th>
+          <th>#</th><th>Stream</th><th>Port</th><th>Schedule</th>
+          <th>Status</th><th colspan="2">Progress / Seek</th>
+          <th>Time</th><th>FPS</th><th>RTSP URL</th><th>Actions</th>
         </tr></thead>
         <tbody id="streams-tbody"></tbody>
       </table>
     </div>
   </div>
-
-  <!-- Seek modal -->
-  <div id="seek-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
-    z-index:100;display:none;align-items:center;justify-content:center">
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;
-      padding:24px;width:420px;max-width:95vw">
-      <h3 style="margin-bottom:16px">⏩ Seek Stream: <span id="seek-stream-name"></span></h3>
-      <label>Jump to position (HH:MM:SS)</label>
-      <input type="text" id="seek-input" placeholder="00:45:30" style="margin-bottom:12px">
-      <label>Or drag the slider</label>
-      <div class="seek-bar">
-        <span id="seek-slider-val" style="color:var(--muted);font-size:11px">00:00:00</span>
-        <input type="range" id="seek-slider" min="0" max="100" value="0"
-               oninput="updateSeekLabel(this.value)">
-        <span id="seek-dur" style="color:var(--muted);font-size:11px">—</span>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
-        <button class="btn" onclick="closeSeek()">Cancel</button>
-        <button class="btn btn-primary" onclick="doSeek()">Seek</button>
-      </div>
-    </div>
-  </div>
 </div>
 
-<!-- ── UPLOAD TAB ── -->
+<!-- ══ UPLOAD ══ -->
 <div id="tab-upload" class="tab-content">
   <div class="panel">
-    <div class="panel-header">📁 Upload Media Files</div>
+    <div class="panel-hdr"><span class="title">Upload Media Files</span></div>
     <div class="panel-body">
       <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <div style="font-size:48px;margin-bottom:12px">📼</div>
-        <p style="font-size:16px;font-weight:600;margin-bottom:8px">Drop files here or click to browse</p>
-        <p style="font-size:12px">Supports MP4, MKV, AVI, MOV, TS, FLV, WEBM, MP3, AAC, FLAC and all FFmpeg formats</p>
+        <div style="font-size:44px;margin-bottom:10px">📼</div>
+        <p style="font-size:15px;font-weight:700;margin-bottom:6px">Drop files here or click to browse</p>
+        <p style="font-size:11px;color:var(--muted)">MP4 · MKV · AVI · MOV · TS · FLV · WEBM · MP3 · AAC · FLAC · and all FFmpeg formats</p>
+        <p style="font-size:10px;color:var(--muted);margin-top:6px">Max 10 GB per file</p>
         <input type="file" id="file-input" multiple style="display:none"
-               accept="video/*,audio/*,.mkv,.ts,.m2ts,.flv,.webm" onchange="handleFiles(this.files)">
+               accept="video/*,audio/*,.mkv,.ts,.m2ts,.flv,.webm"
+               onchange="handleFiles(this.files)">
       </div>
       <ul class="file-list" id="upload-list"></ul>
-      <div style="margin-top:16px;display:flex;align-items:center;gap:12px">
-        <label style="display:inline;margin:0">Upload to:</label>
-        <select id="upload-subdir" style="width:auto;flex:1">
+      <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="display:inline;margin:0;white-space:nowrap;font-size:12px">Upload to:</label>
+        <select id="upload-subdir" style="width:auto;flex:1;min-width:160px">
           <option value="">/ (media root)</option>
         </select>
-        <button class="btn" onclick="createSubdir()">+ New Folder</button>
+        <button class="btn btn-sm" onclick="createSubdir()">+ New Folder</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ── LIBRARY TAB ── -->
+<!-- ══ LIBRARY ══ -->
 <div id="tab-library" class="tab-content">
   <div class="panel">
-    <div class="panel-header">🗂 Media Library
-      <span style="margin-left:auto;display:flex;gap:8px">
-        <input type="text" id="lib-search" placeholder="Search files…"
-               style="width:200px" oninput="filterLibrary()">
-        <button class="btn btn-sm" onclick="loadLibrary()">↻ Refresh</button>
+    <div class="panel-hdr">
+      <span class="title">Media Library</span>
+      <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <input type="text" id="lib-search" placeholder="Search…"
+               style="width:180px;height:28px;padding:4px 8px"
+               oninput="filterLibrary()">
+        <select id="lib-sort" style="width:120px;height:28px;padding:2px 6px" onchange="filterLibrary()">
+          <option value="name">Sort: Name</option>
+          <option value="size">Sort: Size</option>
+          <option value="dur">Sort: Duration</option>
+        </select>
+        <button class="btn btn-sm" onclick="loadLibrary()">↻</button>
       </span>
     </div>
-    <div class="panel-body" style="padding:0">
+    <div style="padding:0">
       <table>
         <thead><tr>
           <th>Filename</th><th>Duration</th><th>Size</th>
@@ -1556,25 +1720,25 @@ HTML_PAGE = """<!DOCTYPE html>
   </div>
 </div>
 
-<!-- ── CSV EDITOR TAB ── -->
+<!-- ══ CONFIG EDITOR ══ -->
 <div id="tab-editor" class="tab-content">
   <div class="panel">
-    <div class="panel-header">✏️ Stream Configuration Editor
-      <span style="margin-left:auto;display:flex;gap:8px">
-        <button class="btn btn-sm btn-primary" onclick="saveCSV()">💾 Save & Reload</button>
-        <button class="btn btn-sm" onclick="addStreamRow()">+ Add Stream</button>
+    <div class="panel-hdr">
+      <span class="title">Stream Configuration</span>
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn btn-sm btn-primary" onclick="saveCSV()">💾 Save</button>
+        <button class="btn btn-sm" onclick="addStreamRow()">+ Add</button>
       </span>
     </div>
     <div class="panel-body" id="editor-body"></div>
   </div>
 </div>
 
-<!-- ── SCHEDULER TAB ── -->
+<!-- ══ SCHEDULER ══ -->
 <div id="tab-events" class="tab-content">
   <div class="panel">
-    <div class="panel-header">📅 One-Shot Event Scheduler</div>
+    <div class="panel-hdr"><span class="title">Schedule One-Shot Event</span></div>
     <div class="panel-body">
-      <h4 style="margin-bottom:12px">Schedule a one-time playback</h4>
       <div class="form-row">
         <div class="form-group">
           <label>Stream</label>
@@ -1604,21 +1768,25 @@ HTML_PAGE = """<!DOCTYPE html>
         </div>
         <div class="form-group" style="justify-content:flex-end">
           <button class="btn btn-primary" style="margin-top:auto" onclick="scheduleEvent()">
-            📅 Schedule Event
+            📅 Schedule
           </button>
         </div>
       </div>
     </div>
   </div>
   <div class="panel">
-    <div class="panel-header">Upcoming & Past Events
-      <button class="btn btn-sm" style="margin-left:auto" onclick="loadEvents()">↻ Refresh</button>
+    <div class="panel-hdr">
+      <span class="title">Events</span>
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn btn-sm btn-danger" onclick="clearPlayedEvents()">🗑 Clear Played</button>
+        <button class="btn btn-sm" onclick="loadEvents()">↻</button>
+      </span>
     </div>
-    <div class="panel-body" style="padding:0">
+    <div style="padding:0">
       <table>
         <thead><tr>
           <th>Stream</th><th>File</th><th>Play At</th>
-          <th>After</th><th>Status</th><th>Actions</th>
+          <th>Countdown</th><th>After</th><th>Status</th><th>Actions</th>
         </tr></thead>
         <tbody id="events-tbody"></tbody>
       </table>
@@ -1626,202 +1794,406 @@ HTML_PAGE = """<!DOCTYPE html>
   </div>
 </div>
 
-<!-- ── LOGS TAB ── -->
+<!-- ══ LOGS ══ -->
 <div id="tab-logs" class="tab-content">
   <div class="panel">
-    <div class="panel-header">📋 Event Log
-      <button class="btn btn-sm" style="margin-left:auto" onclick="loadLogs()">↻ Refresh</button>
+    <div class="panel-hdr">
+      <span class="title">Event Log</span>
+      <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <select id="log-stream-filter" style="width:140px;height:28px;padding:2px 6px" onchange="loadLogs()">
+          <option value="">All Streams</option>
+        </select>
+        <button class="btn btn-sm" onclick="loadLogs()">↻</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);margin:0;cursor:pointer">
+          <input type="checkbox" id="log-autoscroll" checked style="width:auto;cursor:pointer"> Auto-scroll
+        </label>
+      </span>
     </div>
     <div class="panel-body">
-      <div id="log-container" style="font-family:monospace;font-size:12px;
-           max-height:500px;overflow-y:auto;background:var(--bg);
-           padding:12px;border-radius:6px;border:1px solid var(--border)"></div>
+      <div class="log-controls">
+        <span style="font-size:11px;color:var(--muted)">Filter:</span>
+        <span class="log-chip active-ALL" data-level="ALL" onclick="setLogLevel('ALL')">ALL</span>
+        <span class="log-chip" data-level="INFO" onclick="setLogLevel('INFO')">INFO</span>
+        <span class="log-chip" data-level="WARN" onclick="setLogLevel('WARN')">WARN</span>
+        <span class="log-chip" data-level="ERROR" onclick="setLogLevel('ERROR')">ERROR</span>
+        <input type="text" id="log-search" placeholder="Search log…"
+               style="width:200px;height:26px;padding:3px 8px;margin-left:auto" oninput="renderLogEntries()">
+      </div>
+      <div id="log-container" class="log-box"></div>
     </div>
   </div>
 </div>
 
 </div><!-- /container -->
+</div><!-- /shell -->
+
+<!-- ══ STREAM DETAIL MODAL ══ -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal">
+    <h3>
+      <span id="detail-title">Stream Detail</span>
+      <span class="modal-close" onclick="closeModal('detail-modal')">✕</span>
+    </h3>
+    <div id="detail-content"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-success btn-sm" id="detail-start" onclick="">▶ Start</button>
+      <button class="btn btn-danger btn-sm"  id="detail-stop"  onclick="">■ Stop</button>
+      <button class="btn btn-sm"             id="detail-rst"   onclick="">↺ Restart</button>
+      <button class="btn" onclick="closeModal('detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SEEK MODAL ══ -->
+<div class="modal-overlay" id="seek-modal">
+  <div class="modal" style="width:440px">
+    <h3>
+      ⏩ Seek — <span id="seek-stream-name"></span>
+      <span class="modal-close" onclick="closeModal('seek-modal')">✕</span>
+    </h3>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Jump to timestamp (HH:MM:SS)</label>
+      <input type="text" id="seek-input" placeholder="00:45:30"
+             onkeydown="if(event.key==='Enter')doSeek()">
+    </div>
+    <label>Or drag slider</label>
+    <div class="seek-row" style="margin-bottom:4px">
+      <span class="mono" id="seek-slider-val" style="width:58px">00:00:00</span>
+      <input type="range" id="seek-slider" min="0" max="100" value="0"
+             oninput="seekSliderInput(this.value)">
+      <span class="mono" id="seek-dur" style="width:58px;text-align:right">—</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal('seek-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doSeek()">Seek</button>
+    </div>
+  </div>
+</div>
 
 <div class="notify" id="notify"></div>
+"""
 
+_HTML_SCRIPT = r"""
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
-let streamData = [];
-let libraryData = [];
-let seekTarget = null;
-let seekDuration = 0;
+// ════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════
+let streamData    = [];
+let libraryData   = [];
+let logEntries    = [];
+let logLevel      = 'ALL';
+let seekTarget    = null;
+let seekDuration  = 0;
+let autoRefresh   = true;
+let refreshTimer  = null;
+let editorRows    = [];
 
-// ── Tab nav ───────────────────────────────────────────────────────────────────
-function showTab(name) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  document.querySelectorAll('nav button').forEach(btn => {
-    if (btn.textContent.toLowerCase().includes(name.substring(0,4)))
-      btn.classList.add('active');
-  });
-  if (name === 'streams') loadStreams();
-  else if (name === 'library') loadLibrary();
-  else if (name === 'editor') loadEditor();
-  else if (name === 'events') { loadEvents(); loadEventFormData(); }
-  else if (name === 'logs') loadLogs();
-  else if (name === 'upload') loadSubdirs();
+// ════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════
+function fmtSecs(s) {
+  s = Math.max(0, Math.floor(+s));
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
 }
-
-// ── Notifications ─────────────────────────────────────────────────────────────
+function fmtBytes(n) {
+  if (n<1024) return n+' B';
+  if (n<1048576) return (n/1024).toFixed(1)+' KB';
+  if (n<1073741824) return (n/1048576).toFixed(1)+' MB';
+  return (n/1073741824).toFixed(2)+' GB';
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 function notify(msg, type='ok') {
   const el = document.getElementById('notify');
-  el.textContent = msg; el.className = 'notify ' + type + ' show';
-  setTimeout(() => el.classList.remove('show'), 3000);
+  el.textContent = msg; el.className = 'notify '+type+' show';
+  setTimeout(()=>el.classList.remove('show'), 3000);
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
 }
 
-// ── API calls ─────────────────────────────────────────────────────────────────
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+// ════════════════════════════════════════════
+// TAB NAVIGATION
+// ════════════════════════════════════════════
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  const labels = {streams:'Streams',upload:'Upload',library:'Library',
+                  editor:'Config',events:'Sched',logs:'Logs'};
+  document.querySelectorAll('nav button').forEach(btn=>{
+    if(btn.textContent.trim()===labels[name]) btn.classList.add('active');
+  });
+  if(name==='streams')  loadStreams();
+  else if(name==='library') loadLibrary();
+  else if(name==='editor')  loadEditor();
+  else if(name==='events') { loadEvents(); loadEventFormData(); }
+  else if(name==='logs')    loadLogs();
+  else if(name==='upload')  loadSubdirs();
+}
+
+// ════════════════════════════════════════════
+// API
+// ════════════════════════════════════════════
 async function api(action, data={}) {
   try {
-    const r = await fetch('/api/' + action, {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(data)
+    const r = await fetch('/api/'+action, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(data)
     });
     const j = await r.json();
-    if (j.ok) { notify(j.msg || 'Done ✓'); loadStreams(); }
-    else notify(j.msg || 'Error', 'err');
+    if(j.ok) { notify(j.msg||'Done ✓'); loadStreams(); }
+    else notify(j.msg||'Error', 'err');
     return j;
-  } catch(e) { notify('Request failed: ' + e, 'err'); }
+  } catch(e) { notify('Request failed: '+e,'err'); }
 }
 
-// ── Streams ───────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════
+// HEADER STATS
+// ════════════════════════════════════════════
+async function updateHeaderStats() {
+  try {
+    const [sdata, stats] = await Promise.all([
+      fetch('/api/streams').then(r=>r.json()),
+      fetch('/api/system_stats').then(r=>r.json()),
+    ]);
+    const live = sdata.filter(s=>s.status==='LIVE').length;
+    document.getElementById('h-live').textContent  = live;
+    document.getElementById('h-cpu').textContent   = stats.cpu+'%';
+    document.getElementById('h-ram').textContent   = stats.mem_percent+'%';
+    document.getElementById('h-disk').textContent  = stats.disk_percent+'%';
+    const now = new Date();
+    document.getElementById('h-time').textContent  =
+      String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  } catch(_){}
+}
+
+// ════════════════════════════════════════════
+// STREAMS
+// ════════════════════════════════════════════
+function toggleAutoRefresh(on) {
+  autoRefresh = on;
+  if(on) startRefresh(); else clearInterval(refreshTimer);
+}
+function startRefresh() {
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(()=>{ loadStreams(); updateHeaderStats(); }, 3000);
+}
+
 async function loadStreams() {
   const r = await fetch('/api/streams');
   streamData = await r.json();
-  const tb = document.getElementById('streams-tbody');
-  tb.innerHTML = streamData.map((s,i) => `
-  <tr>
-    <td style="color:var(--muted)">${i+1}</td>
-    <td><strong>${s.name}</strong>${s.shuffle ? ' <span style="color:var(--purple);font-size:10px">SHUFFLE</span>' : ''}</td>
-    <td><code style="color:var(--cyan)">${s.port}</code></td>
-    <td style="color:var(--muted);font-size:12px">${s.weekdays}</td>
-    <td>${badgeFor(s.status)}</td>
-    <td style="min-width:160px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <div class="progress-bar">
-          <div class="progress-fill" style="width:${s.progress}%;
-            background:${s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)'}"></div>
-        </div>
-        <span style="font-size:11px;color:var(--muted);white-space:nowrap">${s.progress.toFixed(1)}%</span>
-      </div>
-    </td>
-    <td style="font-size:12px;color:var(--muted);white-space:nowrap">${s.position}</td>
-    <td style="color:var(--muted);font-size:12px">${s.fps > 0 ? s.fps.toFixed(0) + ' fps' : '—'}</td>
-    <td>
-      <span class="rtsp-url" title="Click to copy" onclick="copyURL('${s.rtsp_url}')">${s.rtsp_url}</span>
-      ${s.hls_url ? '<br><span class="rtsp-url" style="color:var(--yellow)" onclick="copyURL(\''+s.hls_url+'\')">HLS</span>' : ''}
-    </td>
-    <td style="white-space:nowrap">
-      <button class="btn btn-sm btn-success" onclick="api('start',{name:'${s.name}'})">▶</button>
-      <button class="btn btn-sm btn-danger" onclick="api('stop',{name:'${s.name}'})">■</button>
-      <button class="btn btn-sm" onclick="api('restart',{name:'${s.name}'})">↺</button>
-      <button class="btn btn-sm" onclick="openSeek('${s.name}',${s.duration})" title="Seek">⏩</button>
-    </td>
-  </tr>`).join('');
+  renderStreams();
 }
 
-function badgeFor(status) {
-  const m = {LIVE:'live',STOPPED:'stopped',ERROR:'error',SCHED:'sched',DISABLED:'disabled',STARTING:'sched',ONESHOT:'live'};
-  const cls = m[status] || 'stopped';
-  return `<span class="badge badge-${cls}">${status}</span>`;
+function renderStreams() {
+  const tb = document.getElementById('streams-tbody');
+  tb.innerHTML = streamData.map((s,i) => {
+    const pct = s.progress.toFixed(1);
+    const fillColor = s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
+    const isLive = s.status==='LIVE';
+    return `
+<tr>
+  <td class="mono" style="color:var(--muted)">${i+1}</td>
+  <td>
+    <strong style="cursor:pointer;color:var(--blue)" onclick="openDetail('${esc(s.name)}')"
+            title="Click for details">${esc(s.name)}</strong>
+    ${s.shuffle?'<span style="font-size:9px;color:var(--purple);margin-left:4px">⧖SHUFFLE</span>':''}
+    ${s.hls_url?'<span style="font-size:9px;color:var(--orange);margin-left:4px">[HLS]</span>':''}
+  </td>
+  <td><code class="mono" style="color:var(--cyan)">${s.port}</code></td>
+  <td style="color:var(--muted);font-size:11px">${esc(s.weekdays)}</td>
+  <td><span class="badge badge-${esc(s.status)}">${esc(s.status)}</span></td>
+  <td style="min-width:130px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:${pct}%;background:${fillColor}"></div>
+      </div>
+      <span class="mono" style="color:var(--muted);min-width:38px">${pct}%</span>
+    </div>
+    ${isLive?`
+    <div class="seek-row" style="margin-top:3px">
+      <span class="mono" style="font-size:10px;color:var(--muted);min-width:52px">${esc(s.position.split('/')[0]||'')}</span>
+      <input type="range" min="0" max="${Math.max(1,Math.floor(s.duration))}"
+             value="${Math.floor(s.current_secs)}"
+             title="Drag to seek"
+             data-stream="${esc(s.name)}"
+             oninput="this.nextElementSibling.textContent=fmtSecs(this.value)"
+             onchange="inlineSeek('${esc(s.name)}',+this.value)"
+             style="flex:1">
+      <span class="mono" style="font-size:10px;color:var(--muted);min-width:52px;text-align:right">${esc(s.position.split('/')[1]||'—')}</span>
+    </div>`:''}
+  </td>
+  <td class="mono" style="color:var(--muted);font-size:11px;white-space:nowrap">${esc(s.position)}</td>
+  <td class="mono" style="color:var(--muted)">${s.fps>0?Math.round(s.fps):'—'}</td>
+  <td>
+    <span class="rtsp-chip" onclick="copyURL('${esc(s.rtsp_url)}')" title="Click to copy RTSP URL">${esc(s.rtsp_url)}</span>
+    ${s.hls_url?`<br><span class="rtsp-chip" style="color:var(--orange);margin-top:3px" onclick="copyURL('${esc(s.hls_url)}')" title="Copy HLS URL">HLS ↗</span>`:''}
+  </td>
+  <td style="white-space:nowrap">
+    <button class="btn btn-sm btn-success" onclick="api('start',{name:'${esc(s.name)}'})">▶</button>
+    <button class="btn btn-sm btn-danger"  onclick="api('stop', {name:'${esc(s.name)}'})">■</button>
+    <button class="btn btn-sm"             onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>
+    <button class="btn btn-sm"             onclick="openSeek('${esc(s.name)}',${s.duration},${s.current_secs})" title="Seek">⏩</button>
+  </td>
+</tr>`;
+  }).join('');
 }
 
 function copyURL(url) {
-  navigator.clipboard.writeText(url).then(() => notify('URL copied ✓'));
+  navigator.clipboard.writeText(url).then(()=>notify('Copied ✓','info'));
 }
 
-// ── Seek ──────────────────────────────────────────────────────────────────────
-function openSeek(name, duration) {
+function inlineSeek(name, secs) {
+  api('seek', {name, seconds: secs}).then(()=>setTimeout(loadStreams, 500));
+}
+
+// ════════════════════════════════════════════
+// STREAM DETAIL
+// ════════════════════════════════════════════
+async function openDetail(name) {
+  const r = await fetch('/api/stream_detail?name='+encodeURIComponent(name));
+  const d = await r.json();
+  if(d.error){ notify(d.error,'err'); return; }
+
+  document.getElementById('detail-title').textContent = d.name;
+  document.getElementById('detail-start').onclick = ()=>{ api('start',{name:d.name}); closeModal('detail-modal'); };
+  document.getElementById('detail-stop' ).onclick = ()=>{ api('stop', {name:d.name}); closeModal('detail-modal'); };
+  document.getElementById('detail-rst'  ).onclick = ()=>{ api('restart',{name:d.name}); closeModal('detail-modal'); };
+
+  const pct = d.progress.toFixed(1);
+  const fillColor = d.progress>80?'var(--red)':d.progress>55?'var(--yellow)':'var(--green)';
+
+  let playlist_html = d.playlist.map((p,i)=>`
+    <div class="playlist-item ${p.current?'current':''}">
+      <span class="pi-idx">${i+1}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.path)}">${esc(p.file)}</span>
+      <span class="mono" style="color:var(--muted)">${esc(p.start)}</span>
+      ${p.current?'<span style="color:var(--green);font-size:10px">▶ NOW</span>':''}
+      ${!p.exists?'<span style="color:var(--red);font-size:10px">✗ MISSING</span>':''}
+    </div>`).join('');
+
+  let logs_html = d.log.slice(-40).map(line=>{
+    const lv = line.includes(' ERROR ')||line.includes('] [Stream') ? (
+      line.includes('Error')||line.includes('error')||line.includes('ERROR')?'err':'info'
+    ) : line.includes('WARN')||line.includes('restart')?'warn':'info';
+    return `<div class="log-${lv}">${esc(line)}</div>`;
+  }).join('');
+
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-grid">
+      <div class="detail-item"><div class="dk">Status</div><div class="dv"><span class="badge badge-${esc(d.status)}">${esc(d.status)}</span></div></div>
+      <div class="detail-item"><div class="dk">Port</div><div class="dv" style="color:var(--cyan)">:${d.port}</div></div>
+      <div class="detail-item"><div class="dk">Video Bitrate</div><div class="dv">${esc(d.video_bitrate)}</div></div>
+      <div class="detail-item"><div class="dk">Audio Bitrate</div><div class="dv">${esc(d.audio_bitrate)}</div></div>
+      <div class="detail-item"><div class="dk">Schedule</div><div class="dv">${esc(d.weekdays)}</div></div>
+      <div class="detail-item"><div class="dk">Restarts</div><div class="dv" style="color:${d.restart_count>0?'var(--yellow)':'var(--green)'}">${d.restart_count}</div></div>
+      <div class="detail-item"><div class="dk">Loop Count</div><div class="dv">${d.loop_count}</div></div>
+      <div class="detail-item"><div class="dk">FPS / Speed</div><div class="dv">${d.fps>0?Math.round(d.fps)+' fps':d.speed}</div></div>
+    </div>
+    ${d.error_msg?`<div style="background:var(--red-dim);border:1px solid rgba(243,139,168,.3);border-radius:var(--radius-sm);padding:8px 12px;font-size:11px;color:var(--red);margin-bottom:12px;font-family:var(--font-mono)">${esc(d.error_msg)}</div>`:''}
+    <div style="margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Progress</div>
+    <div class="seek-row" style="margin-bottom:14px">
+      <span class="mono" style="font-size:11px;min-width:58px">${fmtSecs(d.current_pos)}</span>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:${fillColor}"></div></div>
+      <span class="mono" style="font-size:11px;min-width:58px;text-align:right">${fmtSecs(d.duration)}</span>
+    </div>
+    <div style="margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Playlist (${d.playlist.length} file${d.playlist.length!==1?'s':''})</div>
+    <div style="margin-bottom:14px">${playlist_html||'<span style="color:var(--muted)">No files</span>'}</div>
+    <div style="margin-bottom:6px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Recent Log</span>
+      <button class="btn btn-sm" onclick="openDetail('${esc(d.name)}')">↻ Refresh</button>
+    </div>
+    <div class="log-box">${logs_html||'<span style="color:var(--muted)">No log entries</span>'}</div>
+  `;
+  openModal('detail-modal');
+}
+
+// ════════════════════════════════════════════
+// SEEK MODAL
+// ════════════════════════════════════════════
+function openSeek(name, duration, currentSecs) {
   seekTarget = name; seekDuration = duration;
   document.getElementById('seek-stream-name').textContent = name;
   document.getElementById('seek-input').value = '';
-  document.getElementById('seek-slider').max = Math.floor(duration);
-  document.getElementById('seek-slider').value = 0;
-  document.getElementById('seek-slider-val').textContent = fmtSecs(0);
+  document.getElementById('seek-slider').max   = Math.floor(duration);
+  document.getElementById('seek-slider').value = Math.floor(currentSecs);
+  document.getElementById('seek-slider-val').textContent = fmtSecs(currentSecs);
   document.getElementById('seek-dur').textContent = fmtSecs(duration);
-  const modal = document.getElementById('seek-modal');
-  modal.style.display = 'flex';
+  openModal('seek-modal');
+  document.getElementById('seek-input').focus();
 }
-function closeSeek() { document.getElementById('seek-modal').style.display = 'none'; }
-function updateSeekLabel(v) {
-  document.getElementById('seek-slider-val').textContent = fmtSecs(Number(v));
+function seekSliderInput(v) {
+  document.getElementById('seek-slider-val').textContent = fmtSecs(v);
 }
 function doSeek() {
   let secs;
   const txt = document.getElementById('seek-input').value.trim();
-  if (txt) {
+  if(txt) {
     const parts = txt.split(':').map(Number);
-    if (parts.length === 3) secs = parts[0]*3600 + parts[1]*60 + parts[2];
-    else if (parts.length === 2) secs = parts[0]*60 + parts[1];
-    else secs = parts[0];
+    secs = parts.length===3 ? parts[0]*3600+parts[1]*60+parts[2]
+         : parts.length===2 ? parts[0]*60+parts[1] : parts[0];
+    if(isNaN(secs)||secs<0){ notify('Invalid time format','err'); return; }
   } else {
-    secs = Number(document.getElementById('seek-slider').value);
+    secs = +document.getElementById('seek-slider').value;
   }
-  api('seek', {name: seekTarget, seconds: secs});
-  closeSeek();
-}
-function fmtSecs(s) {
-  s = Math.floor(s);
-  return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  if(secs>seekDuration&&seekDuration>0){ notify('Position beyond duration','err'); return; }
+  api('seek',{name:seekTarget, seconds:secs});
+  closeModal('seek-modal');
 }
 
-// ── Upload ────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════
+// UPLOAD
+// ════════════════════════════════════════════
 const dropZone = document.getElementById('drop-zone');
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault(); dropZone.classList.remove('drag-over');
-  handleFiles(e.dataTransfer.files);
-});
+dropZone.addEventListener('dragover',  e=>{ e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e=>{ e.preventDefault(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
 
-function handleFiles(files) {
-  Array.from(files).forEach(f => uploadFile(f));
-}
+const MAX_UPLOAD = 10 * 1024 * 1024 * 1024;
+
+function handleFiles(files) { Array.from(files).forEach(uploadFile); }
 
 function uploadFile(file) {
-  const li = document.createElement('li');
+  if(file.size > MAX_UPLOAD){ notify(`${file.name}: exceeds 10 GB limit`,'err'); return; }
+  const key = file.name.replace(/[^\w]/g,'_');
+  const li  = document.createElement('li');
+  li.id     = 'li-'+key;
   const subdir = document.getElementById('upload-subdir').value;
-  li.innerHTML = `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${file.name}</span>
-    <span style="color:var(--muted);font-size:11px">${fmtBytes(file.size)}</span>
-    <div class="upload-progress"><div class="upload-fill" id="prog-${file.name.replace(/\W/g,'_')}" style="width:0"></div></div>
-    <span id="status-${file.name.replace(/\W/g,'_')}" style="font-size:11px;color:var(--muted)">0%</span>`;
+  li.innerHTML = `
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(file.name)}</span>
+    <span style="color:var(--muted);font-size:10px;white-space:nowrap">${fmtBytes(file.size)}</span>
+    <div class="upload-bar"><div class="upload-fill" id="bar-${key}" style="width:0"></div></div>
+    <span id="pct-${key}" style="font-size:10px;color:var(--muted);min-width:32px;text-align:right">0%</span>`;
   document.getElementById('upload-list').appendChild(li);
 
-  const fd = new FormData(); fd.append('file', file); fd.append('subdir', subdir);
+  const fd = new FormData(); fd.append('file',file); fd.append('subdir',subdir);
   const xhr = new XMLHttpRequest();
-  const key = file.name.replace(/\W/g,'_');
-  xhr.upload.addEventListener('progress', e => {
-    if (e.lengthComputable) {
-      const pct = Math.round(e.loaded/e.total*100);
-      const bar = document.getElementById('prog-'+key);
-      const stat = document.getElementById('status-'+key);
-      if (bar) bar.style.width = pct + '%';
-      if (stat) stat.textContent = pct + '%';
-    }
-  });
-  xhr.addEventListener('load', () => {
-    const stat = document.getElementById('status-'+key);
-    if (xhr.status === 200) {
-      if (stat) { stat.textContent = '✓'; stat.style.color = 'var(--green)'; }
-      notify(`${file.name} uploaded ✓`);
-    } else {
-      if (stat) { stat.textContent = '✗'; stat.style.color = 'var(--red)'; }
-      notify(`Upload failed: ${file.name}`, 'err');
-    }
-  });
-  xhr.open('POST', '/api/upload'); xhr.send(fd);
-}
-
-function fmtBytes(n) {
-  if (n < 1024) return n + ' B';
-  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
-  if (n < 1073741824) return (n/1048576).toFixed(1) + ' MB';
-  return (n/1073741824).toFixed(2) + ' GB';
+  xhr.upload.onprogress = e => {
+    if(!e.lengthComputable) return;
+    const pct = Math.round(e.loaded/e.total*100);
+    const bar = document.getElementById('bar-'+key);
+    const pctEl = document.getElementById('pct-'+key);
+    if(bar) bar.style.width=pct+'%';
+    if(pctEl) pctEl.textContent=pct+'%';
+  };
+  xhr.onload = () => {
+    const pctEl = document.getElementById('pct-'+key);
+    if(xhr.status===200){ if(pctEl){pctEl.textContent='✓';pctEl.style.color='var(--green)';}  notify(file.name+' uploaded ✓'); }
+    else { if(pctEl){pctEl.textContent='✗';pctEl.style.color='var(--red)';}  notify('Upload failed: '+file.name,'err'); }
+  };
+  xhr.onerror = () => notify('Upload error: '+file.name,'err');
+  xhr.open('POST','/api/upload'); xhr.send(fd);
 }
 
 async function loadSubdirs() {
@@ -1829,53 +2201,66 @@ async function loadSubdirs() {
   const data = await r.json();
   const sel = document.getElementById('upload-subdir');
   sel.innerHTML = '<option value="">/ (media root)</option>';
-  data.dirs.forEach(d => sel.innerHTML += `<option value="${d}">${d}</option>`);
+  data.dirs.filter(d=>d).forEach(d=>{ sel.innerHTML+=`<option value="${esc(d)}">${esc(d)}</option>`; });
 }
 
 async function createSubdir() {
-  const name = prompt('New folder name:'); if (!name) return;
-  await api('create_subdir', {name});
+  const name = prompt('New folder name:'); if(!name||!name.trim()) return;
+  if(/[\/\\<>"|?*]/.test(name)){ notify('Invalid folder name','err'); return; }
+  await api('create_subdir',{name:name.trim()});
   loadSubdirs();
 }
 
-// ── Library ───────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════
+// LIBRARY
+// ════════════════════════════════════════════
 async function loadLibrary() {
+  document.getElementById('library-tbody').innerHTML =
+    '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Loading…</td></tr>';
   const r = await fetch('/api/library');
   libraryData = await r.json();
-  renderLibrary(libraryData);
+  filterLibrary();
+}
+
+function filterLibrary() {
+  const q   = document.getElementById('lib-search').value.toLowerCase();
+  const srt = document.getElementById('lib-sort').value;
+  let data  = libraryData.filter(f=>f.path.toLowerCase().includes(q));
+  if(srt==='size') data.sort((a,b)=>b.size_bytes-a.size_bytes);
+  else if(srt==='dur') data.sort((a,b)=>b.duration_secs-a.duration_secs);
+  else data.sort((a,b)=>a.path.localeCompare(b.path));
+  renderLibrary(data);
 }
 
 function renderLibrary(data) {
   const tb = document.getElementById('library-tbody');
-  tb.innerHTML = data.map(f => `
-  <tr>
-    <td style="font-size:12px;word-break:break-all">${f.path}</td>
-    <td style="white-space:nowrap">${f.duration || '—'}</td>
-    <td style="white-space:nowrap">${f.size || '—'}</td>
-    <td style="font-size:12px">${f.video_codec || '—'}</td>
-    <td style="font-size:12px">${f.width&&f.height ? f.width+'×'+f.height : '—'}</td>
-    <td style="font-size:12px">${f.fps || '—'}</td>
-    <td>
-      <button class="btn btn-sm" onclick="copyURL('${f.full_path}')" title="Copy path">📋</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteFile('${f.full_path}')">🗑</button>
-    </td>
-  </tr>`).join('');
-}
-
-function filterLibrary() {
-  const q = document.getElementById('lib-search').value.toLowerCase();
-  renderLibrary(libraryData.filter(f => f.path.toLowerCase().includes(q)));
+  if(!data.length){ tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">No files found.</td></tr>'; return; }
+  tb.innerHTML = data.map(f=>`
+<tr>
+  <td class="mono" style="word-break:break-all;font-size:11px;max-width:300px">
+    <span title="${esc(f.full_path)}">${esc(f.path)}</span>
+  </td>
+  <td class="mono" style="white-space:nowrap">${esc(f.duration)||'—'}</td>
+  <td class="mono" style="white-space:nowrap">${esc(f.size)||'—'}</td>
+  <td style="font-size:11px">${esc(f.video_codec)||'—'}</td>
+  <td style="font-size:11px">${f.width&&f.height?f.width+'×'+f.height:'—'}</td>
+  <td style="font-size:11px">${f.fps?f.fps+' fps':'—'}</td>
+  <td style="white-space:nowrap">
+    <button class="btn btn-sm" onclick="copyURL('${esc(f.full_path)}')" title="Copy path">📋</button>
+    <button class="btn btn-sm btn-danger" onclick="deleteFile('${esc(f.full_path)}')">🗑</button>
+  </td>
+</tr>`).join('');
 }
 
 async function deleteFile(path) {
-  if (!confirm('Delete ' + path + '?')) return;
-  await api('delete_file', {path});
+  if(!confirm('Permanently delete?\n'+path)) return;
+  await api('delete_file',{path});
   loadLibrary();
 }
 
-// ── CSV Editor ────────────────────────────────────────────────────────────────
-let editorRows = [];
-
+// ════════════════════════════════════════════
+// EDITOR
+// ════════════════════════════════════════════
 async function loadEditor() {
   const r = await fetch('/api/streams_config');
   editorRows = await r.json();
@@ -1883,47 +2268,50 @@ async function loadEditor() {
 }
 
 function renderEditor() {
-  const container = document.getElementById('editor-body');
-  container.innerHTML = editorRows.map((row, idx) => `
-  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;
-    padding:14px;margin-bottom:12px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <strong style="color:var(--blue)">Stream ${idx+1}: ${row.name}</strong>
-      <button class="btn btn-sm btn-danger" onclick="removeStreamRow(${idx})">✕ Remove</button>
+  const c = document.getElementById('editor-body');
+  c.innerHTML = editorRows.map((row,idx)=>`
+<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <strong style="color:var(--blue);font-family:var(--font-mono)">${esc(row.name)}</strong>
+    <button class="btn btn-sm btn-danger" onclick="removeStreamRow(${idx})">✕ Remove</button>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Name</label>
+      <input value="${esc(row.name)}" onchange="editorRows[${idx}].name=this.value.trim()"></div>
+    <div class="form-group"><label>Port</label>
+      <input type="number" min="1024" max="65535" value="${row.port}"
+             onchange="editorRows[${idx}].port=+this.value"></div>
+    <div class="form-group"><label>RTSP Path</label>
+      <input value="${esc(row.stream_path||'stream')}" onchange="editorRows[${idx}].stream_path=this.value.trim()"></div>
+    <div class="form-group"><label>Weekdays</label>
+      <input value="${esc(row.weekdays||'all')}" onchange="editorRows[${idx}].weekdays=this.value.trim()">
+      <span class="form-hint">all · mon|wed|fri · weekdays · weekends</span>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Name</label>
-        <input value="${row.name}" onchange="editorRows[${idx}].name=this.value"></div>
-      <div class="form-group"><label>Port</label>
-        <input type="number" value="${row.port}" onchange="editorRows[${idx}].port=Number(this.value)"></div>
-      <div class="form-group"><label>RTSP Path</label>
-        <input value="${row.stream_path||'stream'}" onchange="editorRows[${idx}].stream_path=this.value"></div>
-      <div class="form-group"><label>Weekdays</label>
-        <input value="${row.weekdays||'all'}" onchange="editorRows[${idx}].weekdays=this.value"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Video Bitrate</label>
-        <input value="${row.video_bitrate||'2500k'}" onchange="editorRows[${idx}].video_bitrate=this.value"></div>
-      <div class="form-group"><label>Audio Bitrate</label>
-        <input value="${row.audio_bitrate||'128k'}" onchange="editorRows[${idx}].audio_bitrate=this.value"></div>
-      <div class="form-group">
-        <label>Options</label>
-        <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:4px;color:var(--text);font-size:13px">
-            <input type="checkbox" ${row.enabled?'checked':''} onchange="editorRows[${idx}].enabled=this.checked" style="width:auto"> Enabled</label>
-          <label style="display:flex;align-items:center;gap:4px;color:var(--text);font-size:13px">
-            <input type="checkbox" ${row.shuffle?'checked':''} onchange="editorRows[${idx}].shuffle=this.checked" style="width:auto"> Shuffle</label>
-          <label style="display:flex;align-items:center;gap:4px;color:var(--text);font-size:13px">
-            <input type="checkbox" ${row.hls_enabled?'checked':''} onchange="editorRows[${idx}].hls_enabled=this.checked" style="width:auto"> HLS</label>
-        </div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Video Bitrate</label>
+      <input value="${esc(row.video_bitrate||'2500k')}" onchange="editorRows[${idx}].video_bitrate=this.value.trim()"></div>
+    <div class="form-group"><label>Audio Bitrate</label>
+      <input value="${esc(row.audio_bitrate||'128k')}"  onchange="editorRows[${idx}].audio_bitrate=this.value.trim()"></div>
+    <div class="form-group">
+      <label>Options</label>
+      <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:5px;color:var(--text);font-size:12px;margin:0;cursor:pointer">
+          <input type="checkbox" ${row.enabled?'checked':''} onchange="editorRows[${idx}].enabled=this.checked" style="width:auto"> Enabled</label>
+        <label style="display:flex;align-items:center;gap:5px;color:var(--text);font-size:12px;margin:0;cursor:pointer">
+          <input type="checkbox" ${row.shuffle?'checked':''} onchange="editorRows[${idx}].shuffle=this.checked" style="width:auto"> Shuffle</label>
+        <label style="display:flex;align-items:center;gap:5px;color:var(--text);font-size:12px;margin:0;cursor:pointer">
+          <input type="checkbox" ${row.hls_enabled?'checked':''} onchange="editorRows[${idx}].hls_enabled=this.checked" style="width:auto"> HLS</label>
       </div>
     </div>
-    <div>
-      <label>Playlist Files (one per line, optionally with @HH:MM:SS start)</label>
-      <textarea rows="3" style="margin-top:4px;font-family:monospace;font-size:12px"
-        onchange="editorRows[${idx}].files=this.value">${(row.files||'').split(';').join('\\n')}</textarea>
-    </div>
-  </div>`).join('');
+  </div>
+  <div class="form-group">
+    <label>Playlist Files (one per line · optionally with @HH:MM:SS start offset)</label>
+    <textarea rows="3" style="margin-top:4px;font-family:var(--font-mono);font-size:11px"
+      onchange="editorRows[${idx}].files=this.value">${esc((row.files||'').split(';').join('\n'))}</textarea>
+    <span class="form-hint">Example: /media/intro.mp4@00:00:00</span>
+  </div>
+</div>`).join('');
 }
 
 function addStreamRow() {
@@ -1932,32 +2320,40 @@ function addStreamRow() {
     video_bitrate:'2500k',audio_bitrate:'128k',hls_enabled:false});
   renderEditor();
 }
-
-function removeStreamRow(idx) {
-  editorRows.splice(idx,1); renderEditor();
-}
+function removeStreamRow(idx) { editorRows.splice(idx,1); renderEditor(); }
 
 async function saveCSV() {
-  // convert textarea newlines back to semicolons
-  const rows = editorRows.map(r => ({...r, files: (r.files||'').replace(/\\n+/g,';').replace(/;+/g,';').trim()}));
-  const result = await api('save_config', {streams: rows});
-  if (result && result.ok) loadEditor();
+  const rows = editorRows.map(r=>({
+    ...r,
+    files: (r.files||'').replace(/\n+/g,';').replace(/;+/g,';').trim()
+  }));
+  // Validate ports
+  const ports = rows.map(r=>r.port);
+  if(new Set(ports).size !== ports.length){ notify('Duplicate ports detected','err'); return; }
+  const res = await api('save_config',{streams:rows});
+  if(res&&res.ok) { notify('Saved ✓ — restart to apply'); loadEditor(); }
 }
 
-// ── Events ────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════
+// EVENTS
+// ════════════════════════════════════════════
 async function loadEventFormData() {
-  const r = await fetch('/api/streams');
-  const streams = await r.json();
-  const sel = document.getElementById('evt-stream');
-  sel.innerHTML = streams.map(s => `<option value="${s.name}">${s.name} (:${s.port})</option>`).join('');
-  const lr = await fetch('/api/library');
-  const lib = await lr.json();
-  const fsel = document.getElementById('evt-file');
-  fsel.innerHTML = lib.map(f => `<option value="${f.full_path}">${f.path}</option>`).join('');
-  // set default datetime to 5 minutes from now
-  const dt = new Date(Date.now() + 5*60000);
-  const local = new Date(dt - dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
-  document.getElementById('evt-datetime').value = local;
+  const [streams, lib] = await Promise.all([
+    fetch('/api/streams').then(r=>r.json()),
+    fetch('/api/library').then(r=>r.json()),
+  ]);
+  const sSel = document.getElementById('evt-stream');
+  sSel.innerHTML = streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)} (:${s.port})</option>`).join('');
+  const fSel = document.getElementById('evt-file');
+  fSel.innerHTML = lib.map(f=>`<option value="${esc(f.full_path)}">${esc(f.path)}</option>`).join('');
+  const dt = new Date(Date.now()+5*60000);
+  document.getElementById('evt-datetime').value =
+    new Date(dt-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
+
+  // Populate log stream filter
+  const sel = document.getElementById('log-stream-filter');
+  sel.innerHTML = '<option value="">All Streams</option>'+
+    streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
 }
 
 async function scheduleEvent() {
@@ -1966,49 +2362,138 @@ async function scheduleEvent() {
   const dt     = document.getElementById('evt-datetime').value;
   const pos    = document.getElementById('evt-startpos').value || '00:00:00';
   const post   = document.getElementById('evt-postaction').value;
-  if (!stream || !file || !dt) { notify('Fill all fields', 'err'); return; }
-  await api('add_event', {stream_name:stream, file_path:file, play_at:dt,
-                          start_pos:pos, post_action:post});
+  if(!stream||!file||!dt){ notify('Fill all required fields','err'); return; }
+  // Validate start position format
+  if(!/^\d{2}:\d{2}:\d{2}$/.test(pos)){ notify('Start position must be HH:MM:SS','err'); return; }
+  await api('add_event',{stream_name:stream,file_path:file,play_at:dt,start_pos:pos,post_action:post});
   loadEvents();
 }
 
 async function loadEvents() {
-  const r = await fetch('/api/events');
+  const r    = await fetch('/api/events');
   const data = await r.json();
-  const tb = document.getElementById('events-tbody');
-  tb.innerHTML = data.map(ev => `
-  <tr>
-    <td>${ev.stream_name}</td>
-    <td style="font-size:12px">${ev.file_name}</td>
-    <td style="font-size:12px;white-space:nowrap">${ev.play_at}</td>
-    <td style="font-size:12px">${ev.post_action}</td>
-    <td><span class="evt-badge ${ev.played?'evt-played':'evt-pending'}">${ev.played?'Played':'Pending'}</span></td>
-    <td><button class="btn btn-sm btn-danger" onclick="api('delete_event',{event_id:'${ev.event_id}'}).then(loadEvents)">✕</button></td>
-  </tr>`).join('');
+  const now  = Date.now();
+  const tb   = document.getElementById('events-tbody');
+  tb.innerHTML = data.map(ev=>{
+    const playAt = new Date(ev.play_at.replace(' ','T'));
+    const delta  = ((playAt - now)/1000).toFixed(0);
+    const countdown = ev.played ? '—' : delta>0 ? `in ${Math.floor(delta/60)}m ${delta%60}s` : `${Math.abs(delta)}s ago`;
+    return `
+<tr>
+  <td>${esc(ev.stream_name)}</td>
+  <td class="mono" style="font-size:11px">${esc(ev.file_name)}</td>
+  <td class="mono" style="font-size:11px;white-space:nowrap">${esc(ev.play_at)}</td>
+  <td class="mono" style="font-size:11px;color:${delta>0?'var(--yellow)':'var(--muted)'}">${countdown}</td>
+  <td style="font-size:11px">${esc(ev.post_action)}</td>
+  <td><span class="badge ${ev.played?'badge-STOPPED':'badge-SCHED'}">${ev.played?'Played':'Pending'}</span></td>
+  <td><button class="btn btn-sm btn-danger" onclick="deleteEvent('${esc(ev.event_id)}')">✕</button></td>
+</tr>`;
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">No events scheduled.</td></tr>';
 }
 
-// ── Logs ──────────────────────────────────────────────────────────────────────
+async function deleteEvent(id) {
+  if(!confirm('Delete this event?')) return;
+  await api('delete_event',{event_id:id});
+  loadEvents();
+}
+
+async function clearPlayedEvents() {
+  if(!confirm('Remove all played events?')) return;
+  const r    = await fetch('/api/events').then(r=>r.json());
+  const played = r.filter(e=>e.played).map(e=>e.event_id);
+  for(const id of played) await fetch('/api/delete_event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:id})});
+  loadEvents();
+}
+
+// ════════════════════════════════════════════
+// LOGS
+// ════════════════════════════════════════════
+function setLogLevel(level) {
+  logLevel = level;
+  document.querySelectorAll('.log-chip').forEach(c=>{
+    c.className = 'log-chip'+(c.dataset.level===level?' active-'+level:'');
+  });
+  renderLogEntries();
+}
+
 async function loadLogs() {
-  const r = await fetch('/api/logs');
+  const stream = document.getElementById('log-stream-filter').value;
+  const url = `/api/logs?level=${logLevel}&stream=${encodeURIComponent(stream)}&n=500`;
+  const r   = await fetch(url);
   const data = await r.json();
-  const colors = {INFO:'var(--text)', WARN:'var(--yellow)', ERROR:'var(--red)'};
-  document.getElementById('log-container').innerHTML =
-    data.entries.slice().reverse().map(([msg,lvl]) =>
-      `<div style="color:${colors[lvl]||'var(--text)'};padding:2px 0">${msg}</div>`
-    ).join('');
+  logEntries = data.entries;
+  renderLogEntries();
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+function renderLogEntries() {
+  const q     = (document.getElementById('log-search').value||'').toLowerCase();
+  const colors = {INFO:'var(--text)',WARN:'var(--yellow)',ERROR:'var(--red)'};
+  const el    = document.getElementById('log-container');
+  const items = logEntries
+    .filter(([msg])=> !q || msg.toLowerCase().includes(q))
+    .slice().reverse()
+    .map(([msg,lvl])=>`<div style="color:${colors[lvl]||'var(--text)'};padding:1px 0;border-bottom:1px solid var(--faint)">${esc(msg)}</div>`)
+    .join('');
+  el.innerHTML = items || '<span style="color:var(--muted)">No entries.</span>';
+  if(document.getElementById('log-autoscroll').checked) el.scrollTop = 0;
+}
+
+// ════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════
 loadStreams();
-setInterval(loadStreams, 3000);
+updateHeaderStats();
+startRefresh();
+setInterval(updateHeaderStats, 5000);
+setInterval(()=>{
+  if(document.getElementById('tab-events').classList.contains('active')) loadEvents();
+  if(document.getElementById('tab-logs').classList.contains('active'))   loadLogs();
+}, 8000);
+
+// Clock
+setInterval(()=>{
+  const now = new Date();
+  const el  = document.getElementById('h-time');
+  if(el) el.textContent =
+    String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');
+}, 1000);
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.key==='Escape'){
+    document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));
+  }
+});
 </script>
-</body>
-</html>"""
+"""
+
+HTML_PAGE = (
+    "<!DOCTYPE html>\n<html lang='en'>\n<head>\n"
+    "<meta charset='UTF-8'>\n"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>\n"
+    "<title>HydraCast Web UI</title>\n"
+    + _HTML_STYLE
+    + "</head>\n<body>\n"
+    + _HTML_BODY
+    + _HTML_SCRIPT
+    + "\n</body>\n</html>"
+)
+
+
+# =============================================================================
+# WEB HANDLER  —  v3.1: security headers, new endpoints, hardened upload
+# =============================================================================
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options":        "SAMEORIGIN",
+    "X-XSS-Protection":       "1; mode=block",
+    "Referrer-Policy":        "strict-origin",
+    "Cache-Control":          "no-store",
+}
 
 
 class WebHandler(BaseHTTPRequestHandler):
-    """Minimal HTTP handler for the web UI."""
-
     def log_message(self, *args): pass  # suppress default access log
 
     def _send(self, code: int, body: Union[str, bytes], ct: str = "application/json") -> None:
@@ -2017,6 +2502,8 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ct)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
+        for k, v in _SECURITY_HEADERS.items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -2024,21 +2511,20 @@ class WebHandler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(data, default=str), "application/json")
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
-        if path == "/" or path == "/index.html":
+        parsed = urlparse(self.path)
+        path   = parsed.path
+        qs     = parse_qs(parsed.query)
+
+        if path in ("/", "/index.html"):
             self._send(200, HTML_PAGE, "text/html; charset=utf-8")
-        elif path == "/api/streams":
-            self._get_streams()
-        elif path == "/api/streams_config":
-            self._get_streams_config()
-        elif path == "/api/library":
-            self._get_library()
-        elif path == "/api/subdirs":
-            self._get_subdirs()
-        elif path == "/api/events":
-            self._get_events()
-        elif path == "/api/logs":
-            self._get_logs()
+        elif path == "/api/streams":        self._get_streams()
+        elif path == "/api/streams_config": self._get_streams_config()
+        elif path == "/api/library":        self._get_library()
+        elif path == "/api/subdirs":        self._get_subdirs()
+        elif path == "/api/events":         self._get_events()
+        elif path == "/api/logs":           self._get_logs(qs)
+        elif path == "/api/system_stats":   self._get_system_stats()
+        elif path == "/api/stream_detail":  self._get_stream_detail(qs)
         else:
             self._send(404, b"Not Found")
 
@@ -2047,47 +2533,51 @@ class WebHandler(BaseHTTPRequestHandler):
         ct   = self.headers.get("Content-Type","")
 
         if "multipart/form-data" in ct:
-            # file upload
             self._handle_upload()
             return
 
         length = int(self.headers.get("Content-Length", 0))
-        body   = self.rfile.read(length) if length else b"{}"
+        if length > 1 * 1024 * 1024:   # 1 MB max for JSON body
+            self._json({"ok": False, "msg": "Request body too large"}, 413)
+            return
+        body = self.rfile.read(length) if length else b"{}"
         try:
             data = json.loads(body)
         except Exception:
-            data = {}
+            self._json({"ok": False, "msg": "Invalid JSON"}, 400)
+            return
 
         action = path.replace("/api/","")
         self._dispatch(action, data)
 
     def do_OPTIONS(self) -> None:
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin","*")
-        self.send_header("Access-Control-Allow-Methods","GET,POST,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers","Content-Type")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
-    # ── GET handlers ──────────────────────────────────────────────────────────
+    # ── GET endpoints ─────────────────────────────────────────────────────────
     def _get_streams(self) -> None:
         if not _WEB_MANAGER: self._json([]); return
         result = []
         for st in _WEB_MANAGER.states:
             cfg = st.config
             result.append({
-                "name":       cfg.name,
-                "port":       cfg.port,
-                "weekdays":   cfg.weekdays_display(),
-                "status":     st.status.label,
-                "progress":   st.progress,
-                "position":   st.format_pos(),
-                "duration":   st.duration,
-                "fps":        st.fps,
-                "rtsp_url":   cfg.rtsp_url_external,
-                "hls_url":    cfg.hls_url if cfg.hls_enabled else "",
-                "shuffle":    cfg.shuffle,
-                "playlist":   cfg.playlist_display(),
-                "enabled":    cfg.enabled,
+                "name":        cfg.name,
+                "port":        cfg.port,
+                "weekdays":    cfg.weekdays_display(),
+                "status":      st.status.label,
+                "progress":    st.progress,
+                "position":    st.format_pos(),
+                "current_secs": st.current_pos,
+                "duration":    st.duration,
+                "fps":         st.fps,
+                "rtsp_url":    cfg.rtsp_url_external,
+                "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
+                "shuffle":     cfg.shuffle,
+                "playlist":    cfg.playlist_display(),
+                "enabled":     cfg.enabled,
             })
         self._json(result)
 
@@ -2117,23 +2607,25 @@ class WebHandler(BaseHTTPRequestHandler):
                 try:
                     meta = probe_metadata(f)
                     result.append({
-                        "path":        str(f.relative_to(MEDIA_DIR)),
-                        "full_path":   str(f),
-                        "size":        _fmt_size(meta["size"]),
-                        "duration":    _fmt_duration(meta["duration"]) if meta["duration"] else "—",
-                        "video_codec": meta["video_codec"],
-                        "audio_codec": meta["audio_codec"],
-                        "width":       meta["width"],
-                        "height":      meta["height"],
-                        "fps":         meta["fps"],
-                        "bitrate":     meta["bitrate"],
+                        "path":          str(f.relative_to(MEDIA_DIR)),
+                        "full_path":     str(f),
+                        "size":          _fmt_size(meta["size"]),
+                        "size_bytes":    meta["size"],
+                        "duration":      _fmt_duration(meta["duration"]) if meta["duration"] else "—",
+                        "duration_secs": meta["duration"],
+                        "video_codec":   meta["video_codec"],
+                        "audio_codec":   meta["audio_codec"],
+                        "width":         meta["width"],
+                        "height":        meta["height"],
+                        "fps":           meta["fps"],
+                        "bitrate":       meta["bitrate"],
                     })
                 except Exception:
                     pass
         self._json(sorted(result, key=lambda x: x["path"]))
 
     def _get_subdirs(self) -> None:
-        dirs = [""]
+        dirs = []
         for d in MEDIA_DIR.rglob("*"):
             if d.is_dir():
                 dirs.append(str(d.relative_to(MEDIA_DIR)))
@@ -2153,11 +2645,83 @@ class WebHandler(BaseHTTPRequestHandler):
             })
         self._json(result)
 
-    def _get_logs(self) -> None:
-        if not _WEB_MANAGER:
-            self._json({"entries": []}); return
-        entries = _WEB_MANAGER._glog.all()
+    def _get_logs(self, qs: Dict) -> None:
+        if not _WEB_MANAGER: self._json({"entries": []}); return
+        level  = qs.get("level",  ["ALL"])[0].upper()
+        stream = qs.get("stream", [""])[0].strip()
+        try:
+            n = min(1000, int(qs.get("n", ["500"])[0]))
+        except ValueError:
+            n = 500
+        if level not in ("ALL", "INFO", "WARN", "ERROR"): level = "ALL"
+        entries = _WEB_MANAGER._glog.filtered(
+            level=None if level=="ALL" else level,
+            stream=stream or None, n=n)
         self._json({"entries": entries})
+
+    def _get_system_stats(self) -> None:
+        try:
+            cpu  = psutil.cpu_percent(interval=0.15)
+            mem  = psutil.virtual_memory()
+            disk = psutil.disk_usage(str(BASE_DIR))
+            self._json({
+                "cpu":          round(cpu, 1),
+                "mem_percent":  round(mem.percent, 1),
+                "mem_used":     _fmt_size(mem.used),
+                "mem_total":    _fmt_size(mem.total),
+                "disk_percent": round(disk.percent, 1),
+                "disk_used":    _fmt_size(disk.used),
+                "disk_total":   _fmt_size(disk.total),
+            })
+        except Exception as exc:
+            self._json({"error": str(exc)}, 500)
+
+    def _get_stream_detail(self, qs: Dict) -> None:
+        name = qs.get("name", [""])[0].strip()
+        if not _WEB_MANAGER or not name:
+            self._json({"error": "bad request"}, 400); return
+        st = _WEB_MANAGER.get_state(name)
+        if not st:
+            self._json({"error": "not found"}, 404); return
+        cfg = st.config
+        with st._lock:
+            log_snap = list(st.log[-60:])
+        # current playlist index
+        cur_real = st.playlist_order[st.playlist_index] if st.playlist_order else 0
+        playlist = []
+        for i, item in enumerate(cfg.playlist):
+            playlist.append({
+                "file":    item.file_path.name,
+                "path":    str(item.file_path),
+                "start":   item.start_position,
+                "exists":  item.file_path.exists(),
+                "current": (i == cur_real),
+            })
+        self._json({
+            "name":          cfg.name,
+            "port":          cfg.port,
+            "rtsp_url":      cfg.rtsp_url_external,
+            "hls_url":       cfg.hls_url if cfg.hls_enabled else "",
+            "weekdays":      cfg.weekdays_display(),
+            "shuffle":       cfg.shuffle,
+            "video_bitrate": cfg.video_bitrate,
+            "audio_bitrate": cfg.audio_bitrate,
+            "hls_enabled":   cfg.hls_enabled,
+            "status":        st.status.label,
+            "progress":      st.progress,
+            "current_pos":   st.current_pos,
+            "duration":      st.duration,
+            "position":      st.format_pos(),
+            "fps":           st.fps,
+            "bitrate":       st.bitrate,
+            "speed":         st.speed,
+            "loop_count":    st.loop_count,
+            "restart_count": st.restart_count,
+            "error_msg":     st.error_msg,
+            "playlist":      playlist,
+            "log":           log_snap,
+            "started_at":    st.started_at.isoformat() if st.started_at else None,
+        })
 
     # ── POST dispatch ─────────────────────────────────────────────────────────
     def _dispatch(self, action: str, data: Dict) -> None:
@@ -2165,19 +2729,19 @@ class WebHandler(BaseHTTPRequestHandler):
         if not mgr: self._json({"ok": False, "msg": "Manager not ready"}); return
 
         if action == "start":
-            st = mgr.get_state(data.get("name",""))
+            st = mgr.get_state(str(data.get("name","")))
             if st: mgr.start_stream(st); self._json({"ok": True, "msg": f"Starting {st.config.name}"})
-            else: self._json({"ok": False, "msg": "Stream not found"})
+            else:  self._json({"ok": False, "msg": "Stream not found"})
 
         elif action == "stop":
-            st = mgr.get_state(data.get("name",""))
+            st = mgr.get_state(str(data.get("name","")))
             if st: mgr.stop_stream(st); self._json({"ok": True, "msg": f"Stopping {st.config.name}"})
-            else: self._json({"ok": False, "msg": "Stream not found"})
+            else:  self._json({"ok": False, "msg": "Stream not found"})
 
         elif action == "restart":
-            st = mgr.get_state(data.get("name",""))
+            st = mgr.get_state(str(data.get("name","")))
             if st: mgr.restart_stream(st); self._json({"ok": True, "msg": f"Restarting {st.config.name}"})
-            else: self._json({"ok": False, "msg": "Stream not found"})
+            else:  self._json({"ok": False, "msg": "Stream not found"})
 
         elif action == "start_all":
             mgr.start_all(); self._json({"ok": True, "msg": "Starting all streams"})
@@ -2186,28 +2750,49 @@ class WebHandler(BaseHTTPRequestHandler):
             mgr.stop_all(); self._json({"ok": True, "msg": "Stopped all streams"})
 
         elif action == "seek":
-            st = mgr.get_state(data.get("name",""))
-            secs = float(data.get("seconds", 0))
-            if st: mgr.seek_stream(st, secs); self._json({"ok": True, "msg": f"Seeking to {_fmt_duration(secs)}"})
-            else: self._json({"ok": False, "msg": "Stream not found"})
+            st = mgr.get_state(str(data.get("name","")))
+            try:
+                secs = float(data.get("seconds", 0))
+                if secs < 0: raise ValueError("negative")
+            except (TypeError, ValueError):
+                self._json({"ok": False, "msg": "Invalid seek position"}); return
+            if st:
+                mgr.seek_stream(st, secs)
+                self._json({"ok": True, "msg": f"Seeking to {_fmt_duration(secs)}"})
+            else:
+                self._json({"ok": False, "msg": "Stream not found"})
 
         elif action == "save_config":
             try:
                 streams_data = data.get("streams", [])
+                if not isinstance(streams_data, list):
+                    raise ValueError("streams must be a list")
                 configs: List[StreamConfig] = []
                 for row in streams_data:
-                    playlist = CSVManager.parse_files(row.get("files","").replace("\n",";"))
+                    name = str(row.get("name","")).strip()
+                    if not name or len(name) > 64:
+                        raise ValueError("Invalid stream name")
+                    port = int(row.get("port", 0))
+                    if not (1024 <= port <= 65535):
+                        raise ValueError(f"Port {port} out of range")
+                    playlist = CSVManager.parse_files(
+                        str(row.get("files","")).replace("\n",";"))
                     configs.append(StreamConfig(
-                        name=row["name"], port=int(row["port"]),
-                        playlist=playlist,
-                        weekdays=CSVManager.parse_weekdays(row.get("weekdays","all")),
+                        name=name, port=port, playlist=playlist,
+                        weekdays=CSVManager.parse_weekdays(str(row.get("weekdays","all"))),
                         enabled=bool(row.get("enabled", True)),
                         shuffle=bool(row.get("shuffle", False)),
-                        stream_path=row.get("stream_path","stream"),
-                        video_bitrate=row.get("video_bitrate","2500k"),
-                        audio_bitrate=row.get("audio_bitrate","128k"),
+                        stream_path=str(row.get("stream_path","stream")).strip() or "stream",
+                        video_bitrate=CSVManager._sanitize_bitrate(
+                            str(row.get("video_bitrate","2500k")), "2500k"),
+                        audio_bitrate=CSVManager._sanitize_bitrate(
+                            str(row.get("audio_bitrate","128k")), "128k"),
                         hls_enabled=bool(row.get("hls_enabled", False)),
                     ))
+                # Check for duplicate ports
+                ports = [c.port for c in configs]
+                if len(set(ports)) != len(ports):
+                    raise ValueError("Duplicate port numbers")
                 CSVManager.save(configs)
                 self._json({"ok": True, "msg": "Config saved. Restart HydraCast to apply."})
             except Exception as exc:
@@ -2215,15 +2800,41 @@ class WebHandler(BaseHTTPRequestHandler):
 
         elif action == "add_event":
             try:
+                stream_name = str(data.get("stream_name","")).strip()
+                file_path   = str(data.get("file_path","")).strip()
+                play_at     = str(data.get("play_at","")).strip()
+                start_pos   = str(data.get("start_pos","00:00:00")).strip()
+                post_action = str(data.get("post_action","resume")).strip()
+
+                if post_action not in ("resume","stop","black"):
+                    post_action = "resume"
+                if not re.fullmatch(r"\d{2}:\d{2}:\d{2}", start_pos):
+                    start_pos = "00:00:00"
+
+                # Parse datetime from either "YYYY-MM-DDTHH:MM" or "YYYY-MM-DD HH:MM:SS"
+                for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        dt = datetime.strptime(play_at, fmt); break
+                    except ValueError:
+                        continue
+                else:
+                    raise ValueError("Invalid datetime format")
+
+                fp = Path(file_path)
+                safe = _safe_path(fp, MEDIA_DIR)
+                # Allow files outside MEDIA_DIR only if they exist (configured in CSV)
+                if safe is None and not fp.exists():
+                    raise ValueError("File not found or path unsafe")
+
                 ev = OneShotEvent(
                     event_id=hashlib.md5(
-                        f"{data['stream_name']}{data['play_at']}{data['file_path']}".encode()
+                        f"{stream_name}{play_at}{file_path}".encode()
                     ).hexdigest()[:8],
-                    stream_name=data["stream_name"],
-                    file_path=Path(data["file_path"]),
-                    play_at=datetime.strptime(data["play_at"], "%Y-%m-%dT%H:%M"),
-                    post_action=data.get("post_action","resume"),
-                    start_pos=data.get("start_pos","00:00:00"),
+                    stream_name=stream_name,
+                    file_path=fp,
+                    play_at=dt,
+                    post_action=post_action,
+                    start_pos=start_pos,
                 )
                 CSVManager.add_event(mgr.events, ev)
                 self._json({"ok": True, "msg": "Event scheduled"})
@@ -2231,50 +2842,85 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": str(exc)})
 
         elif action == "delete_event":
-            ev_id = data.get("event_id","")
+            ev_id = str(data.get("event_id","")).strip()
+            if not ev_id:
+                self._json({"ok": False, "msg": "Missing event_id"}); return
             mgr.events = [e for e in mgr.events if e.event_id != ev_id]
             CSVManager.save_events(mgr.events)
             self._json({"ok": True, "msg": "Event deleted"})
 
         elif action == "delete_file":
+            raw_path = str(data.get("path","")).strip()
+            if not raw_path:
+                self._json({"ok": False, "msg": "Missing path"}); return
+            p    = Path(raw_path)
+            safe = _safe_path(p, MEDIA_DIR)
+            if safe is None or not safe.is_file():
+                self._json({"ok": False, "msg": "File not in media directory"}); return
             try:
-                p = Path(data.get("path",""))
-                if p.is_file() and MEDIA_DIR in p.parents:
-                    p.unlink(); self._json({"ok": True, "msg": f"Deleted {p.name}"})
-                else:
-                    self._json({"ok": False, "msg": "File not in media dir"})
+                safe.unlink()
+                self._json({"ok": True, "msg": f"Deleted {safe.name}"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
         elif action == "create_subdir":
-            name = data.get("name","").strip().replace("..","")
-            if name:
-                (MEDIA_DIR / name).mkdir(parents=True, exist_ok=True)
-                self._json({"ok": True, "msg": f"Created folder: {name}"})
-            else:
-                self._json({"ok": False, "msg": "Invalid name"})
+            raw  = str(data.get("name","")).strip()
+            # Reject path-traversal attempts and shell-special chars
+            if not raw or re.search(r'[/\\<>"|?*\x00]', raw) or ".." in raw:
+                self._json({"ok": False, "msg": "Invalid folder name"}); return
+            target = MEDIA_DIR / raw
+            safe   = _safe_path(target, MEDIA_DIR)
+            if safe is None:
+                self._json({"ok": False, "msg": "Path traversal denied"}); return
+            try:
+                safe.mkdir(parents=True, exist_ok=True)
+                self._json({"ok": True, "msg": f"Created: {raw}"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"})
 
     def _handle_upload(self) -> None:
-        """Parse multipart upload and save file to MEDIA_DIR."""
         import cgi
         try:
+            # Check Content-Length before reading to enforce server-side cap
+            cl = int(self.headers.get("Content-Length", 0))
+            if cl > UPLOAD_MAX_BYTES:
+                self._json({"ok": False, "msg": "File exceeds 10 GB server limit"}, 413)
+                return
+
             env = {
                 "REQUEST_METHOD": "POST",
                 "CONTENT_TYPE":   self.headers["Content-Type"],
                 "CONTENT_LENGTH": self.headers.get("Content-Length","0"),
             }
-            form = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
-                                    environ=env, keep_blank_values=True)
-            f_item  = form["file"]
-            subdir  = form.getvalue("subdir","").strip().replace("..","")
+            form   = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
+                                      environ=env, keep_blank_values=True)
+            f_item = form["file"]
+            subdir = str(form.getvalue("subdir","")).strip().replace("..","")
+
+            # Validate file extension
+            fname = Path(f_item.filename).name
+            if not fname:
+                self._json({"ok": False, "msg": "Empty filename"}); return
+            ext = Path(fname).suffix.lower()
+            if ext not in SUPPORTED_EXTS:
+                self._json({"ok": False, "msg": f"Unsupported extension: {ext}"}); return
+
+            # Sanitize filename (no path separators or special chars)
+            safe_name = re.sub(r'[^\w.\-]', '_', fname)
+            if not safe_name or safe_name.startswith('.'):
+                self._json({"ok": False, "msg": "Invalid filename"}); return
+
             dest_dir = MEDIA_DIR / subdir if subdir else MEDIA_DIR
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            dest = dest_dir / Path(f_item.filename).name
+            safe_dir = _safe_path(dest_dir, MEDIA_DIR)
+            if safe_dir is None:
+                self._json({"ok": False, "msg": "Invalid upload directory"}); return
+            safe_dir.mkdir(parents=True, exist_ok=True)
+            dest = safe_dir / safe_name
             dest.write_bytes(f_item.file.read())
-            self._json({"ok": True, "msg": f"Saved {dest.name}"})
+            self._json({"ok": True, "msg": f"Saved: {safe_name}"})
         except Exception as exc:
             self._json({"ok": False, "msg": str(exc)}, 500)
 
@@ -2300,7 +2946,7 @@ class WebServer:
 
 
 # =============================================================================
-# TUI
+# TUI  (unchanged from v3.0 except version bump)
 # =============================================================================
 BANNER_TEXT = """\
 [bright_cyan]  ██╗  ██╗██╗   ██╗██████╗ ██████╗  █████╗  ██████╗ █████╗ ███████╗████████╗[/]
@@ -2355,7 +3001,7 @@ class TUI:
                 stat_t.append(f" {s.dot} ", style=s.color); stat_t.append(s.label, style=f"bold {s.color}")
             row_style    = "on grey11" if i == self.selected else ""
             name_display = f"▶ {cfg.name}" if i == self.selected else f"  {cfg.name}"
-            if cfg.shuffle: name_display += " ⧖"
+            if cfg.shuffle:     name_display += " ⧖"
             if cfg.hls_enabled: name_display += " [H]"
             n_files = len(cfg.playlist)
             tbl.add_row(
@@ -2496,7 +3142,6 @@ class KeyboardHandler:
                     r2, _, _ = select.select([sys.stdin], [], [], 0.05)
                     if r2:
                         seq = sys.stdin.read(2)
-                        # check for shift modifier sequences
                         if seq in ("[1", "[2"):
                             r3, _, _ = select.select([sys.stdin], [], [], 0.05)
                             if r3:
@@ -2517,10 +3162,9 @@ class KeyboardHandler:
 
 
 # =============================================================================
-# SEEK PROMPT  (pauses Live, gets input, resumes)
+# SEEK PROMPT  (TUI — blocking input)
 # =============================================================================
 def do_seek_prompt(manager: StreamManager, state: StreamState, console: Console) -> None:
-    """Show a blocking prompt asking for a timestamp to seek to."""
     try:
         ts = Prompt.ask(
             f"\n[{CC}]Seek [{state.config.name}] to (HH:MM:SS or seconds)[/{CC}]",
@@ -2528,14 +3172,12 @@ def do_seek_prompt(manager: StreamManager, state: StreamState, console: Console)
         )
         parts = ts.strip().split(":")
         if len(parts) == 3:
-            h, m, s = parts
-            secs = int(h)*3600 + int(m)*60 + float(s)
+            h, m, s = parts; secs = int(h)*3600 + int(m)*60 + float(s)
         elif len(parts) == 2:
-            m, s = parts
-            secs = int(m)*60 + float(s)
+            m, s = parts; secs = int(m)*60 + float(s)
         else:
             secs = float(parts[0])
-        manager.seek_stream(state, secs)
+        manager.seek_stream(state, max(0.0, secs))
     except Exception:
         pass
 
@@ -2620,7 +3262,7 @@ def _preflight(console: Console) -> List[StreamConfig]:
 def main() -> None:
     global NO_FIREWALL, LISTEN_ADDR, WEB_PORT, _WEB_MANAGER
 
-    args = _parse_args()
+    args        = _parse_args()
     NO_FIREWALL = args.no_firewall
     LISTEN_ADDR = args.listen
     WEB_PORT    = args.web_port
@@ -2646,7 +3288,7 @@ def main() -> None:
 
     glog    = LogBuffer()
     manager = StreamManager(configs, glog)
-    _WEB_MANAGER = manager  # expose to web handler
+    _WEB_MANAGER = manager
 
     tui = TUI(manager, glog)
     kb  = KeyboardHandler()
@@ -2665,7 +3307,6 @@ def main() -> None:
         url_file = manager.export_urls()
         glog.add(f"Stream URLs exported → {url_file.name}")
 
-    # Start web UI
     web: Optional[WebServer] = None
     if not args.no_web:
         web = WebServer(WEB_PORT)
@@ -2706,23 +3347,19 @@ def main() -> None:
                     glog.add("Stop-all triggered."); manager.stop_all()
                 elif key == "RIGHT" and state:
                     if state.status == StreamStatus.LIVE:
-                        new_pos = state.current_pos + 10.0
-                        manager.seek_stream(state, new_pos)
+                        manager.seek_stream(state, state.current_pos + 10.0)
                         glog.add(f"Seek +10s → {state.config.name}")
                 elif key == "LEFT" and state:
                     if state.status == StreamStatus.LIVE:
-                        new_pos = max(0.0, state.current_pos - 10.0)
-                        manager.seek_stream(state, new_pos)
+                        manager.seek_stream(state, max(0.0, state.current_pos - 10.0))
                         glog.add(f"Seek -10s → {state.config.name}")
                 elif key == "SHIFTRIGHT" and state:
                     if state.status == StreamStatus.LIVE:
-                        new_pos = state.current_pos + 60.0
-                        manager.seek_stream(state, new_pos)
+                        manager.seek_stream(state, state.current_pos + 60.0)
                         glog.add(f"Seek +60s → {state.config.name}")
                 elif key == "SHIFTLEFT" and state:
                     if state.status == StreamStatus.LIVE:
-                        new_pos = max(0.0, state.current_pos - 60.0)
-                        manager.seek_stream(state, new_pos)
+                        manager.seek_stream(state, max(0.0, state.current_pos - 60.0))
                         glog.add(f"Seek -60s → {state.config.name}")
                 elif key == "G" and state:
                     live.stop()
