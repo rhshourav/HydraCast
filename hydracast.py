@@ -10,26 +10,22 @@
 #
 #  HydraCast  —  Multi-Stream RTSP Weekly Scheduler
 #  Author  : rhshourav
-#  Version : 3.1.0
+#  Version : 4.0.0
 #  GitHub  : https://github.com/rhshourav/HydraCast
 #  License : MIT
 #
-#  v3.1 changelog (fixes over v3.0)
-#  ─────────────────────────────────
-#  FIXED    Seek race condition: _seeking Event flag prevents _monitor()
-#           from triggering auto-restart when FFmpeg is killed intentionally
-#           for a seek operation → no more phantom auto-restart loops
-#  FIXED    _start_lock prevents concurrent start() calls colliding
-#  FIXED    _monitor() captures proc reference; ignores exits from replaced procs
-#  FIXED    restart_count resets to 0 on a clean successful start
-#  FIXED    SyntaxWarning: \W → \\W in Python strings containing JS regex
-#  FIXED    Multiple MediaMTX instances: _auto_restart kills existing before spawn
-#  IMPROVED Web UI: inline seek slider per stream, stream detail modal,
-#           system stats panel, per-level log filtering, security headers,
-#           upload size cap, path-traversal guard, rate-limit headers
-#  NEW      GET /api/system_stats — CPU / RAM / disk
-#  NEW      GET /api/stream_detail?name=X — full state + playlist + log tail
-#  NEW      GET /api/logs with ?level=INFO&stream=X&n=200 filter params
+#  v4.0 changelog
+#  ─────────────
+#  NEW      Complete Web UI redesign — production-grade dark glassmorphism aesthetic
+#  NEW      Animated progress bars (larger, click-to-seek, live drag-seek)
+#  NEW      Live HLS/RTSP preview panel inside seek modal
+#  NEW      Multi-video playlist manager — drag-to-reorder, priority system
+#  NEW      Upload fixed: root dir is script's directory, multi-subdir support
+#  NEW      Playlist priority column (#N) in CSV and editor
+#  NEW      Stream detail modal with live stats refresh
+#  NEW      Keyboard shortcuts overlay in Web UI
+#  FIXED    All v3.1 seek/race-condition fixes retained
+#  IMPROVED Security headers, path-traversal guard, upload size cap
 # =============================================================================
 
 import os
@@ -63,7 +59,6 @@ from enum import Enum
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, unquote
 
-# ── Python guard ──────────────────────────────────────────────────────────────
 if sys.version_info < (3, 8):
     sys.exit("HydraCast requires Python 3.8 or newer.")
 
@@ -71,8 +66,7 @@ if sys.version_info < (3, 8):
 def _bootstrap() -> None:
     import importlib
     needed = {"rich": "rich>=13.0", "psutil": "psutil>=5.9"}
-    missing = [pkg for mod, pkg in needed.items()
-               if not importlib.util.find_spec(mod)]
+    missing = [pkg for mod, pkg in needed.items() if not importlib.util.find_spec(mod)]
     if not missing:
         return
     print(f"[HydraCast] Installing: {', '.join(missing)} …")
@@ -100,7 +94,7 @@ import psutil
 # CONSTANTS & PATHS
 # =============================================================================
 APP_NAME   = "HydraCast"
-APP_VER    = "3.1.0"
+APP_VER    = "4.0.0"
 APP_AUTHOR = "rhshourav"
 APP_GITHUB = "https://github.com/rhshourav/HydraCast"
 
@@ -115,11 +109,11 @@ BASE_DIR    = Path(__file__).parent.resolve()
 BIN_DIR     = BASE_DIR / "bin"
 CONFIGS_DIR = BASE_DIR / "configs"
 LOGS_DIR    = BASE_DIR / "logs"
-MEDIA_DIR   = BASE_DIR / "media"
+MEDIA_DIR   = BASE_DIR / "media"       # root upload dir = script folder/media
 CSV_FILE    = BASE_DIR / "streams.csv"
 EVENTS_FILE = BASE_DIR / "events.csv"
 WEB_PORT    = 8080
-UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB hard cap
+UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
 
 for _d in (BIN_DIR, CONFIGS_DIR, LOGS_DIR, MEDIA_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -159,26 +153,25 @@ SUPPORTED_EXTS = {
     ".mp3", ".aac", ".flac", ".wav", ".ogg", ".m4a",
 }
 
-# Rich colours
 CG = "bright_green"; CR = "bright_red"; CY = "yellow"
 CC = "bright_cyan";  CW = "white";       CD = "dim white"
 CM = "bright_magenta"; CB = "bright_blue"
 
-NO_FIREWALL = False
-LISTEN_ADDR = "0.0.0.0"
+NO_FIREWALL  = False
+LISTEN_ADDR  = "0.0.0.0"
 _MANAGER: Optional["StreamManager"] = None
 
 
 # =============================================================================
-# DATA MODELS  (unchanged from v3.0)
+# DATA MODELS
 # =============================================================================
 class StreamStatus(Enum):
-    STOPPED   = ("●", "dim white",    "STOPPED")
-    STARTING  = ("◌", "yellow",       "STARTING")
-    LIVE      = ("●", "bright_green", "LIVE")
-    SCHEDULED = ("◷", "bright_cyan",  "SCHED")
-    ERROR     = ("●", "bright_red",   "ERROR")
-    DISABLED  = ("⊘", "dim",          "DISABLED")
+    STOPPED   = ("●", "dim white",     "STOPPED")
+    STARTING  = ("◌", "yellow",        "STARTING")
+    LIVE      = ("●", "bright_green",  "LIVE")
+    SCHEDULED = ("◷", "bright_cyan",   "SCHED")
+    ERROR     = ("●", "bright_red",    "ERROR")
+    DISABLED  = ("⊘", "dim",           "DISABLED")
     ONESHOT   = ("◈", "bright_magenta","ONESHOT")
 
     @property
@@ -205,6 +198,7 @@ class PlaylistItem:
     file_path:      Path
     start_position: str = "00:00:00"
     weight:         int = 1
+    priority:       int = 999   # lower = plays earlier
 
 
 @dataclass
@@ -258,6 +252,10 @@ class StreamConfig:
         if n == 1:   return self.playlist[0].file_path.name
         return f"{self.playlist[0].file_path.name} (+{n-1} more)"
 
+    def sorted_playlist(self) -> List[PlaylistItem]:
+        """Return playlist sorted by priority (ascending)."""
+        return sorted(self.playlist, key=lambda x: (x.priority, str(x.file_path)))
+
 
 @dataclass
 class StreamState:
@@ -286,7 +284,7 @@ class StreamState:
         ts = datetime.now().strftime("%H:%M:%S")
         with self._lock:
             self.log.append(f"[{ts}] {msg}")
-            if len(self.log) > 300:
+            if len(self.log) > 400:
                 self.log.pop(0)
 
     def format_pos(self) -> str:
@@ -364,7 +362,7 @@ def _fmt_duration(s: float) -> str:
 
 
 def _safe_path(p: Path, root: Path) -> Optional[Path]:
-    """Return resolved path only if it is inside root; else None (path-traversal guard)."""
+    """Return resolved path only if it is inside root; else None."""
     try:
         resolved = p.resolve()
         root_resolved = root.resolve()
@@ -547,10 +545,10 @@ CSV_COLUMNS = [
 ]
 
 CSV_TEMPLATE_ROWS = [
-    ["Stream_1","8554","/path/to/video.mp4","ALL","true","false","stream","2500k","128k","false"],
-    ["Stream_2","8555","/path/to/a.mp4@00:05:00;/path/to/b.mkv","Mon|Wed|Fri","true","false","ch2","4000k","192k","false"],
-    ["Stream_3","8556","/media/demo.mp4","Sat|Sun","false","true","ch3","1500k","128k","false"],
-    ["Stream_4","8557","/media/show.mp4","Weekdays","true","false","ch4","2500k","128k","true"],
+    ["Stream_1","8554","/path/to/video.mp4@00:00:00#1","ALL","true","false","stream","2500k","128k","false"],
+    ["Stream_2","8555","/path/to/a.mp4@00:05:00#1;/path/to/b.mkv@00:00:00#2","Mon|Wed|Fri","true","false","ch2","4000k","192k","false"],
+    ["Stream_3","8556","/media/demo.mp4@00:00:00#1","Sat|Sun","false","true","ch3","1500k","128k","false"],
+    ["Stream_4","8557","/media/show.mp4@00:00:00#1","Weekdays","true","false","ch4","2500k","128k","true"],
 ]
 
 EVENTS_COLUMNS = ["event_id","stream_name","file_path","play_at","post_action","start_pos"]
@@ -596,10 +594,21 @@ class CSVManager:
 
     @staticmethod
     def parse_files(raw: str) -> List[PlaylistItem]:
+        """
+        Format: path@HH:MM:SS#priority;path@HH:MM:SS#priority
+        Priority (#N) is optional, defaults to 999.
+        """
         items: List[PlaylistItem] = []
         for part in raw.split(";"):
             part = part.strip()
             if not part: continue
+            priority = 999
+            # parse priority suffix #N
+            if "#" in part:
+                main, pri_str = part.rsplit("#", 1)
+                part = main.strip()
+                try: priority = int(pri_str.strip())
+                except ValueError: pass
             if "@" in part:
                 path_str, pos = part.rsplit("@", 1)
                 path_str = path_str.strip(); pos = pos.strip()
@@ -613,7 +622,11 @@ class CSVManager:
                 pos = f"{int(h):02d}:{int(m):02d}:{int(float(s)):02d}"
             except Exception:
                 pos = "00:00:00"
-            items.append(PlaylistItem(file_path=Path(path_str), start_position=pos))
+            items.append(PlaylistItem(
+                file_path=Path(path_str),
+                start_position=pos,
+                priority=priority,
+            ))
         return items
 
     @classmethod
@@ -648,8 +661,10 @@ class CSVManager:
                 vid_br    = cls._sanitize_bitrate(row.get("video_bitrate","2500k"),"2500k")
                 aud_br    = cls._sanitize_bitrate(row.get("audio_bitrate","128k"), "128k")
                 hls_en    = cls.parse_bool(row.get("hls_enabled","false"))
+                # Sort playlist by priority
+                sorted_pl = sorted(playlist, key=lambda x: x.priority)
                 configs.append(StreamConfig(
-                    name=name, port=port, playlist=playlist,
+                    name=name, port=port, playlist=sorted_pl,
                     weekdays=weekdays, enabled=enabled, shuffle=shuffle,
                     stream_path=spath, video_bitrate=vid_br, audio_bitrate=aud_br,
                     hls_enabled=hls_en, row_index=i-2,
@@ -669,7 +684,8 @@ class CSVManager:
             w = csv.writer(f); w.writerow(CSV_COLUMNS)
             for c in configs:
                 files_str = ";".join(
-                    f"{item.file_path}@{item.start_position}" for item in c.playlist
+                    f"{item.file_path}@{item.start_position}#{item.priority}"
+                    for item in c.playlist
                 )
                 w.writerow([
                     c.name, c.port, files_str,
@@ -871,7 +887,7 @@ class LogBuffer:
 
 
 # =============================================================================
-# STREAM WORKER  —  v3.1 FIXED
+# STREAM WORKER  —  v3.1 FIXES RETAINED
 # =============================================================================
 class StreamWorker:
     MAX_AUTO_RESTARTS = 8
@@ -884,9 +900,8 @@ class StreamWorker:
         self.state  = state
         self.glog   = glog
         self._stop  = threading.Event()
-        # ── v3.1 fixes ────────────────────────────────────────────────────────
-        self._seeking    = threading.Event()   # set during seek; suppresses auto-restart
-        self._start_lock = threading.Lock()    # prevents concurrent start() calls
+        self._seeking    = threading.Event()
+        self._start_lock = threading.Lock()
 
     def _log(self, msg: str, level: str = "INFO") -> None:
         full = f"[{self.state.config.name}] {msg}"
@@ -895,7 +910,6 @@ class StreamWorker:
             logging.WARNING if level == "WARN" else
             (logging.ERROR if level == "ERROR" else logging.INFO), full)
 
-    # ── Playlist helpers ──────────────────────────────────────────────────────
     def _build_order(self) -> List[int]:
         n = len(self.state.config.playlist)
         order = list(range(n))
@@ -918,9 +932,7 @@ class StreamWorker:
             if self.state.config.shuffle:
                 self.state.playlist_order = self._build_order()
 
-    # ── Public API ────────────────────────────────────────────────────────────
     def start(self, seek_override: Optional[float] = None) -> bool:
-        # FIX: _start_lock prevents two concurrent calls (e.g. manual + auto-restart)
         if not self._start_lock.acquire(blocking=False):
             self._log("start() already in progress — skipping duplicate call.", "WARN")
             return False
@@ -981,7 +993,7 @@ class StreamWorker:
 
         self.state.status      = StreamStatus.LIVE
         self.state.started_at  = datetime.now()
-        self.state.restart_count = 0   # FIX: reset on clean successful start
+        self.state.restart_count = 0
         self._log(f"Live → {cfg.rtsp_url}")
         if cfg.hls_enabled: self._log(f"HLS → {cfg.hls_url}")
 
@@ -1006,11 +1018,7 @@ class StreamWorker:
         self.start(seek_override=seek)
 
     def seek(self, seconds: float) -> None:
-        """
-        FIX v3.1: Sets _seeking BEFORE killing FFmpeg so _monitor() knows
-        this is an intentional kill, not an error → no phantom auto-restart.
-        """
-        self._seeking.set()                              # ← signal BEFORE kill
+        self._seeking.set()
         self._log(f"Seeking to {_fmt_duration(seconds)} …")
         self._kill_ffmpeg()
         time.sleep(0.4)
@@ -1019,7 +1027,28 @@ class StreamWorker:
             self._seeking.clear(); return
         self.state.duration = probe_duration(item.file_path)
         self._start_ffmpeg(item, max(0.0, seconds))
-        self._seeking.clear()                            # ← clear AFTER new proc ready
+        self._seeking.clear()
+        self.state.status = StreamStatus.LIVE
+        threading.Thread(target=self._monitor, daemon=True,
+                         name=f"mon-{self.state.config.port}").start()
+
+    def skip_to_next(self) -> None:
+        """Skip to next file in playlist."""
+        self._seeking.set()
+        self._advance_playlist()
+        self._kill_ffmpeg()
+        time.sleep(0.3)
+        item = self._current_item()
+        if item is None:
+            self._seeking.clear(); return
+        self.state.duration = probe_duration(item.file_path)
+        try:
+            h, m, s = item.start_position.split(":")
+            spos = int(h)*3600 + int(m)*60 + float(s)
+        except Exception:
+            spos = 0.0
+        self._start_ffmpeg(item, spos)
+        self._seeking.clear()
         self.state.status = StreamStatus.LIVE
         threading.Thread(target=self._monitor, daemon=True,
                          name=f"mon-{self.state.config.port}").start()
@@ -1080,7 +1109,6 @@ class StreamWorker:
         except Exception as exc:
             self._log(f"Black screen launch failed: {exc}", "ERROR")
 
-    # ── launchers ─────────────────────────────────────────────────────────────
     def _start_mediamtx(self, cfg_file: Path) -> bool:
         log_f = LOGS_DIR / f"mediamtx_{self.state.config.port}.log"
         try:
@@ -1148,16 +1176,14 @@ class StreamWorker:
             self.state.error_msg = f"FFmpeg launch failed: {exc}"
             self._log(self.state.error_msg, "ERROR"); return False
 
-    # ── monitor ───────────────────────────────────────────────────────────────
     def _monitor(self) -> None:
         proc = self.state.ffmpeg_proc
         if proc is None: return
-        my_proc = proc                     # FIX: capture reference at start
+        my_proc = proc
         buf: Dict[str,str] = {}
 
         while not self._stop.is_set():
             if my_proc.poll() is not None: break
-            # FIX: if seek replaced the proc, our job here is done
             if self.state.ffmpeg_proc is not my_proc: return
             try:
                 line = my_proc.stdout.readline()
@@ -1170,12 +1196,10 @@ class StreamWorker:
             except Exception:
                 time.sleep(0.05)
 
-        # ── post-exit logic ───────────────────────────────────────────────────
-        if self._stop.is_set():                   return   # deliberate stop
-        if self._seeking.is_set():                return   # FIX: seek will handle it
-        if self.state.ffmpeg_proc is not my_proc: return   # FIX: already replaced
+        if self._stop.is_set():                   return
+        if self._seeking.is_set():                return
+        if self.state.ffmpeg_proc is not my_proc: return
 
-        # Playlist advance for multi-file streams
         if not self.state.oneshot_active and len(self.state.config.playlist) > 1:
             self._advance_playlist()
             next_item = self._current_item()
@@ -1221,7 +1245,6 @@ class StreamWorker:
         except Exception: pass
 
     def _auto_restart(self) -> None:
-        # FIX: don't auto-restart if a seek is in progress
         if self._seeking.is_set():
             self._log("Skipping auto-restart: seek in progress.", "WARN")
             return
@@ -1236,7 +1259,6 @@ class StreamWorker:
             time.sleep(0.1)
         if not self._stop.is_set() and not self._seeking.is_set():
             self.state.restart_count += 1
-            # FIX: kill existing MediaMTX before spawning a new one
             self._kill_mediamtx()
             time.sleep(0.3)
             self.start()
@@ -1304,6 +1326,12 @@ class StreamManager:
         if w:
             threading.Thread(target=lambda: w.seek(seconds), daemon=True,
                              name=f"seek-{state.config.port}").start()
+
+    def skip_next(self, state: StreamState) -> None:
+        w = self._workers.get(state.config.name)
+        if w:
+            threading.Thread(target=w.skip_to_next, daemon=True,
+                             name=f"skip-{state.config.port}").start()
 
     def start_all(self) -> None:
         for s in self.states:
@@ -1390,240 +1418,415 @@ class StreamManager:
 
 
 # =============================================================================
-# WEB UI  —  v3.1 enhanced HTML
-#   NOTE: all JavaScript /regex/ patterns with backslash use \\  so Python
-#   does not emit SyntaxWarning for invalid escape sequences.
+# WEB UI HTML  —  v4.0 Production Redesign
 # =============================================================================
 _WEB_MANAGER: Optional[StreamManager] = None
 
-# ─── The HTML is assembled from parts so Python escape issues are minimal ─────
-_HTML_STYLE = """
+_HTML_PAGE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HydraCast — Stream Manager</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
 :root{
-  --bg:#0a0e14;--bg2:#0d1117;--bg3:#161b22;--bg4:#21262d;
-  --border:#21262d;--border2:#30363d;
-  --text:#cdd6f4;--muted:#6c7086;--faint:#313244;
-  --green:#a6e3a1;--red:#f38ba8;--yellow:#f9e2af;
-  --blue:#89b4fa;--purple:#cba6f7;--cyan:#89dceb;
-  --orange:#fab387;--teal:#94e2d5;--pink:#f5c2e7;
-  --green-dim:rgba(166,227,161,.12);--red-dim:rgba(243,139,168,.12);
-  --blue-dim:rgba(137,180,250,.12);--yellow-dim:rgba(249,226,175,.12);
-  --radius:8px;--radius-sm:5px;
-  --font-mono:'JetBrains Mono','Cascadia Code','Fira Code',monospace;
+  --bg:       #03070d;
+  --bg2:      #060c14;
+  --bg3:      #0a121d;
+  --bg4:      #0f1c2a;
+  --bg5:      #162435;
+  --border:   #162030;
+  --border2:  #1e3040;
+  --text:     #ddeeff;
+  --muted:    #4a6a88;
+  --faint:    #0c1824;
+  --green:    #39e07a;
+  --red:      #ff5a6e;
+  --yellow:   #f7c35f;
+  --blue:     #3eb8fa;
+  --purple:   #a87efa;
+  --cyan:     #1ee8cc;
+  --orange:   #ff8a4c;
+  --teal:     #1ecfc7;
+  --pink:     #f06aaa;
+  --green-g:  rgba(57,224,122,.07);
+  --red-g:    rgba(255,90,110,.07);
+  --blue-g:   rgba(62,184,250,.07);
+  --yellow-g: rgba(247,195,95,.07);
+  --purple-g: rgba(168,126,250,.07);
+  --r:10px; --rs:6px; --rxs:4px;
+  --font:'Syne',system-ui,sans-serif;
+  --mono:'IBM Plex Mono','JetBrains Mono',monospace;
+  --shadow: 0 8px 32px rgba(0,0,0,.6);
+  --glow-b: 0 0 24px rgba(62,184,250,.18);
+  --glow-g: 0 0 24px rgba(57,224,122,.18);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font:13px/1.6 'Inter','Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);color:var(--text);
+  font:14px/1.6 var(--font);min-height:100vh;overflow-x:hidden;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 100% 0%,rgba(62,184,250,.05) 0%,transparent 55%),
+    radial-gradient(ellipse 50% 70% at 0% 100%,rgba(168,126,250,.04) 0%,transparent 55%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Crect width='60' height='60' fill='none'/%3E%3Cpath d='M0 60L60 0M-10 10L10-10M50 70L70 50' stroke='rgba(62,184,250,.03)' stroke-width='1'/%3E%3C/svg%3E");
+}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
-/* ── Layout ── */
-.shell{display:grid;grid-template-rows:auto 1fr;min-height:100vh}
+/* ── HEADER ─────────────────────────────── */
 header{
-  background:var(--bg2);border-bottom:1px solid var(--border2);
-  padding:0 20px;height:52px;display:flex;align-items:center;gap:14px;
-  position:sticky;top:0;z-index:50;
+  height:58px;background:rgba(6,12,20,.92);backdrop-filter:blur(24px);
+  border-bottom:1px solid var(--border2);
+  display:flex;align-items:center;gap:16px;padding:0 26px;
+  position:sticky;top:0;z-index:100;
+  box-shadow:0 1px 0 rgba(62,184,250,.06),0 8px 32px rgba(0,0,0,.5);
 }
-header .logo{font-size:20px;font-weight:700;color:var(--blue);letter-spacing:.04em;font-family:var(--font-mono)}
-header .ver{color:var(--muted);font-size:11px;font-family:var(--font-mono)}
-.hdr-stats{display:flex;gap:16px;margin-left:12px}
-.hdr-stat{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
-.hdr-stat .val{color:var(--text);font-weight:600;font-family:var(--font-mono)}
-.hdr-stat .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-.dot-live{background:var(--green);box-shadow:0 0 6px var(--green)}
-.dot-err{background:var(--red);box-shadow:0 0 6px var(--red)}
-nav{display:flex;gap:2px;margin-left:auto}
+.logo-wrap{display:flex;align-items:center;gap:10px;text-decoration:none}
+.logo-badge{
+  width:34px;height:34px;border-radius:9px;
+  background:linear-gradient(135deg,#0b2a52,#0a4a6e);
+  border:1px solid rgba(62,184,250,.3);
+  display:grid;place-items:center;font-size:18px;
+  box-shadow:0 0 16px rgba(62,184,250,.25),inset 0 1px 0 rgba(255,255,255,.08);
+  animation:logo-pulse 4s ease-in-out infinite;
+}
+@keyframes logo-pulse{0%,100%{box-shadow:0 0 16px rgba(62,184,250,.25),inset 0 1px 0 rgba(255,255,255,.08)}
+  50%{box-shadow:0 0 28px rgba(62,184,250,.45),inset 0 1px 0 rgba(255,255,255,.12)}}
+.logo-text{font-size:20px;font-weight:800;color:var(--blue);letter-spacing:.08em;font-family:var(--mono)}
+.logo-ver{font-size:10px;color:var(--muted);font-family:var(--mono);
+  background:var(--bg4);border:1px solid var(--border2);padding:1px 7px;border-radius:10px}
+.hdr-stats{display:flex;gap:20px;margin-left:10px;align-items:center}
+.hdr-stat{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.hdr-stat .v{color:var(--text);font-weight:600}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green);animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+nav{
+  display:flex;gap:1px;margin-left:auto;
+  background:var(--bg3);border:1px solid var(--border2);
+  border-radius:9px;padding:3px;
+}
 nav button{
-  background:none;border:none;border-radius:var(--radius-sm);
-  color:var(--muted);padding:7px 13px;cursor:pointer;font-size:12px;
-  font-weight:500;transition:.15s;letter-spacing:.02em;
+  background:none;border:none;border-radius:7px;
+  color:var(--muted);padding:6px 15px;cursor:pointer;font-size:12px;font-weight:600;
+  transition:all .2s;letter-spacing:.03em;font-family:var(--font);white-space:nowrap;
 }
-nav button.active{background:var(--blue-dim);color:var(--blue)}
-nav button:hover:not(.active){background:var(--faint);color:var(--text)}
-.container{max-width:1340px;margin:0 auto;padding:18px 20px}
+nav button.active{background:var(--blue-g);color:var(--blue);box-shadow:inset 0 0 0 1px rgba(62,184,250,.3)}
+nav button:hover:not(.active){background:rgba(255,255,255,.04);color:var(--text)}
 
-/* ── Panels ── */
-.panel{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);margin-bottom:16px;overflow:hidden}
+/* ── LAYOUT ─────────────────────────────── */
+.container{max-width:1540px;margin:0 auto;padding:22px 26px}
+.tab-content{display:none;animation:fadeUp .22s ease both}
+.tab-content.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ── PANEL ───────────────────────────────── */
+.panel{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
+  margin-bottom:18px;overflow:hidden;
+  box-shadow:0 2px 20px rgba(0,0,0,.35);
+  transition:border-color .25s,box-shadow .25s;
+}
+.panel:hover{border-color:var(--border2);box-shadow:0 4px 32px rgba(0,0,0,.5)}
 .panel-hdr{
-  background:var(--bg3);padding:10px 16px;font-weight:600;font-size:12px;
-  border-bottom:1px solid var(--border2);display:flex;align-items:center;gap:8px;
-  letter-spacing:.04em;text-transform:uppercase;color:var(--muted);
+  background:linear-gradient(90deg,var(--bg3),var(--bg2));
+  padding:13px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
 }
-.panel-hdr .title{color:var(--text)}
-.panel-body{padding:16px}
+.panel-title{font-size:13px;font-weight:700;color:var(--text);letter-spacing:.04em}
+.panel-sub{font-size:10.5px;color:var(--muted);font-family:var(--mono);margin-left:6px}
+.panel-body{padding:20px}
 
-/* ── Tables ── */
+/* ── TABLE ───────────────────────────────── */
+.tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:8px 12px;color:var(--muted);font-weight:500;font-size:11px;
-   border-bottom:1px solid var(--border2);text-transform:uppercase;letter-spacing:.06em}
-td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
+th{
+  text-align:left;padding:10px 14px;color:var(--muted);font-weight:600;font-size:10px;
+  border-bottom:1px solid var(--border2);text-transform:uppercase;letter-spacing:.1em;
+  font-family:var(--mono);white-space:nowrap;
+}
+td{padding:11px 14px;border-bottom:1px solid rgba(22,32,48,.8);font-size:12.5px;vertical-align:middle}
 tr:last-child td{border-bottom:none}
-tbody tr:hover td{background:rgba(255,255,255,.02)}
+tbody tr{transition:background .12s}
+tbody tr:hover td{background:rgba(62,184,250,.025)}
+tbody tr.row-live td:first-child{border-left:2px solid var(--green)}
 
-/* ── Badges ── */
-.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.06em}
-.badge::before{content:'●';font-size:8px}
-.badge-LIVE{background:var(--green-dim);color:var(--green);border:1px solid rgba(166,227,161,.3)}
-.badge-STOPPED{background:rgba(108,112,134,.08);color:var(--muted);border:1px solid var(--border2)}
-.badge-ERROR{background:var(--red-dim);color:var(--red);border:1px solid rgba(243,139,168,.3)}
-.badge-SCHED{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(137,180,250,.3)}
-.badge-DISABLED{background:rgba(108,112,134,.05);color:var(--muted);border:1px dashed var(--border2)}
-.badge-STARTING{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(249,226,175,.3)}
-.badge-ONESHOT{background:rgba(203,166,247,.12);color:var(--purple);border:1px solid rgba(203,166,247,.3)}
+/* ── BADGES ─────────────────────────────── */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;
+  letter-spacing:.07em;font-family:var(--mono);white-space:nowrap;
+}
+.bdot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.badge-LIVE{background:rgba(57,224,122,.1);color:var(--green);border:1px solid rgba(57,224,122,.3)}
+.badge-LIVE .bdot{background:var(--green);box-shadow:0 0 5px var(--green);animation:blink 2s ease-in-out infinite}
+.badge-STOPPED{background:rgba(74,106,136,.06);color:var(--muted);border:1px solid var(--border)}
+.badge-ERROR{background:rgba(255,90,110,.1);color:var(--red);border:1px solid rgba(255,90,110,.3)}
+.badge-SCHED{background:var(--blue-g);color:var(--blue);border:1px solid rgba(62,184,250,.25)}
+.badge-DISABLED{background:rgba(74,106,136,.04);color:var(--muted);border:1px dashed var(--border)}
+.badge-STARTING{background:var(--yellow-g);color:var(--yellow);border:1px solid rgba(247,195,95,.3)}
+.badge-ONESHOT{background:var(--purple-g);color:var(--purple);border:1px solid rgba(168,126,250,.3)}
 
-/* ── Buttons ── */
+/* ── BUTTONS ─────────────────────────────── */
 .btn{
-  display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:var(--radius-sm);
-  border:1px solid var(--border2);cursor:pointer;font-size:11px;font-weight:600;
-  background:var(--bg4);color:var(--text);transition:.15s;white-space:nowrap;
-  letter-spacing:.02em;font-family:inherit;
+  display:inline-flex;align-items:center;gap:5px;padding:7px 15px;
+  border-radius:var(--rs);border:1px solid var(--border2);
+  cursor:pointer;font-size:11.5px;font-weight:700;
+  background:var(--bg4);color:var(--text);
+  transition:all .18s;white-space:nowrap;letter-spacing:.03em;font-family:var(--font);
 }
-.btn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-dim)}
-.btn-sm{padding:3px 9px;font-size:10px}
-.btn-danger:hover{border-color:var(--red);color:var(--red);background:var(--red-dim)}
-.btn-success:hover{border-color:var(--green);color:var(--green);background:var(--green-dim)}
-.btn-primary{background:rgba(137,180,250,.15);border-color:rgba(137,180,250,.4);color:var(--blue)}
-.btn-primary:hover{background:var(--blue);color:#0a0e14}
+.btn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-g);box-shadow:var(--glow-b)}
+.btn:active{transform:scale(.96)}
+.btn-sm{padding:4px 11px;font-size:10.5px;border-radius:var(--rxs)}
+.btn-xs{padding:2px 8px;font-size:10px;border-radius:var(--rxs)}
+.btn-danger{color:var(--red);border-color:rgba(255,90,110,.3);background:var(--red-g)}
+.btn-danger:hover{border-color:var(--red);box-shadow:0 0 16px rgba(255,90,110,.2)}
+.btn-success{color:var(--green);border-color:rgba(57,224,122,.3);background:var(--green-g)}
+.btn-success:hover{border-color:var(--green);box-shadow:var(--glow-g)}
+.btn-primary{background:rgba(62,184,250,.1);border-color:rgba(62,184,250,.4);color:var(--blue)}
+.btn-primary:hover{background:var(--blue);color:#03070d;border-color:var(--blue)}
 
-/* ── Form elements ── */
+/* ── FORM ─────────────────────────────────── */
 input,select,textarea{
-  background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);
-  color:var(--text);padding:7px 10px;font-size:12px;width:100%;outline:none;
-  font-family:inherit;transition:.15s;
+  background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);
+  color:var(--text);padding:8px 12px;font-size:12.5px;width:100%;outline:none;
+  font-family:var(--font);transition:all .2s;
 }
-input:focus,select:focus,textarea:focus{border-color:var(--blue);background:var(--bg4)}
-label{font-size:11px;color:var(--muted);margin-bottom:4px;display:block;letter-spacing:.03em}
-.form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px}
+input:focus,select:focus,textarea:focus{
+  border-color:var(--blue);background:var(--bg4);
+  box-shadow:0 0 0 3px rgba(62,184,250,.1);
+}
+label{font-size:10.5px;color:var(--muted);margin-bottom:5px;display:block;
+  letter-spacing:.06em;text-transform:uppercase;font-family:var(--mono)}
+.form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:14px}
 .form-group{display:flex;flex-direction:column}
-.form-hint{font-size:10px;color:var(--muted);margin-top:3px}
+.form-hint{font-size:10px;color:var(--muted);margin-top:4px;font-family:var(--mono)}
+.checkbox-row{display:flex;align-items:center;gap:7px;cursor:pointer}
+.checkbox-row input[type=checkbox]{width:auto;accent-color:var(--blue);cursor:pointer}
+.checkbox-row span{font-size:12.5px;color:var(--text);font-family:var(--font);
+  text-transform:none;letter-spacing:0;margin:0}
 
-/* ── Progress ── */
-.progress-bar{height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;flex:1;min-width:80px}
-.progress-fill{height:100%;border-radius:3px;transition:.6s}
-
-/* ── Range/Seek slider ── */
-.seek-row{display:flex;align-items:center;gap:8px;margin-top:4px}
+/* ── PROGRESS BARS (bigger & interactive) ── */
+.prog-wrap{min-width:220px}
+.prog-track{
+  height:14px;background:var(--bg5);border-radius:7px;
+  border:1px solid rgba(255,255,255,.04);overflow:hidden;cursor:pointer;
+  position:relative;transition:box-shadow .2s;
+}
+.prog-track:hover{box-shadow:0 0 0 2px rgba(62,184,250,.35)}
+.prog-track.live:hover .prog-fill{filter:brightness(1.2)}
+.prog-fill{
+  height:100%;border-radius:7px;transition:width .9s linear;
+  position:relative;
+}
+.prog-fill::after{
+  content:'';position:absolute;right:0;top:2px;bottom:2px;
+  width:3px;background:rgba(255,255,255,.7);border-radius:2px;
+}
+.prog-labels{
+  display:flex;justify-content:space-between;align-items:center;
+  font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:4px;
+}
+.prog-pct{font-weight:700;color:var(--text)}
+/* Inline seek slider */
+.seek-slider-wrap{margin-top:6px;display:flex;align-items:center;gap:7px}
 input[type=range]{
-  -webkit-appearance:none;appearance:none;
-  flex:1;height:3px;background:var(--bg4);border-radius:2px;
+  -webkit-appearance:none;appearance:none;flex:1;
+  height:4px;background:var(--bg5);border-radius:2px;
   outline:none;border:none;padding:0;cursor:pointer;
 }
 input[type=range]::-webkit-slider-thumb{
-  -webkit-appearance:none;width:12px;height:12px;border-radius:50%;
-  background:var(--blue);cursor:pointer;transition:.1s;
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:var(--blue);cursor:pointer;
+  box-shadow:0 0 8px rgba(62,184,250,.6);transition:transform .1s,box-shadow .15s;
 }
-input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
-input[type=range]::-moz-range-thumb{width:12px;height:12px;border:none;border-radius:50%;background:var(--blue);cursor:pointer}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.4);box-shadow:0 0 16px rgba(62,184,250,.9)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border:none;border-radius:50%;background:var(--blue);cursor:pointer}
 
-/* ── Mono values ── */
-.mono{font-family:var(--font-mono);font-size:11px}
+/* ── STREAM NAME / RTSP CHIP ─────────────── */
+.stream-link{
+  font-weight:800;font-size:13px;color:var(--blue);cursor:pointer;
+  transition:color .15s,text-shadow .15s;display:block;letter-spacing:.02em;
+}
+.stream-link:hover{color:var(--cyan);text-shadow:0 0 10px rgba(30,232,204,.4)}
+.tag-pill{
+  font-size:9px;font-weight:700;letter-spacing:.07em;font-family:var(--mono);
+  padding:1px 7px;border-radius:10px;vertical-align:middle;display:inline-block;margin-top:2px;
+}
+.t-hls{background:rgba(255,138,76,.1);color:var(--orange);border:1px solid rgba(255,138,76,.25)}
+.t-shuf{background:var(--purple-g);color:var(--purple);border:1px solid rgba(168,126,250,.25)}
+.t-multi{background:var(--blue-g);color:var(--blue);border:1px solid rgba(62,184,250,.25)}
 .rtsp-chip{
-  font-family:var(--font-mono);font-size:10px;color:var(--cyan);
-  background:rgba(137,220,235,.08);padding:2px 7px;border-radius:4px;
-  cursor:pointer;border:1px solid rgba(137,220,235,.15);
-  user-select:all;word-break:break-all;
+  display:inline-block;font-family:var(--mono);font-size:10px;color:var(--cyan);
+  background:rgba(30,232,204,.05);padding:3px 9px;border-radius:4px;
+  cursor:pointer;border:1px solid rgba(30,232,204,.15);
+  user-select:all;word-break:break-all;transition:.15s;max-width:280px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;
 }
-.rtsp-chip:hover{background:rgba(137,220,235,.18);border-color:var(--cyan)}
+.rtsp-chip:hover{background:rgba(30,232,204,.12);border-color:var(--cyan)}
+.mono{font-family:var(--mono);font-size:11px}
 
-/* ── Tabs ── */
-.tab-content{display:none}.tab-content.active{display:block}
-
-/* ── Upload ── */
+/* ── UPLOAD ─────────────────────────────── */
 .drop-zone{
-  border:2px dashed var(--border2);border-radius:var(--radius);
-  padding:36px;text-align:center;color:var(--muted);cursor:pointer;transition:.2s;
+  border:2px dashed var(--border2);border-radius:var(--r);
+  padding:52px 40px;text-align:center;color:var(--muted);cursor:pointer;
+  transition:all .25s;position:relative;overflow:hidden;
 }
-.drop-zone:hover,.drop-zone.drag-over{border-color:var(--blue);color:var(--blue);background:var(--blue-dim)}
-.file-list{list-style:none;margin-top:12px}
+.drop-zone::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at center,rgba(62,184,250,.05) 0%,transparent 70%);
+  opacity:0;transition:.3s;pointer-events:none;
+}
+.drop-zone:hover::before,.drop-zone.drag-over::before{opacity:1}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--blue);color:var(--blue)}
+.drop-icon{font-size:56px;display:block;margin-bottom:14px;transition:.3s}
+.drop-zone:hover .drop-icon{transform:scale(1.12) translateY(-5px)}
+.file-list{list-style:none;margin-top:16px}
 .file-list li{
-  display:flex;align-items:center;gap:10px;padding:7px 10px;
-  background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:5px;font-size:11px;
-  border:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  background:var(--bg3);border-radius:var(--rs);margin-bottom:6px;font-size:12px;
+  border:1px solid var(--border);animation:slideIn .2s ease;
 }
-.upload-bar{height:3px;background:var(--bg);border-radius:2px;flex:1;overflow:hidden}
-.upload-fill{height:100%;background:var(--blue);transition:.2s}
+@keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+.ubar{height:4px;background:var(--bg);border-radius:2px;flex:1;overflow:hidden;min-width:80px}
+.ubar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan));border-radius:2px;transition:width .2s}
 
-/* ── Notifications ── */
+/* ── NOTIFICATIONS ─────────────────────── */
 .notify{
-  position:fixed;bottom:20px;right:20px;padding:10px 16px;border-radius:var(--radius-sm);
-  font-size:12px;font-weight:600;z-index:999;transform:translateY(80px);
-  transition:.25s;box-shadow:0 4px 24px rgba(0,0,0,.5);
+  position:fixed;bottom:24px;right:24px;padding:13px 20px;
+  border-radius:var(--rs);font-size:13px;font-weight:700;z-index:9999;
+  transform:translateY(110px);opacity:0;
+  transition:all .3s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:0 12px 40px rgba(0,0,0,.7);max-width:400px;
 }
-.notify.show{transform:translateY(0)}
-.notify.ok{background:#1a2b1a;border:1px solid var(--green);color:var(--green)}
-.notify.err{background:#2b1a1a;border:1px solid var(--red);color:var(--red)}
-.notify.info{background:#1a1f2b;border:1px solid var(--blue);color:var(--blue)}
+.notify.show{transform:translateY(0);opacity:1}
+.notify.ok{background:#071a0d;border:1px solid rgba(57,224,122,.5);color:var(--green)}
+.notify.err{background:#1a0709;border:1px solid rgba(255,90,110,.5);color:var(--red)}
+.notify.info{background:#071320;border:1px solid rgba(62,184,250,.5);color:var(--blue)}
 
-/* ── Modal ── */
+/* ── MODALS ──────────────────────────────── */
 .modal-overlay{
-  display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.85);backdrop-filter:blur(12px);
   z-index:200;align-items:center;justify-content:center;
 }
-.modal-overlay.open{display:flex}
+.modal-overlay.open{display:flex;animation:fadeUp .18s ease}
 .modal{
-  background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);
-  padding:24px;width:640px;max-width:96vw;max-height:90vh;
-  overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.6);
+  background:var(--bg2);border:1px solid var(--border2);border-radius:13px;
+  padding:28px;max-width:96vw;max-height:94vh;
+  overflow-y:auto;box-shadow:0 30px 90px rgba(0,0,0,.8);
+  animation:modalIn .22s cubic-bezier(.34,1.1,.64,1);
 }
-.modal h3{font-size:16px;margin-bottom:16px;color:var(--text)}
-.modal-close{float:right;cursor:pointer;color:var(--muted);font-size:18px;line-height:1}
-.modal-close:hover{color:var(--red)}
+@keyframes modalIn{from{opacity:0;transform:scale(.94) translateY(16px)}to{opacity:1;transform:none}}
+.modal h3{font-size:18px;margin-bottom:20px;color:var(--text);font-weight:800;
+  display:flex;align-items:center;justify-content:space-between}
+.modal-close{cursor:pointer;color:var(--muted);font-size:22px;line-height:1;
+  transition:.15s;padding:2px 7px;border-radius:5px}
+.modal-close:hover{color:var(--red);background:var(--red-g)}
 
-/* ── Stream detail ── */
-.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.detail-item{background:var(--bg3);border-radius:var(--radius-sm);padding:8px 12px;border:1px solid var(--border)}
-.detail-item .dk{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
-.detail-item .dv{font-size:13px;font-weight:600;font-family:var(--font-mono)}
+/* ── DETAIL MODAL GRID ─────────────────── */
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:9px;margin-bottom:18px}
+.detail-card{background:var(--bg3);border-radius:var(--rs);padding:11px 14px;border:1px solid var(--border)}
+.detail-card .dk{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;font-family:var(--mono)}
+.detail-card .dv{font-size:14px;font-weight:700;font-family:var(--mono)}
+.section-label{
+  font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-family:var(--mono);
+  display:flex;align-items:center;gap:10px;margin-bottom:11px;
+}
+.section-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border2),transparent)}
+
+/* ── LOG BOX ─────────────────────────────── */
 .log-box{
-  background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius-sm);
-  padding:10px;max-height:220px;overflow-y:auto;font-family:var(--font-mono);font-size:11px;
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--rs);
+  padding:12px 14px;max-height:260px;overflow-y:auto;
+  font-family:var(--mono);font-size:11px;line-height:1.8;
 }
-.log-box .log-info{color:var(--text)}
-.log-box .log-warn{color:var(--yellow)}
-.log-box .log-err{color:var(--red)}
-.playlist-item{
-  display:flex;align-items:center;gap:8px;padding:5px 10px;
-  background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:4px;font-size:11px;
-  border:1px solid var(--border);
-}
-.playlist-item.current{border-color:var(--green);background:var(--green-dim)}
-.playlist-item .pi-idx{color:var(--muted);font-family:var(--font-mono);width:20px}
+.ll{padding:0;border-bottom:1px solid var(--faint)}
+.ll:last-child{border-bottom:none}
+.li{color:var(--text)}.lw{color:var(--yellow)}.le{color:var(--red)}
 
-/* ── Log panel ── */
-.log-controls{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+/* ── PLAYLIST ITEMS (drag reorder) ──────── */
+.plist-item{
+  display:flex;align-items:center;gap:10px;padding:9px 13px;
+  background:var(--bg3);border-radius:var(--rs);margin-bottom:5px;
+  border:1px solid var(--border);cursor:grab;transition:all .15s;user-select:none;
+}
+.plist-item:hover{border-color:var(--border2);background:var(--bg4)}
+.plist-item.current{border-color:var(--green);background:rgba(57,224,122,.05)}
+.plist-item.dragging{opacity:.3;border-style:dashed;cursor:grabbing}
+.plist-item.drag-target{border-color:var(--blue);border-style:dashed;background:var(--blue-g)}
+.drag-handle{color:var(--muted);font-size:15px;cursor:grab;flex-shrink:0}
+.pi-num{color:var(--muted);font-family:var(--mono);width:22px;font-size:10.5px;flex-shrink:0}
+.pi-prio{
+  font-size:9.5px;font-weight:700;font-family:var(--mono);padding:1px 8px;
+  background:var(--purple-g);color:var(--purple);border:1px solid rgba(168,126,250,.3);border-radius:10px;
+}
+
+/* ── SEEK VIDEO PREVIEW ─────────────────── */
+.seek-preview-box{
+  background:var(--bg);border:1px solid var(--border2);border-radius:var(--rs);
+  overflow:hidden;margin-top:14px;aspect-ratio:16/9;max-height:180px;position:relative;
+}
+.seek-preview-box video{width:100%;height:100%;object-fit:contain;background:#000}
+.seek-preview-label{
+  position:absolute;bottom:0;left:0;right:0;
+  background:linear-gradient(transparent,rgba(0,0,0,.85));
+  font-size:10.5px;font-family:var(--mono);color:var(--cyan);
+  padding:6px 10px;text-align:center;
+}
+
+/* ── LOG CONTROLS ─────────────────────── */
+.log-controls{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .log-chip{
-  padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;cursor:pointer;
-  border:1px solid var(--border2);background:var(--bg4);color:var(--muted);transition:.15s;
-  letter-spacing:.05em;
+  padding:4px 13px;border-radius:20px;font-size:10px;font-weight:700;cursor:pointer;
+  border:1px solid var(--border2);background:var(--bg4);color:var(--muted);
+  transition:.15s;letter-spacing:.07em;font-family:var(--mono);
 }
-.log-chip.active-ALL{background:var(--bg4);color:var(--text);border-color:var(--border2)}
-.log-chip.active-INFO{background:var(--blue-dim);color:var(--blue);border-color:rgba(137,180,250,.3)}
-.log-chip.active-WARN{background:var(--yellow-dim);color:var(--yellow);border-color:rgba(249,226,175,.3)}
-.log-chip.active-ERROR{background:var(--red-dim);color:var(--red);border-color:rgba(243,139,168,.3)}
+.log-chip.a-ALL{background:var(--bg5);color:var(--text);border-color:var(--border2)}
+.log-chip.a-INFO{background:var(--blue-g);color:var(--blue);border-color:rgba(62,184,250,.3)}
+.log-chip.a-WARN{background:var(--yellow-g);color:var(--yellow);border-color:rgba(247,195,95,.3)}
+.log-chip.a-ERROR{background:var(--red-g);color:var(--red);border-color:rgba(255,90,110,.3)}
 
-/* ── Sys stats mini bar ── */
-.sys-bar{display:flex;gap:4px;align-items:center}
-.sys-seg{height:14px;border-radius:2px;transition:.4s}
+/* ── EDITOR CARD ─────────────────────── */
+.ed-card{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:18px;margin-bottom:16px;transition:.2s}
+.ed-card:hover{border-color:var(--border2);box-shadow:0 4px 24px rgba(0,0,0,.3)}
+.ed-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:13px;border-bottom:1px solid var(--border)}
+.ed-name{font-size:15px;font-weight:800;color:var(--blue);font-family:var(--mono)}
 
-/* ── Responsive ── */
-@media(max-width:768px){
-  .form-row{grid-template-columns:1fr}
-  .detail-grid{grid-template-columns:1fr}
+/* ── RESPONSIVE ──────────────────────── */
+@media(max-width:900px){
+  .form-row{grid-template-columns:1fr 1fr}
+  .detail-grid{grid-template-columns:1fr 1fr}
   .hdr-stats{display:none}
-  nav button{padding:6px 8px;font-size:11px}
+}
+@media(max-width:600px){
+  .form-row{grid-template-columns:1fr}
+  .container{padding:12px 14px}
+  .modal{padding:18px}
+  nav button{padding:5px 8px;font-size:11px}
 }
 </style>
-"""
+</head>
+<body>
 
-_HTML_BODY = r"""
-<div class="shell">
 <header>
-  <span style="font-size:22px">🐉</span>
-  <span class="logo">HydraCast</span>
-  <span class="ver">v3.1</span>
-  <div class="hdr-stats" id="hdr-stats">
-    <div class="hdr-stat"><span class="dot dot-live"></span>Live: <span class="val" id="h-live">—</span></div>
-    <div class="hdr-stat">CPU: <span class="val" id="h-cpu">—</span></div>
-    <div class="hdr-stat">RAM: <span class="val" id="h-ram">—</span></div>
-    <div class="hdr-stat">Disk: <span class="val" id="h-disk">—</span></div>
-    <div class="hdr-stat" id="h-time" style="font-family:var(--font-mono)">—</div>
+  <div class="logo-wrap">
+    <div class="logo-badge">🐉</div>
+    <span class="logo-text">HydraCast</span>
+    <span class="logo-ver">v4.0</span>
+  </div>
+  <div class="hdr-stats" id="hstats">
+    <div class="hdr-stat"><div class="live-dot"></div> <span id="h-live">0</span>&nbsp;Live</div>
+    <div class="hdr-stat">CPU&nbsp;<span class="v" id="h-cpu">—</span></div>
+    <div class="hdr-stat">RAM&nbsp;<span class="v" id="h-ram">—</span></div>
+    <div class="hdr-stat">Disk&nbsp;<span class="v" id="h-disk">—</span></div>
+    <div class="hdr-stat mono" id="h-time">—</div>
   </div>
   <nav>
     <button class="active" onclick="showTab('streams')">Streams</button>
@@ -1637,70 +1840,69 @@ _HTML_BODY = r"""
 
 <div class="container">
 
-<!-- ══ STREAMS ══ -->
+<!-- ══ STREAMS ══════════════════════════════ -->
 <div id="tab-streams" class="tab-content active">
   <div class="panel">
     <div class="panel-hdr">
-      <span class="title">Live Streams</span>
-      <span style="margin-left:auto;display:flex;gap:6px">
+      <span class="panel-title">Live Streams</span>
+      <span style="margin-left:auto;display:flex;gap:7px;align-items:center">
         <button class="btn btn-sm btn-success" onclick="api('start_all')">▶ All</button>
         <button class="btn btn-sm btn-danger"  onclick="api('stop_all')">■ All</button>
         <button class="btn btn-sm" onclick="loadStreams()">↻</button>
-        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);margin:0;cursor:pointer">
-          <input type="checkbox" id="auto-refresh" checked style="width:auto;cursor:pointer" onchange="toggleAutoRefresh(this.checked)">
-          Auto
+        <label class="checkbox-row" style="margin:0">
+          <input type="checkbox" id="auto-refresh" checked onchange="toggleAuto(this.checked)">
+          <span>Auto</span>
         </label>
       </span>
     </div>
-    <div style="padding:0">
+    <div class="tbl-wrap">
       <table>
         <thead><tr>
           <th>#</th><th>Stream</th><th>Port</th><th>Schedule</th>
-          <th>Status</th><th colspan="2">Progress / Seek</th>
-          <th>Time</th><th>FPS</th><th>RTSP URL</th><th>Actions</th>
+          <th>Status</th><th>Progress &amp; Seek</th>
+          <th>Position</th><th>FPS</th><th>URL</th><th>Actions</th>
         </tr></thead>
-        <tbody id="streams-tbody"></tbody>
+        <tbody id="stbl"></tbody>
       </table>
     </div>
   </div>
 </div>
 
-<!-- ══ UPLOAD ══ -->
+<!-- ══ UPLOAD ════════════════════════════════ -->
 <div id="tab-upload" class="tab-content">
   <div class="panel">
-    <div class="panel-hdr"><span class="title">Upload Media Files</span></div>
+    <div class="panel-hdr"><span class="panel-title">Upload Media Files</span>
+      <span class="panel-sub">Saved to: <span id="upload-root-label" style="color:var(--cyan)">…/media/</span></span>
+    </div>
     <div class="panel-body">
-      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <div style="font-size:44px;margin-bottom:10px">📼</div>
-        <p style="font-size:15px;font-weight:700;margin-bottom:6px">Drop files here or click to browse</p>
-        <p style="font-size:11px;color:var(--muted)">MP4 · MKV · AVI · MOV · TS · FLV · WEBM · MP3 · AAC · FLAC · and all FFmpeg formats</p>
-        <p style="font-size:10px;color:var(--muted);margin-top:6px">Max 10 GB per file</p>
-        <input type="file" id="file-input" multiple style="display:none"
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('finput').click()">
+        <span class="drop-icon">📼</span>
+        <p style="font-size:17px;font-weight:800;margin-bottom:9px">Drop files here or click to browse</p>
+        <p style="font-size:12px">MP4 · MKV · AVI · MOV · TS · FLV · WEBM · MP3 · AAC · FLAC · WAV · and more</p>
+        <p style="font-size:10.5px;color:var(--muted);margin-top:8px;font-family:var(--mono)">Max 10 GB per file</p>
+        <input type="file" id="finput" multiple style="display:none"
                accept="video/*,audio/*,.mkv,.ts,.m2ts,.flv,.webm"
                onchange="handleFiles(this.files)">
       </div>
       <ul class="file-list" id="upload-list"></ul>
-      <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="display:inline;margin:0;white-space:nowrap;font-size:12px">Upload to:</label>
-        <select id="upload-subdir" style="width:auto;flex:1;min-width:160px">
-          <option value="">/ (media root)</option>
-        </select>
+      <div style="margin-top:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="font-size:12.5px;color:var(--muted);white-space:nowrap">Upload to subfolder:</span>
+        <select id="upload-subdir" style="flex:1;min-width:200px;width:auto"></select>
         <button class="btn btn-sm" onclick="createSubdir()">+ New Folder</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ══ LIBRARY ══ -->
+<!-- ══ LIBRARY ════════════════════════════════ -->
 <div id="tab-library" class="tab-content">
   <div class="panel">
     <div class="panel-hdr">
-      <span class="title">Media Library</span>
-      <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <span class="panel-title">Media Library</span>
+      <span style="margin-left:auto;display:flex;gap:7px;align-items:center">
         <input type="text" id="lib-search" placeholder="Search…"
-               style="width:180px;height:28px;padding:4px 8px"
-               oninput="filterLibrary()">
-        <select id="lib-sort" style="width:120px;height:28px;padding:2px 6px" onchange="filterLibrary()">
+               style="width:210px;height:30px;padding:4px 10px" oninput="filterLib()">
+        <select id="lib-sort" style="width:140px;height:30px;padding:2px 8px" onchange="filterLib()">
           <option value="name">Sort: Name</option>
           <option value="size">Sort: Size</option>
           <option value="dur">Sort: Duration</option>
@@ -1708,783 +1910,903 @@ _HTML_BODY = r"""
         <button class="btn btn-sm" onclick="loadLibrary()">↻</button>
       </span>
     </div>
-    <div style="padding:0">
+    <div class="tbl-wrap">
       <table>
         <thead><tr>
           <th>Filename</th><th>Duration</th><th>Size</th>
-          <th>Video</th><th>Resolution</th><th>FPS</th><th>Actions</th>
+          <th>Codec</th><th>Resolution</th><th>FPS</th><th>Actions</th>
         </tr></thead>
-        <tbody id="library-tbody"></tbody>
+        <tbody id="libtbl"></tbody>
       </table>
     </div>
   </div>
 </div>
 
-<!-- ══ CONFIG EDITOR ══ -->
+<!-- ══ CONFIG EDITOR ════════════════════════ -->
 <div id="tab-editor" class="tab-content">
   <div class="panel">
     <div class="panel-hdr">
-      <span class="title">Stream Configuration</span>
-      <span style="margin-left:auto;display:flex;gap:6px">
-        <button class="btn btn-sm btn-primary" onclick="saveCSV()">💾 Save</button>
-        <button class="btn btn-sm" onclick="addStreamRow()">+ Add</button>
+      <span class="panel-title">Stream Configuration</span>
+      <span class="panel-sub">Changes saved to streams.csv — restart to apply</span>
+      <span style="margin-left:auto;display:flex;gap:7px">
+        <button class="btn btn-sm btn-primary" onclick="saveCSV()">💾 Save Config</button>
+        <button class="btn btn-sm" onclick="addEditorRow()">+ Add Stream</button>
       </span>
     </div>
     <div class="panel-body" id="editor-body"></div>
   </div>
 </div>
 
-<!-- ══ SCHEDULER ══ -->
+<!-- ══ SCHEDULER ════════════════════════════ -->
 <div id="tab-events" class="tab-content">
   <div class="panel">
-    <div class="panel-hdr"><span class="title">Schedule One-Shot Event</span></div>
+    <div class="panel-hdr"><span class="panel-title">Schedule One-Shot Event</span></div>
     <div class="panel-body">
       <div class="form-row">
-        <div class="form-group">
-          <label>Stream</label>
-          <select id="evt-stream"></select>
-        </div>
-        <div class="form-group">
-          <label>Video File</label>
-          <select id="evt-file"></select>
-        </div>
-        <div class="form-group">
-          <label>Play At (local time)</label>
-          <input type="datetime-local" id="evt-datetime">
-        </div>
+        <div class="form-group"><label>Stream</label><select id="evt-stream"></select></div>
+        <div class="form-group"><label>Video File</label><select id="evt-file"></select></div>
+        <div class="form-group"><label>Play At (local time)</label>
+          <input type="datetime-local" id="evt-dt"></div>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label>Start Position in File</label>
-          <input type="text" id="evt-startpos" placeholder="00:00:00" value="00:00:00">
-        </div>
-        <div class="form-group">
-          <label>After playback</label>
-          <select id="evt-postaction">
+        <div class="form-group"><label>Start Position in File</label>
+          <input type="text" id="evt-startpos" placeholder="00:00:00" value="00:00:00"></div>
+        <div class="form-group"><label>After Playback</label>
+          <select id="evt-post">
             <option value="resume">Resume normal playlist</option>
             <option value="stop">Stop stream</option>
             <option value="black">Show black screen</option>
-          </select>
-        </div>
+          </select></div>
         <div class="form-group" style="justify-content:flex-end">
-          <button class="btn btn-primary" style="margin-top:auto" onclick="scheduleEvent()">
-            📅 Schedule
-          </button>
+          <button class="btn btn-primary" style="margin-top:auto" onclick="schedEvent()">📅 Schedule</button>
         </div>
       </div>
     </div>
   </div>
   <div class="panel">
     <div class="panel-hdr">
-      <span class="title">Events</span>
-      <span style="margin-left:auto;display:flex;gap:6px">
-        <button class="btn btn-sm btn-danger" onclick="clearPlayedEvents()">🗑 Clear Played</button>
+      <span class="panel-title">Scheduled Events</span>
+      <span style="margin-left:auto;display:flex;gap:7px">
+        <button class="btn btn-sm btn-danger" onclick="clearPlayed()">🗑 Clear Played</button>
         <button class="btn btn-sm" onclick="loadEvents()">↻</button>
       </span>
     </div>
-    <div style="padding:0">
+    <div class="tbl-wrap">
       <table>
         <thead><tr>
           <th>Stream</th><th>File</th><th>Play At</th>
-          <th>Countdown</th><th>After</th><th>Status</th><th>Actions</th>
+          <th>Countdown</th><th>After</th><th>Status</th><th></th>
         </tr></thead>
-        <tbody id="events-tbody"></tbody>
+        <tbody id="evtbl"></tbody>
       </table>
     </div>
   </div>
 </div>
 
-<!-- ══ LOGS ══ -->
+<!-- ══ LOGS ════════════════════════════════ -->
 <div id="tab-logs" class="tab-content">
   <div class="panel">
     <div class="panel-hdr">
-      <span class="title">Event Log</span>
-      <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
-        <select id="log-stream-filter" style="width:140px;height:28px;padding:2px 6px" onchange="loadLogs()">
+      <span class="panel-title">Event Log</span>
+      <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <select id="log-stream-sel" style="width:160px;height:28px;padding:2px 8px" onchange="loadLogs()">
           <option value="">All Streams</option>
         </select>
         <button class="btn btn-sm" onclick="loadLogs()">↻</button>
-        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);margin:0;cursor:pointer">
-          <input type="checkbox" id="log-autoscroll" checked style="width:auto;cursor:pointer"> Auto-scroll
+        <label class="checkbox-row" style="margin:0">
+          <input type="checkbox" id="log-autoscroll" checked>
+          <span>Auto-scroll</span>
         </label>
       </span>
     </div>
     <div class="panel-body">
       <div class="log-controls">
-        <span style="font-size:11px;color:var(--muted)">Filter:</span>
-        <span class="log-chip active-ALL" data-level="ALL" onclick="setLogLevel('ALL')">ALL</span>
-        <span class="log-chip" data-level="INFO" onclick="setLogLevel('INFO')">INFO</span>
-        <span class="log-chip" data-level="WARN" onclick="setLogLevel('WARN')">WARN</span>
-        <span class="log-chip" data-level="ERROR" onclick="setLogLevel('ERROR')">ERROR</span>
-        <input type="text" id="log-search" placeholder="Search log…"
-               style="width:200px;height:26px;padding:3px 8px;margin-left:auto" oninput="renderLogEntries()">
+        <span style="font-size:11px;color:var(--muted)">Level:</span>
+        <span class="log-chip a-ALL" data-lv="ALL"   onclick="setLogLv('ALL')">ALL</span>
+        <span class="log-chip" data-lv="INFO"  onclick="setLogLv('INFO')">INFO</span>
+        <span class="log-chip" data-lv="WARN"  onclick="setLogLv('WARN')">WARN</span>
+        <span class="log-chip" data-lv="ERROR" onclick="setLogLv('ERROR')">ERROR</span>
+        <input type="text" id="log-search" placeholder="Search…"
+               style="width:230px;height:28px;padding:3px 10px;margin-left:auto" oninput="renderLogs()">
       </div>
-      <div id="log-container" class="log-box"></div>
+      <div id="log-box" class="log-box"></div>
     </div>
   </div>
 </div>
 
 </div><!-- /container -->
-</div><!-- /shell -->
 
-<!-- ══ STREAM DETAIL MODAL ══ -->
+<!-- ══ DETAIL MODAL ═════════════════════ -->
 <div class="modal-overlay" id="detail-modal">
-  <div class="modal">
+  <div class="modal" style="width:720px">
     <h3>
-      <span id="detail-title">Stream Detail</span>
+      <span id="dm-title">Stream Detail</span>
       <span class="modal-close" onclick="closeModal('detail-modal')">✕</span>
     </h3>
-    <div id="detail-content"></div>
-    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
-      <button class="btn btn-success btn-sm" id="detail-start" onclick="">▶ Start</button>
-      <button class="btn btn-danger btn-sm"  id="detail-stop"  onclick="">■ Stop</button>
-      <button class="btn btn-sm"             id="detail-rst"   onclick="">↺ Restart</button>
+    <div id="dm-body"></div>
+    <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-success btn-sm" id="dm-start">▶ Start</button>
+      <button class="btn btn-danger btn-sm"  id="dm-stop">■ Stop</button>
+      <button class="btn btn-sm"             id="dm-rst">↺ Restart</button>
+      <button class="btn btn-sm"             id="dm-skip" title="Skip to next file in playlist">⏭ Skip</button>
       <button class="btn" onclick="closeModal('detail-modal')">Close</button>
     </div>
   </div>
 </div>
 
-<!-- ══ SEEK MODAL ══ -->
+<!-- ══ SEEK MODAL ════════════════════════ -->
 <div class="modal-overlay" id="seek-modal">
-  <div class="modal" style="width:440px">
+  <div class="modal" style="width:520px">
     <h3>
-      ⏩ Seek — <span id="seek-stream-name"></span>
-      <span class="modal-close" onclick="closeModal('seek-modal')">✕</span>
+      <span>⏩ Seek — <span id="sk-name"></span></span>
+      <span class="modal-close" onclick="closeSeekModal()">✕</span>
     </h3>
-    <div class="form-group" style="margin-bottom:12px">
-      <label>Jump to timestamp (HH:MM:SS)</label>
-      <input type="text" id="seek-input" placeholder="00:45:30"
+    <div class="form-group" style="margin-bottom:14px">
+      <label>Jump to timestamp (HH:MM:SS or seconds)</label>
+      <input type="text" id="sk-input" placeholder="00:45:30"
              onkeydown="if(event.key==='Enter')doSeek()">
     </div>
-    <label>Or drag slider</label>
-    <div class="seek-row" style="margin-bottom:4px">
-      <span class="mono" id="seek-slider-val" style="width:58px">00:00:00</span>
-      <input type="range" id="seek-slider" min="0" max="100" value="0"
-             oninput="seekSliderInput(this.value)">
-      <span class="mono" id="seek-dur" style="width:58px;text-align:right">—</span>
+    <label>Or use the slider</label>
+    <div class="seek-slider-wrap" style="margin-bottom:4px;margin-top:6px">
+      <span class="mono" id="sk-cur" style="min-width:64px">00:00:00</span>
+      <input type="range" id="sk-slider" min="0" max="100" value="0"
+             oninput="skSliderInput(this.value)">
+      <span class="mono" id="sk-dur" style="min-width:64px;text-align:right">--</span>
     </div>
-    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
-      <button class="btn" onclick="closeModal('seek-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="doSeek()">Seek</button>
+    <!-- Live HLS video preview -->
+    <div id="sk-preview" class="seek-preview-box" style="display:none">
+      <video id="sk-video" muted playsinline autoplay></video>
+      <div class="seek-preview-label">🔴 Live HLS Preview</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end">
+      <button class="btn" onclick="closeSeekModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="doSeek()">Seek to Position</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PLAYLIST PRIORITY MODAL ══════════ -->
+<div class="modal-overlay" id="prio-modal">
+  <div class="modal" style="width:580px">
+    <h3>
+      <span>🎯 Playlist Order — <span id="pm-name"></span></span>
+      <span class="modal-close" onclick="closeModal('prio-modal')">✕</span>
+    </h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">
+      Drag items to reorder. Lower priority number = plays first. Click "Apply" then "Save Config" to persist changes.
+    </p>
+    <div id="pm-list" style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rs);padding:10px;max-height:360px;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal('prio-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="applyPriority()">Apply Order</button>
     </div>
   </div>
 </div>
 
 <div class="notify" id="notify"></div>
-"""
 
-_HTML_SCRIPT = r"""
 <script>
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 // STATE
-// ════════════════════════════════════════════
-let streamData    = [];
-let libraryData   = [];
-let logEntries    = [];
-let logLevel      = 'ALL';
-let seekTarget    = null;
-let seekDuration  = 0;
-let autoRefresh   = true;
-let refreshTimer  = null;
-let editorRows    = [];
+// ════════════════════════════════════════════════════════════
+let streamData=[],libData=[],logEntries=[],logLv='ALL';
+let seekTarget=null,seekDuration=0,seekHls='';
+let autoRefresh=true,refreshTimer=null;
+let editorRows=[],prioStreamName=null,prioOrigFiles=[];
+let dragSrc=null;
 
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 // UTILS
-// ════════════════════════════════════════════
-function fmtSecs(s) {
-  s = Math.max(0, Math.floor(+s));
-  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+// ════════════════════════════════════════════════════════════
+function fmtSecs(s){
+  s=Math.max(0,Math.floor(+s));
+  return [Math.floor(s/3600),Math.floor((s%3600)/60),s%60]
+    .map(n=>String(n).padStart(2,'0')).join(':');
 }
-function fmtBytes(n) {
-  if (n<1024) return n+' B';
-  if (n<1048576) return (n/1024).toFixed(1)+' KB';
-  if (n<1073741824) return (n/1048576).toFixed(1)+' MB';
+function fmtBytes(n){
+  if(n<1024)return n+' B';
+  if(n<1048576)return (n/1024).toFixed(1)+' KB';
+  if(n<1073741824)return (n/1048576).toFixed(1)+' MB';
   return (n/1073741824).toFixed(2)+' GB';
 }
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+let _notifyTm;
+function notify(msg,type='ok'){
+  const el=document.getElementById('notify');
+  el.textContent=msg;el.className='notify '+type+' show';
+  clearTimeout(_notifyTm);_notifyTm=setTimeout(()=>el.classList.remove('show'),type==='err'?5000:3000);
 }
-function notify(msg, type='ok') {
-  const el = document.getElementById('notify');
-  el.textContent = msg; el.className = 'notify '+type+' show';
-  setTimeout(()=>el.classList.remove('show'), 3000);
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
-function openModal(id) {
-  document.getElementById(id).classList.add('open');
-}
-
-// Close modals on overlay click
-document.querySelectorAll('.modal-overlay').forEach(el => {
-  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+function closeModal(id){document.getElementById(id).classList.remove('open')}
+function openModal(id){document.getElementById(id).classList.add('open')}
+document.querySelectorAll('.modal-overlay').forEach(el=>{
+  el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open')});
 });
 
-// ════════════════════════════════════════════
-// TAB NAVIGATION
-// ════════════════════════════════════════════
-function showTab(name) {
+// ════════════════════════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════════════════════════
+const TAB_LABELS={streams:'Streams',upload:'Upload',library:'Library',
+                  editor:'Config',events:'Scheduler',logs:'Logs'};
+function showTab(name){
   document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  const labels = {streams:'Streams',upload:'Upload',library:'Library',
-                  editor:'Config',events:'Sched',logs:'Logs'};
   document.querySelectorAll('nav button').forEach(btn=>{
-    if(btn.textContent.trim()===labels[name]) btn.classList.add('active');
+    if(btn.textContent.trim()===TAB_LABELS[name])btn.classList.add('active');
   });
-  if(name==='streams')  loadStreams();
+  if(name==='streams')      loadStreams();
   else if(name==='library') loadLibrary();
   else if(name==='editor')  loadEditor();
-  else if(name==='events') { loadEvents(); loadEventFormData(); }
+  else if(name==='events'){loadEvents();loadEvtForm();}
   else if(name==='logs')    loadLogs();
   else if(name==='upload')  loadSubdirs();
 }
 
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 // API
-// ════════════════════════════════════════════
-async function api(action, data={}) {
-  try {
-    const r = await fetch('/api/'+action, {
-      method:'POST', headers:{'Content-Type':'application/json'},
+// ════════════════════════════════════════════════════════════
+async function api(action,data={}){
+  try{
+    const r=await fetch('/api/'+action,{
+      method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(data)
     });
-    const j = await r.json();
-    if(j.ok) { notify(j.msg||'Done ✓'); loadStreams(); }
-    else notify(j.msg||'Error', 'err');
+    const j=await r.json();
+    if(j.ok){notify(j.msg||'Done ✓');loadStreams();}
+    else notify(j.msg||'Error','err');
     return j;
-  } catch(e) { notify('Request failed: '+e,'err'); }
+  }catch(e){notify('Request failed: '+e,'err');}
 }
 
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 // HEADER STATS
-// ════════════════════════════════════════════
-async function updateHeaderStats() {
-  try {
-    const [sdata, stats] = await Promise.all([
+// ════════════════════════════════════════════════════════════
+async function updateHdrStats(){
+  try{
+    const[sd,st]=await Promise.all([
       fetch('/api/streams').then(r=>r.json()),
       fetch('/api/system_stats').then(r=>r.json()),
     ]);
-    const live = sdata.filter(s=>s.status==='LIVE').length;
-    document.getElementById('h-live').textContent  = live;
-    document.getElementById('h-cpu').textContent   = stats.cpu+'%';
-    document.getElementById('h-ram').textContent   = stats.mem_percent+'%';
-    document.getElementById('h-disk').textContent  = stats.disk_percent+'%';
-    const now = new Date();
-    document.getElementById('h-time').textContent  =
-      String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  } catch(_){}
+    streamData=sd;
+    document.getElementById('h-live').textContent=sd.filter(s=>s.status==='LIVE').length;
+    document.getElementById('h-cpu').textContent=st.cpu+'%';
+    document.getElementById('h-ram').textContent=st.mem_percent+'%';
+    document.getElementById('h-disk').textContent=st.disk_percent+'%';
+  }catch(_){}
 }
 
-// ════════════════════════════════════════════
-// STREAMS
-// ════════════════════════════════════════════
-function toggleAutoRefresh(on) {
-  autoRefresh = on;
-  if(on) startRefresh(); else clearInterval(refreshTimer);
+// ════════════════════════════════════════════════════════════
+// AUTO REFRESH
+// ════════════════════════════════════════════════════════════
+function toggleAuto(on){
+  autoRefresh=on;
+  if(on)startRefresh();else clearInterval(refreshTimer);
 }
-function startRefresh() {
+function startRefresh(){
   clearInterval(refreshTimer);
-  refreshTimer = setInterval(()=>{ loadStreams(); updateHeaderStats(); }, 3000);
+  refreshTimer=setInterval(()=>{loadStreams();updateHdrStats();},2500);
 }
 
-async function loadStreams() {
-  const r = await fetch('/api/streams');
-  streamData = await r.json();
-  renderStreams();
+// ════════════════════════════════════════════════════════════
+// STREAMS TABLE
+// ════════════════════════════════════════════════════════════
+async function loadStreams(){
+  try{
+    const r=await fetch('/api/streams');
+    streamData=await r.json();
+    renderStreams();
+  }catch(e){}
 }
 
-function renderStreams() {
-  const tb = document.getElementById('streams-tbody');
-  tb.innerHTML = streamData.map((s,i) => {
-    const pct = s.progress.toFixed(1);
-    const fillColor = s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
-    const isLive = s.status==='LIVE';
+function renderStreams(){
+  const tb=document.getElementById('stbl');
+  tb.innerHTML=streamData.map((s,i)=>{
+    const pct=(+s.progress).toFixed(1);
+    const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
+    const live=s.status==='LIVE';
+    const nf=s.playlist_count||1;
     return `
-<tr>
-  <td class="mono" style="color:var(--muted)">${i+1}</td>
+<tr class="${live?'row-live':''}">
+  <td class="mono" style="color:var(--muted);font-size:11px">${i+1}</td>
   <td>
-    <strong style="cursor:pointer;color:var(--blue)" onclick="openDetail('${esc(s.name)}')"
-            title="Click for details">${esc(s.name)}</strong>
-    ${s.shuffle?'<span style="font-size:9px;color:var(--purple);margin-left:4px">⧖SHUFFLE</span>':''}
-    ${s.hls_url?'<span style="font-size:9px;color:var(--orange);margin-left:4px">[HLS]</span>':''}
-  </td>
-  <td><code class="mono" style="color:var(--cyan)">${s.port}</code></td>
-  <td style="color:var(--muted);font-size:11px">${esc(s.weekdays)}</td>
-  <td><span class="badge badge-${esc(s.status)}">${esc(s.status)}</span></td>
-  <td style="min-width:130px">
-    <div style="display:flex;align-items:center;gap:6px">
-      <div class="progress-bar">
-        <div class="progress-fill" style="width:${pct}%;background:${fillColor}"></div>
-      </div>
-      <span class="mono" style="color:var(--muted);min-width:38px">${pct}%</span>
+    <div class="stream-link" onclick="openDetail('${esc(s.name)}')">${esc(s.name)}</div>
+    <div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap">
+      ${s.shuffle?'<span class="tag-pill t-shuf">SHUFFLE</span>':''}
+      ${s.hls_url?'<span class="tag-pill t-hls">HLS</span>':''}
+      ${nf>1?'<span class="tag-pill t-multi">×'+nf+' files</span>':''}
     </div>
-    ${isLive?`
-    <div class="seek-row" style="margin-top:3px">
-      <span class="mono" style="font-size:10px;color:var(--muted);min-width:52px">${esc(s.position.split('/')[0]||'')}</span>
+  </td>
+  <td><code class="mono" style="color:var(--cyan)">:${s.port}</code></td>
+  <td style="color:var(--muted);font-size:11.5px;white-space:nowrap">${esc(s.weekdays)}</td>
+  <td><span class="badge badge-${esc(s.status)}"><div class="bdot"></div>${esc(s.status)}</span></td>
+  <td style="min-width:240px">
+    <!-- Big clickable progress bar -->
+    <div class="prog-wrap">
+      <div class="prog-track ${live?'live':''}"
+           ${live?`onclick="barClick(event,'${esc(s.name)}',${s.duration})" title="Click to seek"`:''}
+           style="cursor:${live?'crosshair':'default'}">
+        <div class="prog-fill" style="width:${pct}%;background:${fc}"></div>
+      </div>
+      <div class="prog-labels">
+        <span>${live?esc((s.position||'').split('/')[0].trim()||'--'):'--'}</span>
+        <span class="prog-pct">${pct}%</span>
+        <span>${live?esc((s.position||'').split('/')[1]||'--'):'--'}</span>
+      </div>
+    </div>
+    ${live?`
+    <div class="seek-slider-wrap">
+      <span class="mono" style="font-size:10px;min-width:52px">${esc((s.position||'').split('/')[0].trim()||'--')}</span>
       <input type="range" min="0" max="${Math.max(1,Math.floor(s.duration))}"
              value="${Math.floor(s.current_secs)}"
              title="Drag to seek"
-             data-stream="${esc(s.name)}"
-             oninput="this.nextElementSibling.textContent=fmtSecs(this.value)"
-             onchange="inlineSeek('${esc(s.name)}',+this.value)"
-             style="flex:1">
-      <span class="mono" style="font-size:10px;color:var(--muted);min-width:52px;text-align:right">${esc(s.position.split('/')[1]||'—')}</span>
+             oninput="this.previousElementSibling.textContent=fmtSecs(this.value)"
+             onchange="inlineSeek('${esc(s.name)}',+this.value)">
+      <span class="mono" style="font-size:10px;min-width:52px;text-align:right">${esc((s.position||'').split('/')[1]||'--')}</span>
     </div>`:''}
   </td>
-  <td class="mono" style="color:var(--muted);font-size:11px;white-space:nowrap">${esc(s.position)}</td>
-  <td class="mono" style="color:var(--muted)">${s.fps>0?Math.round(s.fps):'—'}</td>
+  <td class="mono" style="color:var(--muted);font-size:11px;white-space:nowrap">${esc(s.position||'--')}</td>
+  <td class="mono" style="color:var(--muted)">${s.fps>0?Math.round(s.fps):'--'}</td>
   <td>
-    <span class="rtsp-chip" onclick="copyURL('${esc(s.rtsp_url)}')" title="Click to copy RTSP URL">${esc(s.rtsp_url)}</span>
-    ${s.hls_url?`<br><span class="rtsp-chip" style="color:var(--orange);margin-top:3px" onclick="copyURL('${esc(s.hls_url)}')" title="Copy HLS URL">HLS ↗</span>`:''}
+    <span class="rtsp-chip" onclick="copyURL('${esc(s.rtsp_url)}')" title="Click to copy">${esc(s.rtsp_url)}</span>
+    ${s.hls_url?`<br><span class="rtsp-chip" style="color:var(--orange);margin-top:3px" onclick="copyURL('${esc(s.hls_url)}')">HLS</span>`:''}
   </td>
   <td style="white-space:nowrap">
-    <button class="btn btn-sm btn-success" onclick="api('start',{name:'${esc(s.name)}'})">▶</button>
-    <button class="btn btn-sm btn-danger"  onclick="api('stop', {name:'${esc(s.name)}'})">■</button>
-    <button class="btn btn-sm"             onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>
-    <button class="btn btn-sm"             onclick="openSeek('${esc(s.name)}',${s.duration},${s.current_secs})" title="Seek">⏩</button>
+    <div style="display:flex;gap:3px;flex-wrap:wrap">
+      <button class="btn btn-xs btn-success" onclick="api('start',{name:'${esc(s.name)}'})" title="Start">▶</button>
+      <button class="btn btn-xs btn-danger"  onclick="api('stop',{name:'${esc(s.name)}'})"  title="Stop">■</button>
+      <button class="btn btn-xs" onclick="api('restart',{name:'${esc(s.name)}'})" title="Restart">↺</button>
+      <button class="btn btn-xs" onclick="openSeek('${esc(s.name)}',${s.duration},${s.current_secs},'${esc(s.hls_url||'')}')" title="Seek">⏩</button>
+      ${nf>1?`<button class="btn btn-xs" onclick="openPrio('${esc(s.name)}')" title="Playlist order">🎯</button>`:''}
+      ${live&&nf>1?`<button class="btn btn-xs" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to next">⏭</button>`:''}
+    </div>
   </td>
 </tr>`;
   }).join('');
 }
 
-function copyURL(url) {
-  navigator.clipboard.writeText(url).then(()=>notify('Copied ✓','info'));
+function copyURL(url){navigator.clipboard.writeText(url).then(()=>notify('Copied ✓','info'));}
+function barClick(e,name,dur){
+  if(dur<=0)return;
+  const rect=e.currentTarget.getBoundingClientRect();
+  const pct=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
+  const secs=Math.floor(pct*dur);
+  api('seek',{name,seconds:secs}).then(()=>setTimeout(loadStreams,600));
+}
+function inlineSeek(name,secs){
+  api('seek',{name,seconds:secs}).then(()=>setTimeout(loadStreams,600));
 }
 
-function inlineSeek(name, secs) {
-  api('seek', {name, seconds: secs}).then(()=>setTimeout(loadStreams, 500));
+// ════════════════════════════════════════════════════════════
+// STREAM DETAIL MODAL
+// ════════════════════════════════════════════════════════════
+async function openDetail(name){
+  try{
+    const d=await fetch('/api/stream_detail?name='+encodeURIComponent(name)).then(r=>r.json());
+    if(d.error){notify(d.error,'err');return;}
+    document.getElementById('dm-title').textContent=d.name;
+    document.getElementById('dm-start').onclick=()=>{api('start',{name:d.name});closeModal('detail-modal');};
+    document.getElementById('dm-stop' ).onclick=()=>{api('stop',{name:d.name});closeModal('detail-modal');};
+    document.getElementById('dm-rst'  ).onclick=()=>{api('restart',{name:d.name});closeModal('detail-modal');};
+    document.getElementById('dm-skip' ).onclick=()=>{api('skip_next',{name:d.name});closeModal('detail-modal');};
+    const pct=(+d.progress).toFixed(1);
+    const fc=d.progress>80?'var(--red)':d.progress>55?'var(--yellow)':'var(--green)';
+    const isLive=d.status==='LIVE';
+    const plHtml=(d.playlist||[]).map((p,i)=>`
+      <div class="plist-item ${p.current?'current':''}">
+        <span style="font-size:11px;color:var(--muted);width:20px">${i+1}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px" title="${esc(p.path)}">${esc(p.file)}</span>
+        <span class="mono" style="color:var(--muted);font-size:10px">${esc(p.start)}</span>
+        <span class="pi-prio">P${p.priority}</span>
+        ${p.current?'<span style="color:var(--green);font-size:10px;font-weight:700">▶ NOW</span>':''}
+        ${!p.exists?'<span style="color:var(--red);font-size:10px">✗ MISSING</span>':''}
+      </div>`).join('');
+    const logHtml=(d.log||[]).slice(-50).map(line=>{
+      const lv=/error/i.test(line)?'e':/warn|restart/i.test(line)?'w':'i';
+      return `<div class="ll l${lv}">${esc(line)}</div>`;
+    }).join('');
+    document.getElementById('dm-body').innerHTML=`
+      <div class="detail-grid">
+        <div class="detail-card"><div class="dk">Status</div><div class="dv"><span class="badge badge-${esc(d.status)}"><div class="bdot"></div>${esc(d.status)}</span></div></div>
+        <div class="detail-card"><div class="dk">Port</div><div class="dv" style="color:var(--cyan)">:${d.port}</div></div>
+        <div class="detail-card"><div class="dk">Video BR</div><div class="dv">${esc(d.video_bitrate)}</div></div>
+        <div class="detail-card"><div class="dk">Audio BR</div><div class="dv">${esc(d.audio_bitrate)}</div></div>
+        <div class="detail-card"><div class="dk">Schedule</div><div class="dv" style="font-size:11px">${esc(d.weekdays)}</div></div>
+        <div class="detail-card"><div class="dk">Restarts</div><div class="dv" style="color:${d.restart_count>0?'var(--yellow)':'var(--green)'}">${d.restart_count}</div></div>
+        <div class="detail-card"><div class="dk">Loops</div><div class="dv">${d.loop_count}</div></div>
+        <div class="detail-card"><div class="dk">Speed</div><div class="dv">${esc(d.speed||'--')}</div></div>
+      </div>
+      ${d.error_msg?`<div style="background:var(--red-g);border:1px solid rgba(255,90,110,.3);border-radius:var(--rs);padding:10px 14px;font-size:11px;color:var(--red);margin-bottom:16px;font-family:var(--mono)">${esc(d.error_msg)}</div>`:''}
+      <div class="section-label">Progress</div>
+      <div class="prog-wrap" style="margin-bottom:14px">
+        <div class="prog-track ${isLive?'live':''}"
+             ${isLive?`onclick="barClick(event,'${esc(d.name)}',${d.duration})" title="Click to seek"`:''}
+             style="cursor:${isLive?'crosshair':'default'}">
+          <div class="prog-fill" style="width:${pct}%;background:${fc}"></div>
+        </div>
+        <div class="prog-labels">
+          <span class="mono">${fmtSecs(d.current_pos)}</span>
+          <span class="prog-pct">${pct}%</span>
+          <span class="mono">${fmtSecs(d.duration)}</span>
+        </div>
+      </div>
+      ${isLive&&d.duration>0?`
+      <div class="seek-slider-wrap" style="margin-bottom:18px">
+        <span class="mono" style="font-size:10px;min-width:64px">${fmtSecs(d.current_pos)}</span>
+        <input type="range" min="0" max="${Math.floor(d.duration)}" value="${Math.floor(d.current_pos)}"
+               oninput="this.previousElementSibling.textContent=fmtSecs(this.value)"
+               onchange="api('seek',{name:'${esc(d.name)}',seconds:+this.value})">
+        <span class="mono" style="font-size:10px;min-width:64px;text-align:right">${fmtSecs(d.duration)}</span>
+      </div>`:''}
+      <div class="section-label">Playlist — ${(d.playlist||[]).length} file${(d.playlist||[]).length!==1?'s':''}</div>
+      <div style="margin-bottom:18px">${plHtml||'<span style="color:var(--muted)">No files</span>'}</div>
+      <div class="section-label">Recent Log</div>
+      <div class="log-box">${logHtml||'<span style="color:var(--muted)">No entries</span>'}</div>
+      ${d.rtsp_url?`
+      <div style="margin-top:16px">
+        <div class="section-label">Stream URLs</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <span class="rtsp-chip" onclick="copyURL('${esc(d.rtsp_url)}')" title="Copy RTSP URL">${esc(d.rtsp_url)}</span>
+          ${d.hls_url?`<span class="rtsp-chip" style="color:var(--orange)" onclick="copyURL('${esc(d.hls_url)}')" title="Copy HLS URL">${esc(d.hls_url)}</span>`:''}
+        </div>
+      </div>`:''}
+    `;
+    openModal('detail-modal');
+  }catch(e){notify('Failed to load detail','err');}
 }
 
-// ════════════════════════════════════════════
-// STREAM DETAIL
-// ════════════════════════════════════════════
-async function openDetail(name) {
-  const r = await fetch('/api/stream_detail?name='+encodeURIComponent(name));
-  const d = await r.json();
-  if(d.error){ notify(d.error,'err'); return; }
-
-  document.getElementById('detail-title').textContent = d.name;
-  document.getElementById('detail-start').onclick = ()=>{ api('start',{name:d.name}); closeModal('detail-modal'); };
-  document.getElementById('detail-stop' ).onclick = ()=>{ api('stop', {name:d.name}); closeModal('detail-modal'); };
-  document.getElementById('detail-rst'  ).onclick = ()=>{ api('restart',{name:d.name}); closeModal('detail-modal'); };
-
-  const pct = d.progress.toFixed(1);
-  const fillColor = d.progress>80?'var(--red)':d.progress>55?'var(--yellow)':'var(--green)';
-
-  let playlist_html = d.playlist.map((p,i)=>`
-    <div class="playlist-item ${p.current?'current':''}">
-      <span class="pi-idx">${i+1}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.path)}">${esc(p.file)}</span>
-      <span class="mono" style="color:var(--muted)">${esc(p.start)}</span>
-      ${p.current?'<span style="color:var(--green);font-size:10px">▶ NOW</span>':''}
-      ${!p.exists?'<span style="color:var(--red);font-size:10px">✗ MISSING</span>':''}
-    </div>`).join('');
-
-  let logs_html = d.log.slice(-40).map(line=>{
-    const lv = line.includes(' ERROR ')||line.includes('] [Stream') ? (
-      line.includes('Error')||line.includes('error')||line.includes('ERROR')?'err':'info'
-    ) : line.includes('WARN')||line.includes('restart')?'warn':'info';
-    return `<div class="log-${lv}">${esc(line)}</div>`;
-  }).join('');
-
-  document.getElementById('detail-content').innerHTML = `
-    <div class="detail-grid">
-      <div class="detail-item"><div class="dk">Status</div><div class="dv"><span class="badge badge-${esc(d.status)}">${esc(d.status)}</span></div></div>
-      <div class="detail-item"><div class="dk">Port</div><div class="dv" style="color:var(--cyan)">:${d.port}</div></div>
-      <div class="detail-item"><div class="dk">Video Bitrate</div><div class="dv">${esc(d.video_bitrate)}</div></div>
-      <div class="detail-item"><div class="dk">Audio Bitrate</div><div class="dv">${esc(d.audio_bitrate)}</div></div>
-      <div class="detail-item"><div class="dk">Schedule</div><div class="dv">${esc(d.weekdays)}</div></div>
-      <div class="detail-item"><div class="dk">Restarts</div><div class="dv" style="color:${d.restart_count>0?'var(--yellow)':'var(--green)'}">${d.restart_count}</div></div>
-      <div class="detail-item"><div class="dk">Loop Count</div><div class="dv">${d.loop_count}</div></div>
-      <div class="detail-item"><div class="dk">FPS / Speed</div><div class="dv">${d.fps>0?Math.round(d.fps)+' fps':d.speed}</div></div>
-    </div>
-    ${d.error_msg?`<div style="background:var(--red-dim);border:1px solid rgba(243,139,168,.3);border-radius:var(--radius-sm);padding:8px 12px;font-size:11px;color:var(--red);margin-bottom:12px;font-family:var(--font-mono)">${esc(d.error_msg)}</div>`:''}
-    <div style="margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Progress</div>
-    <div class="seek-row" style="margin-bottom:14px">
-      <span class="mono" style="font-size:11px;min-width:58px">${fmtSecs(d.current_pos)}</span>
-      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:${fillColor}"></div></div>
-      <span class="mono" style="font-size:11px;min-width:58px;text-align:right">${fmtSecs(d.duration)}</span>
-    </div>
-    <div style="margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Playlist (${d.playlist.length} file${d.playlist.length!==1?'s':''})</div>
-    <div style="margin-bottom:14px">${playlist_html||'<span style="color:var(--muted)">No files</span>'}</div>
-    <div style="margin-bottom:6px;display:flex;align-items:center;gap:8px">
-      <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Recent Log</span>
-      <button class="btn btn-sm" onclick="openDetail('${esc(d.name)}')">↻ Refresh</button>
-    </div>
-    <div class="log-box">${logs_html||'<span style="color:var(--muted)">No log entries</span>'}</div>
-  `;
-  openModal('detail-modal');
-}
-
-// ════════════════════════════════════════════
-// SEEK MODAL
-// ════════════════════════════════════════════
-function openSeek(name, duration, currentSecs) {
-  seekTarget = name; seekDuration = duration;
-  document.getElementById('seek-stream-name').textContent = name;
-  document.getElementById('seek-input').value = '';
-  document.getElementById('seek-slider').max   = Math.floor(duration);
-  document.getElementById('seek-slider').value = Math.floor(currentSecs);
-  document.getElementById('seek-slider-val').textContent = fmtSecs(currentSecs);
-  document.getElementById('seek-dur').textContent = fmtSecs(duration);
-  openModal('seek-modal');
-  document.getElementById('seek-input').focus();
-}
-function seekSliderInput(v) {
-  document.getElementById('seek-slider-val').textContent = fmtSecs(v);
-}
-function doSeek() {
-  let secs;
-  const txt = document.getElementById('seek-input').value.trim();
-  if(txt) {
-    const parts = txt.split(':').map(Number);
-    secs = parts.length===3 ? parts[0]*3600+parts[1]*60+parts[2]
-         : parts.length===2 ? parts[0]*60+parts[1] : parts[0];
-    if(isNaN(secs)||secs<0){ notify('Invalid time format','err'); return; }
-  } else {
-    secs = +document.getElementById('seek-slider').value;
+// ════════════════════════════════════════════════════════════
+// SEEK MODAL  (with live HLS video preview)
+// ════════════════════════════════════════════════════════════
+function openSeek(name,dur,curSecs,hlsUrl){
+  seekTarget=name;seekDuration=dur;seekHls=hlsUrl||'';
+  document.getElementById('sk-name').textContent=name;
+  document.getElementById('sk-input').value='';
+  const sl=document.getElementById('sk-slider');
+  sl.max=Math.floor(dur);sl.value=Math.floor(curSecs);
+  document.getElementById('sk-cur').textContent=fmtSecs(curSecs);
+  document.getElementById('sk-dur').textContent=fmtSecs(dur);
+  const prev=document.getElementById('sk-preview');
+  const vid=document.getElementById('sk-video');
+  if(hlsUrl){
+    prev.style.display='block';
+    vid.src=hlsUrl;
+    try{vid.play();}catch(_){}
+  }else{
+    prev.style.display='none';vid.src='';
   }
-  if(secs>seekDuration&&seekDuration>0){ notify('Position beyond duration','err'); return; }
-  api('seek',{name:seekTarget, seconds:secs});
+  openModal('seek-modal');
+  setTimeout(()=>document.getElementById('sk-input').focus(),80);
+}
+function closeSeekModal(){
+  const vid=document.getElementById('sk-video');
+  vid.pause();vid.src='';
   closeModal('seek-modal');
 }
+function skSliderInput(v){
+  document.getElementById('sk-cur').textContent=fmtSecs(v);
+}
+function doSeek(){
+  let secs;
+  const txt=document.getElementById('sk-input').value.trim();
+  if(txt){
+    const p=txt.split(':').map(Number);
+    secs=p.length===3?p[0]*3600+p[1]*60+p[2]:p.length===2?p[0]*60+p[1]:+p[0];
+    if(isNaN(secs)||secs<0){notify('Invalid time format','err');return;}
+  }else{
+    secs=+document.getElementById('sk-slider').value;
+  }
+  if(secs>seekDuration&&seekDuration>0){notify('Position beyond duration','err');return;}
+  api('seek',{name:seekTarget,seconds:secs});
+  closeSeekModal();
+}
 
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+// PRIORITY / PLAYLIST REORDER MODAL
+// ════════════════════════════════════════════════════════════
+async function openPrio(name){
+  try{
+    const d=await fetch('/api/stream_detail?name='+encodeURIComponent(name)).then(r=>r.json());
+    if(d.error){notify(d.error,'err');return;}
+    prioStreamName=name;
+    prioOrigFiles=d.playlist||[];
+    document.getElementById('pm-name').textContent=name;
+    const list=document.getElementById('pm-list');
+    list.innerHTML=prioOrigFiles.map((p,i)=>`
+      <div class="plist-item" draggable="true" data-idx="${i}" data-path="${esc(p.path)}" data-start="${esc(p.start)}" data-priority="${p.priority}">
+        <span class="drag-handle" title="Drag to reorder">⠿</span>
+        <span class="pi-num">${i+1}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px"
+              title="${esc(p.path)}">${esc(p.file)}</span>
+        <span class="mono" style="color:var(--muted);font-size:10px">${esc(p.start)}</span>
+        <span class="pi-prio" contenteditable="true" style="min-width:30px;cursor:text"
+              title="Edit priority number">${p.priority}</span>
+        ${p.current?'<span style="color:var(--green);font-size:10px">▶ NOW</span>':''}
+        ${!p.exists?'<span style="color:var(--red);font-size:10px">✗ MISSING</span>':''}
+      </div>`).join('');
+    setupDragDrop(list);
+    openModal('prio-modal');
+  }catch(e){notify('Failed to load playlist','err');}
+}
+
+function setupDragDrop(container){
+  let src=null;
+  container.querySelectorAll('.plist-item').forEach(el=>{
+    el.addEventListener('dragstart',e=>{
+      src=el;el.classList.add('dragging');e.dataTransfer.effectAllowed='move';
+    });
+    el.addEventListener('dragend',()=>{
+      el.classList.remove('dragging');
+      container.querySelectorAll('.plist-item').forEach(x=>x.classList.remove('drag-target'));
+    });
+    el.addEventListener('dragover',e=>{
+      e.preventDefault();
+      container.querySelectorAll('.plist-item').forEach(x=>x.classList.remove('drag-target'));
+      el.classList.add('drag-target');
+    });
+    el.addEventListener('drop',e=>{
+      e.preventDefault();
+      if(!src||src===el)return;
+      const items=[...container.querySelectorAll('.plist-item')];
+      const si=items.indexOf(src),di=items.indexOf(el);
+      if(si<di)el.after(src);else el.before(src);
+      container.querySelectorAll('.plist-item').forEach((x,j)=>{
+        x.dataset.idx=j;x.querySelector('.pi-num').textContent=j+1;
+      });
+      container.querySelectorAll('.plist-item').forEach(x=>x.classList.remove('drag-target'));
+    });
+  });
+}
+
+function applyPriority(){
+  if(!prioStreamName)return;
+  const items=[...document.getElementById('pm-list').querySelectorAll('.plist-item')];
+  const newFiles=items.map((el,i)=>{
+    const path=el.dataset.path;
+    const start=el.dataset.start;
+    const priEl=el.querySelector('.pi-prio');
+    const pri=parseInt(priEl?.textContent?.trim()||String(i+1))||i+1;
+    return `${path}@${start}#${pri}`;
+  });
+  // Update editorRows if loaded, otherwise just notify
+  const idx=editorRows.findIndex(r=>r.name===prioStreamName);
+  if(idx>=0){
+    editorRows[idx].files=newFiles.join(';');
+    renderEditor();
+    notify('Playlist order updated — click Save Config to persist');
+  }else{
+    notify('Open Config tab first, then reorder','info');
+  }
+  closeModal('prio-modal');
+}
+
+// ════════════════════════════════════════════════════════════
 // UPLOAD
-// ════════════════════════════════════════════
-const dropZone = document.getElementById('drop-zone');
-dropZone.addEventListener('dragover',  e=>{ e.preventDefault(); dropZone.classList.add('drag-over'); });
-dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e=>{ e.preventDefault(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
+// ════════════════════════════════════════════════════════════
+const dz=document.getElementById('drop-zone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over')});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');handleFiles(e.dataTransfer.files)});
+const MAX_UP=10*1024*1024*1024;
 
-const MAX_UPLOAD = 10 * 1024 * 1024 * 1024;
+function handleFiles(files){Array.from(files).forEach(uploadFile);}
 
-function handleFiles(files) { Array.from(files).forEach(uploadFile); }
-
-function uploadFile(file) {
-  if(file.size > MAX_UPLOAD){ notify(`${file.name}: exceeds 10 GB limit`,'err'); return; }
-  const key = file.name.replace(/[^\w]/g,'_');
-  const li  = document.createElement('li');
-  li.id     = 'li-'+key;
-  const subdir = document.getElementById('upload-subdir').value;
-  li.innerHTML = `
+function uploadFile(file){
+  if(file.size>MAX_UP){notify(file.name+': exceeds 10 GB limit','err');return;}
+  const key='f'+Math.random().toString(36).slice(2,8);
+  const subdir=document.getElementById('upload-subdir').value;
+  const li=document.createElement('li');
+  li.innerHTML=`
     <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(file.name)}</span>
-    <span style="color:var(--muted);font-size:10px;white-space:nowrap">${fmtBytes(file.size)}</span>
-    <div class="upload-bar"><div class="upload-fill" id="bar-${key}" style="width:0"></div></div>
-    <span id="pct-${key}" style="font-size:10px;color:var(--muted);min-width:32px;text-align:right">0%</span>`;
+    <span class="mono" style="color:var(--muted)">${fmtBytes(file.size)}</span>
+    <div class="ubar"><div class="ubar-fill" id="ub-${key}" style="width:0"></div></div>
+    <span id="up-${key}" class="mono" style="color:var(--muted);min-width:36px;text-align:right">0%</span>`;
   document.getElementById('upload-list').appendChild(li);
-
-  const fd = new FormData(); fd.append('file',file); fd.append('subdir',subdir);
-  const xhr = new XMLHttpRequest();
-  xhr.upload.onprogress = e => {
-    if(!e.lengthComputable) return;
-    const pct = Math.round(e.loaded/e.total*100);
-    const bar = document.getElementById('bar-'+key);
-    const pctEl = document.getElementById('pct-'+key);
-    if(bar) bar.style.width=pct+'%';
-    if(pctEl) pctEl.textContent=pct+'%';
+  const fd=new FormData();fd.append('file',file);fd.append('subdir',subdir);
+  const xhr=new XMLHttpRequest();
+  xhr.upload.onprogress=e=>{
+    if(!e.lengthComputable)return;
+    const pct=Math.round(e.loaded/e.total*100);
+    const b=document.getElementById('ub-'+key),p=document.getElementById('up-'+key);
+    if(b)b.style.width=pct+'%';if(p)p.textContent=pct+'%';
   };
-  xhr.onload = () => {
-    const pctEl = document.getElementById('pct-'+key);
-    if(xhr.status===200){ if(pctEl){pctEl.textContent='✓';pctEl.style.color='var(--green)';}  notify(file.name+' uploaded ✓'); }
-    else { if(pctEl){pctEl.textContent='✗';pctEl.style.color='var(--red)';}  notify('Upload failed: '+file.name,'err'); }
+  xhr.onload=()=>{
+    const p=document.getElementById('up-'+key);
+    try{
+      const j=JSON.parse(xhr.responseText);
+      if(xhr.status===200&&j.ok){if(p){p.textContent='✓';p.style.color='var(--green)';}notify(file.name+' uploaded ✓');}
+      else{if(p){p.textContent='✗';p.style.color='var(--red)';}notify('Upload failed: '+(j.msg||file.name),'err');}
+    }catch(_){if(p){p.textContent='✗';p.style.color='var(--red)';}notify('Upload error','err');}
   };
-  xhr.onerror = () => notify('Upload error: '+file.name,'err');
-  xhr.open('POST','/api/upload'); xhr.send(fd);
+  xhr.onerror=()=>notify('Network error: '+file.name,'err');
+  xhr.open('POST','/api/upload');xhr.send(fd);
 }
 
-async function loadSubdirs() {
-  const r = await fetch('/api/subdirs');
-  const data = await r.json();
-  const sel = document.getElementById('upload-subdir');
-  sel.innerHTML = '<option value="">/ (media root)</option>';
-  data.dirs.filter(d=>d).forEach(d=>{ sel.innerHTML+=`<option value="${esc(d)}">${esc(d)}</option>`; });
+async function loadSubdirs(){
+  try{
+    const data=await fetch('/api/subdirs').then(r=>r.json());
+    const sel=document.getElementById('upload-subdir');
+    sel.innerHTML='<option value="">/ (media root)</option>';
+    (data.dirs||[]).filter(d=>d).forEach(d=>{
+      const o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);
+    });
+    if(data.root_label){
+      document.getElementById('upload-root-label').textContent=data.root_label;
+    }
+  }catch(_){}
 }
 
-async function createSubdir() {
-  const name = prompt('New folder name:'); if(!name||!name.trim()) return;
-  if(/[\/\\<>"|?*]/.test(name)){ notify('Invalid folder name','err'); return; }
-  await api('create_subdir',{name:name.trim()});
-  loadSubdirs();
+async function createSubdir(){
+  const name=prompt('New folder name (no special characters):');
+  if(!name||!name.trim())return;
+  if(/[\/\\<>"|?*\x00]/.test(name)||name.includes('..')){notify('Invalid folder name','err');return;}
+  const r=await api('create_subdir',{name:name.trim()});
+  if(r&&r.ok)loadSubdirs();
 }
 
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 // LIBRARY
-// ════════════════════════════════════════════
-async function loadLibrary() {
-  document.getElementById('library-tbody').innerHTML =
-    '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Loading…</td></tr>';
-  const r = await fetch('/api/library');
-  libraryData = await r.json();
-  filterLibrary();
+// ════════════════════════════════════════════════════════════
+async function loadLibrary(){
+  const tb=document.getElementById('libtbl');
+  tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:28px">Loading…</td></tr>';
+  try{
+    libData=await fetch('/api/library').then(r=>r.json());
+    filterLib();
+  }catch(e){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--red);padding:28px">Failed to load library</td></tr>';}
 }
-
-function filterLibrary() {
-  const q   = document.getElementById('lib-search').value.toLowerCase();
-  const srt = document.getElementById('lib-sort').value;
-  let data  = libraryData.filter(f=>f.path.toLowerCase().includes(q));
-  if(srt==='size') data.sort((a,b)=>b.size_bytes-a.size_bytes);
-  else if(srt==='dur') data.sort((a,b)=>b.duration_secs-a.duration_secs);
+function filterLib(){
+  const q=document.getElementById('lib-search').value.toLowerCase();
+  const srt=document.getElementById('lib-sort').value;
+  let data=libData.filter(f=>f.path.toLowerCase().includes(q));
+  if(srt==='size')data.sort((a,b)=>b.size_bytes-a.size_bytes);
+  else if(srt==='dur')data.sort((a,b)=>b.duration_secs-a.duration_secs);
   else data.sort((a,b)=>a.path.localeCompare(b.path));
-  renderLibrary(data);
+  renderLib(data);
 }
-
-function renderLibrary(data) {
-  const tb = document.getElementById('library-tbody');
-  if(!data.length){ tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">No files found.</td></tr>'; return; }
-  tb.innerHTML = data.map(f=>`
+function renderLib(data){
+  const tb=document.getElementById('libtbl');
+  if(!data.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:28px">No files found.</td></tr>';return;}
+  tb.innerHTML=data.map(f=>`
 <tr>
-  <td class="mono" style="word-break:break-all;font-size:11px;max-width:300px">
-    <span title="${esc(f.full_path)}">${esc(f.path)}</span>
-  </td>
-  <td class="mono" style="white-space:nowrap">${esc(f.duration)||'—'}</td>
-  <td class="mono" style="white-space:nowrap">${esc(f.size)||'—'}</td>
-  <td style="font-size:11px">${esc(f.video_codec)||'—'}</td>
-  <td style="font-size:11px">${f.width&&f.height?f.width+'×'+f.height:'—'}</td>
-  <td style="font-size:11px">${f.fps?f.fps+' fps':'—'}</td>
+  <td class="mono" style="word-break:break-all;font-size:11px;max-width:340px" title="${esc(f.full_path)}">${esc(f.path)}</td>
+  <td class="mono" style="white-space:nowrap;color:var(--cyan)">${esc(f.duration)||'--'}</td>
+  <td class="mono" style="white-space:nowrap;color:var(--muted)">${esc(f.size)||'--'}</td>
+  <td style="font-size:11.5px;color:var(--muted)">${esc(f.video_codec)||'--'}</td>
+  <td style="font-size:11.5px;color:var(--muted)">${f.width&&f.height?f.width+'×'+f.height:'--'}</td>
+  <td style="font-size:11.5px;color:var(--muted)">${f.fps?f.fps+' fps':'--'}</td>
   <td style="white-space:nowrap">
-    <button class="btn btn-sm" onclick="copyURL('${esc(f.full_path)}')" title="Copy path">📋</button>
-    <button class="btn btn-sm btn-danger" onclick="deleteFile('${esc(f.full_path)}')">🗑</button>
+    <button class="btn btn-xs" onclick="copyURL('${esc(f.full_path)}')" title="Copy path">📋</button>
+    <button class="btn btn-xs btn-danger" onclick="delFile('${esc(f.full_path)}')" title="Delete">🗑</button>
   </td>
 </tr>`).join('');
 }
-
-async function deleteFile(path) {
-  if(!confirm('Permanently delete?\n'+path)) return;
-  await api('delete_file',{path});
-  loadLibrary();
+async function delFile(path){
+  if(!confirm('Permanently delete?\n'+path))return;
+  const r=await api('delete_file',{path});
+  if(r&&r.ok)loadLibrary();
 }
 
-// ════════════════════════════════════════════
-// EDITOR
-// ════════════════════════════════════════════
-async function loadEditor() {
-  const r = await fetch('/api/streams_config');
-  editorRows = await r.json();
-  renderEditor();
+// ════════════════════════════════════════════════════════════
+// CONFIG EDITOR
+// ════════════════════════════════════════════════════════════
+async function loadEditor(){
+  try{
+    editorRows=await fetch('/api/streams_config').then(r=>r.json());
+    renderEditor();
+  }catch(e){notify('Failed to load config','err');}
 }
-
-function renderEditor() {
-  const c = document.getElementById('editor-body');
-  c.innerHTML = editorRows.map((row,idx)=>`
-<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;margin-bottom:12px">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <strong style="color:var(--blue);font-family:var(--font-mono)">${esc(row.name)}</strong>
-    <button class="btn btn-sm btn-danger" onclick="removeStreamRow(${idx})">✕ Remove</button>
+function renderEditor(){
+  const c=document.getElementById('editor-body');
+  if(!editorRows.length){c.innerHTML='<p style="color:var(--muted);text-align:center;padding:28px">No streams configured. Click "+ Add Stream" to start.</p>';return;}
+  c.innerHTML=editorRows.map((row,idx)=>`
+<div class="ed-card">
+  <div class="ed-head">
+    <span class="ed-name">${esc(row.name)}</span>
+    <div style="display:flex;gap:6px">
+      ${(row.files||'').split(';').filter(f=>f.trim()).length>1
+        ?`<button class="btn btn-sm" onclick="openPrioForEditor(${idx})" title="Reorder playlist">🎯 Reorder</button>`:''}
+      <button class="btn btn-sm btn-danger" onclick="removeEdRow(${idx})">✕ Remove</button>
+    </div>
   </div>
   <div class="form-row">
     <div class="form-group"><label>Name</label>
-      <input value="${esc(row.name)}" onchange="editorRows[${idx}].name=this.value.trim()"></div>
+      <input value="${esc(row.name)}" oninput="editorRows[${idx}].name=this.value.trim()"></div>
     <div class="form-group"><label>Port</label>
-      <input type="number" min="1024" max="65535" value="${row.port}"
-             onchange="editorRows[${idx}].port=+this.value"></div>
+      <input type="number" min="1024" max="65535" value="${row.port}" onchange="editorRows[${idx}].port=+this.value"></div>
     <div class="form-group"><label>RTSP Path</label>
       <input value="${esc(row.stream_path||'stream')}" onchange="editorRows[${idx}].stream_path=this.value.trim()"></div>
     <div class="form-group"><label>Weekdays</label>
       <input value="${esc(row.weekdays||'all')}" onchange="editorRows[${idx}].weekdays=this.value.trim()">
-      <span class="form-hint">all · mon|wed|fri · weekdays · weekends</span>
-    </div>
+      <span class="form-hint">all | mon|wed|fri | weekdays | weekends</span></div>
   </div>
   <div class="form-row">
     <div class="form-group"><label>Video Bitrate</label>
       <input value="${esc(row.video_bitrate||'2500k')}" onchange="editorRows[${idx}].video_bitrate=this.value.trim()"></div>
     <div class="form-group"><label>Audio Bitrate</label>
-      <input value="${esc(row.audio_bitrate||'128k')}"  onchange="editorRows[${idx}].audio_bitrate=this.value.trim()"></div>
-    <div class="form-group">
-      <label>Options</label>
-      <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">
-        <label style="display:flex;align-items:center;gap:5px;color:var(--text);font-size:12px;margin:0;cursor:pointer">
-          <input type="checkbox" ${row.enabled?'checked':''} onchange="editorRows[${idx}].enabled=this.checked" style="width:auto"> Enabled</label>
-        <label style="display:flex;align-items:center;gap:5px;color:var(--text);font-size:12px;margin:0;cursor:pointer">
-          <input type="checkbox" ${row.shuffle?'checked':''} onchange="editorRows[${idx}].shuffle=this.checked" style="width:auto"> Shuffle</label>
-        <label style="display:flex;align-items:center;gap:5px;color:var(--text);font-size:12px;margin:0;cursor:pointer">
-          <input type="checkbox" ${row.hls_enabled?'checked':''} onchange="editorRows[${idx}].hls_enabled=this.checked" style="width:auto"> HLS</label>
-      </div>
-    </div>
+      <input value="${esc(row.audio_bitrate||'128k')}" onchange="editorRows[${idx}].audio_bitrate=this.value.trim()"></div>
+    <div class="form-group"><label>Options</label>
+      <div style="display:flex;gap:18px;margin-top:10px;flex-wrap:wrap">
+        <label class="checkbox-row"><input type="checkbox" ${row.enabled?'checked':''} onchange="editorRows[${idx}].enabled=this.checked"><span>Enabled</span></label>
+        <label class="checkbox-row"><input type="checkbox" ${row.shuffle?'checked':''} onchange="editorRows[${idx}].shuffle=this.checked"><span>Shuffle</span></label>
+        <label class="checkbox-row"><input type="checkbox" ${row.hls_enabled?'checked':''} onchange="editorRows[${idx}].hls_enabled=this.checked"><span>HLS</span></label>
+      </div></div>
   </div>
   <div class="form-group">
-    <label>Playlist Files (one per line · optionally with @HH:MM:SS start offset)</label>
-    <textarea rows="3" style="margin-top:4px;font-family:var(--font-mono);font-size:11px"
-      onchange="editorRows[${idx}].files=this.value">${esc((row.files||'').split(';').join('\n'))}</textarea>
-    <span class="form-hint">Example: /media/intro.mp4@00:00:00</span>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <label style="margin:0">Playlist Files</label>
+      <span class="form-hint">Format: /path/file.mp4@HH:MM:SS#priority  (one per line, ; or newline separated)</span>
+    </div>
+    <textarea rows="4" style="font-family:var(--mono);font-size:11px;resize:vertical"
+      oninput="editorRows[${idx}].files=this.value">${esc((row.files||'').split(';').join('\n'))}</textarea>
+    <span class="form-hint">Example: /media/intro.mp4@00:00:00#1 &nbsp;|&nbsp; /media/main.mp4@00:00:00#2 &nbsp;|&nbsp; lower # plays first</span>
   </div>
 </div>`).join('');
 }
-
-function addStreamRow() {
+function addEditorRow(){
   editorRows.push({name:'NewStream',port:8560,files:'',weekdays:'all',
     enabled:true,shuffle:false,stream_path:'stream',
     video_bitrate:'2500k',audio_bitrate:'128k',hls_enabled:false});
   renderEditor();
+  document.getElementById('editor-body').lastElementChild?.scrollIntoView({behavior:'smooth'});
 }
-function removeStreamRow(idx) { editorRows.splice(idx,1); renderEditor(); }
-
-async function saveCSV() {
-  const rows = editorRows.map(r=>({
-    ...r,
-    files: (r.files||'').replace(/\n+/g,';').replace(/;+/g,';').trim()
-  }));
-  // Validate ports
-  const ports = rows.map(r=>r.port);
-  if(new Set(ports).size !== ports.length){ notify('Duplicate ports detected','err'); return; }
-  const res = await api('save_config',{streams:rows});
-  if(res&&res.ok) { notify('Saved ✓ — restart to apply'); loadEditor(); }
+function removeEdRow(idx){
+  if(!confirm('Remove stream "'+editorRows[idx].name+'"?'))return;
+  editorRows.splice(idx,1);renderEditor();
+}
+function openPrioForEditor(idx){
+  prioStreamName=editorRows[idx].name;
+  prioOrigFiles=(editorRows[idx].files||'').split(';').filter(f=>f.trim()).map((f,i)=>{
+    const hsh=f.lastIndexOf('#'),at=f.lastIndexOf('@');
+    const pri=hsh>at?parseInt(f.slice(hsh+1))||i+1:i+1;
+    const withoutPri=hsh>at?f.slice(0,hsh):f;
+    const path=at>0?withoutPri.slice(0,at):withoutPri;
+    const start=at>0?withoutPri.slice(at+1):'00:00:00';
+    return{file:path.split('/').pop()||path,path:path.trim(),start:start.trim(),priority:pri,exists:true,current:false};
+  });
+  document.getElementById('pm-name').textContent=prioStreamName;
+  const list=document.getElementById('pm-list');
+  list.innerHTML=prioOrigFiles.map((p,i)=>`
+    <div class="plist-item" draggable="true" data-idx="${i}" data-path="${esc(p.path)}" data-start="${esc(p.start)}" data-priority="${p.priority}">
+      <span class="drag-handle">⠿</span>
+      <span class="pi-num">${i+1}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${esc(p.file)}</span>
+      <span class="mono" style="color:var(--muted);font-size:10px">${esc(p.start)}</span>
+      <span class="pi-prio" contenteditable="true" title="Edit priority">${p.priority}</span>
+    </div>`).join('');
+  setupDragDrop(list);
+  openModal('prio-modal');
+}
+async function saveCSV(){
+  const rows=editorRows.map(r=>({...r,files:(r.files||'').replace(/\n+/g,';').replace(/;+/g,';').trim()}));
+  const ports=rows.map(r=>r.port);
+  if(new Set(ports).size!==ports.length){notify('Duplicate port numbers detected!','err');return;}
+  const names=rows.map(r=>r.name);
+  if(new Set(names).size!==names.length){notify('Duplicate stream names detected!','err');return;}
+  const res=await api('save_config',{streams:rows});
+  if(res&&res.ok)loadEditor();
 }
 
-// ════════════════════════════════════════════
-// EVENTS
-// ════════════════════════════════════════════
-async function loadEventFormData() {
-  const [streams, lib] = await Promise.all([
-    fetch('/api/streams').then(r=>r.json()),
-    fetch('/api/library').then(r=>r.json()),
-  ]);
-  const sSel = document.getElementById('evt-stream');
-  sSel.innerHTML = streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)} (:${s.port})</option>`).join('');
-  const fSel = document.getElementById('evt-file');
-  fSel.innerHTML = lib.map(f=>`<option value="${esc(f.full_path)}">${esc(f.path)}</option>`).join('');
-  const dt = new Date(Date.now()+5*60000);
-  document.getElementById('evt-datetime').value =
-    new Date(dt-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
-
-  // Populate log stream filter
-  const sel = document.getElementById('log-stream-filter');
-  sel.innerHTML = '<option value="">All Streams</option>'+
-    streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+// ════════════════════════════════════════════════════════════
+// EVENTS / SCHEDULER
+// ════════════════════════════════════════════════════════════
+async function loadEvtForm(){
+  try{
+    const[streams,lib]=await Promise.all([
+      fetch('/api/streams').then(r=>r.json()),
+      fetch('/api/library').then(r=>r.json()),
+    ]);
+    document.getElementById('evt-stream').innerHTML=streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)} (:${s.port})</option>`).join('');
+    document.getElementById('evt-file').innerHTML=lib.map(f=>`<option value="${esc(f.full_path)}">${esc(f.path)}</option>`).join('');
+    const dt=new Date(Date.now()+5*60000);
+    document.getElementById('evt-dt').value=new Date(dt-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    const sel=document.getElementById('log-stream-sel');
+    sel.innerHTML='<option value="">All Streams</option>'+streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  }catch(_){}
 }
-
-async function scheduleEvent() {
-  const stream = document.getElementById('evt-stream').value;
-  const file   = document.getElementById('evt-file').value;
-  const dt     = document.getElementById('evt-datetime').value;
-  const pos    = document.getElementById('evt-startpos').value || '00:00:00';
-  const post   = document.getElementById('evt-postaction').value;
-  if(!stream||!file||!dt){ notify('Fill all required fields','err'); return; }
-  // Validate start position format
-  if(!/^\d{2}:\d{2}:\d{2}$/.test(pos)){ notify('Start position must be HH:MM:SS','err'); return; }
+async function schedEvent(){
+  const stream=document.getElementById('evt-stream').value;
+  const file=document.getElementById('evt-file').value;
+  const dt=document.getElementById('evt-dt').value;
+  const pos=document.getElementById('evt-startpos').value||'00:00:00';
+  const post=document.getElementById('evt-post').value;
+  if(!stream||!file||!dt){notify('Fill all required fields','err');return;}
+  if(!/^\d{2}:\d{2}:\d{2}$/.test(pos)){notify('Start position must be HH:MM:SS','err');return;}
   await api('add_event',{stream_name:stream,file_path:file,play_at:dt,start_pos:pos,post_action:post});
   loadEvents();
 }
-
-async function loadEvents() {
-  const r    = await fetch('/api/events');
-  const data = await r.json();
-  const now  = Date.now();
-  const tb   = document.getElementById('events-tbody');
-  tb.innerHTML = data.map(ev=>{
-    const playAt = new Date(ev.play_at.replace(' ','T'));
-    const delta  = ((playAt - now)/1000).toFixed(0);
-    const countdown = ev.played ? '—' : delta>0 ? `in ${Math.floor(delta/60)}m ${delta%60}s` : `${Math.abs(delta)}s ago`;
-    return `
-<tr>
-  <td>${esc(ev.stream_name)}</td>
-  <td class="mono" style="font-size:11px">${esc(ev.file_name)}</td>
-  <td class="mono" style="font-size:11px;white-space:nowrap">${esc(ev.play_at)}</td>
-  <td class="mono" style="font-size:11px;color:${delta>0?'var(--yellow)':'var(--muted)'}">${countdown}</td>
-  <td style="font-size:11px">${esc(ev.post_action)}</td>
-  <td><span class="badge ${ev.played?'badge-STOPPED':'badge-SCHED'}">${ev.played?'Played':'Pending'}</span></td>
-  <td><button class="btn btn-sm btn-danger" onclick="deleteEvent('${esc(ev.event_id)}')">✕</button></td>
-</tr>`;
-  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">No events scheduled.</td></tr>';
+async function loadEvents(){
+  try{
+    const data=await fetch('/api/events').then(r=>r.json());
+    const now=Date.now();
+    const tb=document.getElementById('evtbl');
+    tb.innerHTML=data.map(ev=>{
+      const pa=new Date(ev.play_at.replace(' ','T'));
+      const d=((pa-now)/1000).toFixed(0);
+      const cd=ev.played?'--':d>0?`in ${Math.floor(d/60)}m ${d%60}s`:`${Math.abs(d)}s ago`;
+      return `<tr>
+        <td style="font-weight:700;color:var(--blue)">${esc(ev.stream_name)}</td>
+        <td class="mono" style="font-size:11px">${esc(ev.file_name)}</td>
+        <td class="mono" style="font-size:11px;white-space:nowrap">${esc(ev.play_at)}</td>
+        <td class="mono" style="font-size:11px;color:${d>0?'var(--yellow)':'var(--muted)'}">${cd}</td>
+        <td style="font-size:11.5px">${esc(ev.post_action)}</td>
+        <td><span class="badge ${ev.played?'badge-STOPPED':'badge-SCHED'}"><div class="bdot"></div>${ev.played?'Played':'Pending'}</span></td>
+        <td><button class="btn btn-xs btn-danger" onclick="delEvent('${esc(ev.event_id)}')">✕</button></td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:28px">No events scheduled.</td></tr>';
+  }catch(_){}
 }
-
-async function deleteEvent(id) {
-  if(!confirm('Delete this event?')) return;
-  await api('delete_event',{event_id:id});
+async function delEvent(id){
+  if(!confirm('Delete this event?'))return;
+  const r=await api('delete_event',{event_id:id});
+  if(r&&r.ok)loadEvents();
+}
+async function clearPlayed(){
+  if(!confirm('Remove all played events?'))return;
+  const r=await fetch('/api/events').then(r=>r.json());
+  for(const id of r.filter(e=>e.played).map(e=>e.event_id))
+    await fetch('/api/delete_event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:id})});
   loadEvents();
 }
 
-async function clearPlayedEvents() {
-  if(!confirm('Remove all played events?')) return;
-  const r    = await fetch('/api/events').then(r=>r.json());
-  const played = r.filter(e=>e.played).map(e=>e.event_id);
-  for(const id of played) await fetch('/api/delete_event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:id})});
-  loadEvents();
-}
-
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 // LOGS
-// ════════════════════════════════════════════
-function setLogLevel(level) {
-  logLevel = level;
+// ════════════════════════════════════════════════════════════
+function setLogLv(lv){
+  logLv=lv;
   document.querySelectorAll('.log-chip').forEach(c=>{
-    c.className = 'log-chip'+(c.dataset.level===level?' active-'+level:'');
+    c.className='log-chip'+(c.dataset.lv===lv?' a-'+lv:'');
   });
-  renderLogEntries();
+  renderLogs();
 }
-
-async function loadLogs() {
-  const stream = document.getElementById('log-stream-filter').value;
-  const url = `/api/logs?level=${logLevel}&stream=${encodeURIComponent(stream)}&n=500`;
-  const r   = await fetch(url);
-  const data = await r.json();
-  logEntries = data.entries;
-  renderLogEntries();
+async function loadLogs(){
+  try{
+    const stream=document.getElementById('log-stream-sel').value;
+    const data=await fetch(`/api/logs?level=${logLv}&stream=${encodeURIComponent(stream)}&n=600`).then(r=>r.json());
+    logEntries=data.entries||[];
+    renderLogs();
+  }catch(_){}
 }
-
-function renderLogEntries() {
-  const q     = (document.getElementById('log-search').value||'').toLowerCase();
-  const colors = {INFO:'var(--text)',WARN:'var(--yellow)',ERROR:'var(--red)'};
-  const el    = document.getElementById('log-container');
-  const items = logEntries
-    .filter(([msg])=> !q || msg.toLowerCase().includes(q))
+function renderLogs(){
+  const q=(document.getElementById('log-search').value||'').toLowerCase();
+  const el=document.getElementById('log-box');
+  el.innerHTML=logEntries
+    .filter(([m])=>!q||m.toLowerCase().includes(q))
     .slice().reverse()
-    .map(([msg,lvl])=>`<div style="color:${colors[lvl]||'var(--text)'};padding:1px 0;border-bottom:1px solid var(--faint)">${esc(msg)}</div>`)
-    .join('');
-  el.innerHTML = items || '<span style="color:var(--muted)">No entries.</span>';
-  if(document.getElementById('log-autoscroll').checked) el.scrollTop = 0;
+    .map(([m,lv])=>`<div class="ll l${lv==='ERROR'?'e':lv==='WARN'?'w':'i'}">${esc(m)}</div>`)
+    .join('')||'<span style="color:var(--muted)">No log entries.</span>';
+  if(document.getElementById('log-autoscroll').checked)el.scrollTop=0;
 }
 
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 // INIT
-// ════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 loadStreams();
-updateHeaderStats();
+updateHdrStats();
 startRefresh();
-setInterval(updateHeaderStats, 5000);
+setInterval(updateHdrStats,5000);
 setInterval(()=>{
-  if(document.getElementById('tab-events').classList.contains('active')) loadEvents();
-  if(document.getElementById('tab-logs').classList.contains('active'))   loadLogs();
-}, 8000);
-
-// Clock
+  if(document.getElementById('tab-events').classList.contains('active'))loadEvents();
+  if(document.getElementById('tab-logs').classList.contains('active'))loadLogs();
+},8000);
 setInterval(()=>{
-  const now = new Date();
-  const el  = document.getElementById('h-time');
-  if(el) el.textContent =
-    String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');
-}, 1000);
-
-// Keyboard shortcuts
-document.addEventListener('keydown', e=>{
-  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
-  if(e.key==='Escape'){
-    document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));
-  }
+  const now=new Date();
+  const el=document.getElementById('h-time');
+  if(el)el.textContent=[now.getHours(),now.getMinutes(),now.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+},1000);
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT')return;
+  if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));
+  if(e.key==='r'||e.key==='R')loadStreams();
 });
 </script>
-"""
-
-HTML_PAGE = (
-    "<!DOCTYPE html>\n<html lang='en'>\n<head>\n"
-    "<meta charset='UTF-8'>\n"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>\n"
-    "<title>HydraCast Web UI</title>\n"
-    + _HTML_STYLE
-    + "</head>\n<body>\n"
-    + _HTML_BODY
-    + _HTML_SCRIPT
-    + "\n</body>\n</html>"
-)
+</body>
+</html>"""
 
 
 # =============================================================================
-# WEB HANDLER  —  v3.1: security headers, new endpoints, hardened upload
+# SECURITY HEADERS
 # =============================================================================
-_SECURITY_HEADERS = {
+_SEC_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options":        "SAMEORIGIN",
     "X-XSS-Protection":       "1; mode=block",
@@ -2493,8 +2815,11 @@ _SECURITY_HEADERS = {
 }
 
 
+# =============================================================================
+# WEB REQUEST HANDLER
+# =============================================================================
 class WebHandler(BaseHTTPRequestHandler):
-    def log_message(self, *args): pass  # suppress default access log
+    def log_message(self, *args): pass
 
     def _send(self, code: int, body: Union[str, bytes], ct: str = "application/json") -> None:
         if isinstance(body, str): body = body.encode("utf-8")
@@ -2502,10 +2827,13 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ct)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
-        for k, v in _SECURITY_HEADERS.items():
+        for k, v in _SEC_HEADERS.items():
             self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass
 
     def _json(self, data: Any, code: int = 200) -> None:
         self._send(code, json.dumps(data, default=str), "application/json")
@@ -2516,7 +2844,7 @@ class WebHandler(BaseHTTPRequestHandler):
         qs     = parse_qs(parsed.query)
 
         if path in ("/", "/index.html"):
-            self._send(200, HTML_PAGE, "text/html; charset=utf-8")
+            self._send(200, _HTML_PAGE, "text/html; charset=utf-8")
         elif path == "/api/streams":        self._get_streams()
         elif path == "/api/streams_config": self._get_streams_config()
         elif path == "/api/library":        self._get_library()
@@ -2537,7 +2865,7 @@ class WebHandler(BaseHTTPRequestHandler):
             return
 
         length = int(self.headers.get("Content-Length", 0))
-        if length > 1 * 1024 * 1024:   # 1 MB max for JSON body
+        if length > 2 * 1024 * 1024:
             self._json({"ok": False, "msg": "Request body too large"}, 413)
             return
         body = self.rfile.read(length) if length else b"{}"
@@ -2547,7 +2875,7 @@ class WebHandler(BaseHTTPRequestHandler):
             self._json({"ok": False, "msg": "Invalid JSON"}, 400)
             return
 
-        action = path.replace("/api/","")
+        action = path.replace("/api/","").strip("/")
         self._dispatch(action, data)
 
     def do_OPTIONS(self) -> None:
@@ -2557,27 +2885,28 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
-    # ── GET endpoints ─────────────────────────────────────────────────────────
+    # ── GET ───────────────────────────────────────────────────
     def _get_streams(self) -> None:
         if not _WEB_MANAGER: self._json([]); return
         result = []
         for st in _WEB_MANAGER.states:
             cfg = st.config
             result.append({
-                "name":        cfg.name,
-                "port":        cfg.port,
-                "weekdays":    cfg.weekdays_display(),
-                "status":      st.status.label,
-                "progress":    st.progress,
-                "position":    st.format_pos(),
-                "current_secs": st.current_pos,
-                "duration":    st.duration,
-                "fps":         st.fps,
-                "rtsp_url":    cfg.rtsp_url_external,
-                "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
-                "shuffle":     cfg.shuffle,
-                "playlist":    cfg.playlist_display(),
-                "enabled":     cfg.enabled,
+                "name":           cfg.name,
+                "port":           cfg.port,
+                "weekdays":       cfg.weekdays_display(),
+                "status":         st.status.label,
+                "progress":       st.progress,
+                "position":       st.format_pos(),
+                "current_secs":   st.current_pos,
+                "duration":       st.duration,
+                "fps":            st.fps,
+                "rtsp_url":       cfg.rtsp_url_external,
+                "hls_url":        cfg.hls_url if cfg.hls_enabled else "",
+                "shuffle":        cfg.shuffle,
+                "playlist_count": len(cfg.playlist),
+                "playlist":       cfg.playlist_display(),
+                "enabled":        cfg.enabled,
             })
         self._json(result)
 
@@ -2589,7 +2918,9 @@ class WebHandler(BaseHTTPRequestHandler):
             result.append({
                 "name":          cfg.name,
                 "port":          cfg.port,
-                "files":         ";".join(f"{i.file_path}@{i.start_position}" for i in cfg.playlist),
+                "files":         ";".join(
+                    f"{i.file_path}@{i.start_position}#{i.priority}"
+                    for i in cfg.playlist),
                 "weekdays":      cfg.weekdays_display(),
                 "enabled":       cfg.enabled,
                 "shuffle":       cfg.shuffle,
@@ -2628,8 +2959,9 @@ class WebHandler(BaseHTTPRequestHandler):
         dirs = []
         for d in MEDIA_DIR.rglob("*"):
             if d.is_dir():
-                dirs.append(str(d.relative_to(MEDIA_DIR)))
-        self._json({"dirs": sorted(set(dirs))})
+                rel = str(d.relative_to(MEDIA_DIR))
+                if rel: dirs.append(rel)
+        self._json({"dirs": sorted(set(dirs)), "root_label": str(MEDIA_DIR)})
 
     def _get_events(self) -> None:
         if not _WEB_MANAGER: self._json([]); return
@@ -2653,7 +2985,7 @@ class WebHandler(BaseHTTPRequestHandler):
             n = min(1000, int(qs.get("n", ["500"])[0]))
         except ValueError:
             n = 500
-        if level not in ("ALL", "INFO", "WARN", "ERROR"): level = "ALL"
+        if level not in ("ALL","INFO","WARN","ERROR"): level = "ALL"
         entries = _WEB_MANAGER._glog.filtered(
             level=None if level=="ALL" else level,
             stream=stream or None, n=n)
@@ -2685,17 +3017,17 @@ class WebHandler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404); return
         cfg = st.config
         with st._lock:
-            log_snap = list(st.log[-60:])
-        # current playlist index
+            log_snap = list(st.log[-80:])
         cur_real = st.playlist_order[st.playlist_index] if st.playlist_order else 0
         playlist = []
         for i, item in enumerate(cfg.playlist):
             playlist.append({
-                "file":    item.file_path.name,
-                "path":    str(item.file_path),
-                "start":   item.start_position,
-                "exists":  item.file_path.exists(),
-                "current": (i == cur_real),
+                "file":     item.file_path.name,
+                "path":     str(item.file_path),
+                "start":    item.start_position,
+                "priority": item.priority,
+                "exists":   item.file_path.exists(),
+                "current":  (i == cur_real),
             })
         self._json({
             "name":          cfg.name,
@@ -2723,10 +3055,11 @@ class WebHandler(BaseHTTPRequestHandler):
             "started_at":    st.started_at.isoformat() if st.started_at else None,
         })
 
-    # ── POST dispatch ─────────────────────────────────────────────────────────
+    # ── POST dispatch ─────────────────────────────────────────
     def _dispatch(self, action: str, data: Dict) -> None:
         mgr = _WEB_MANAGER
-        if not mgr: self._json({"ok": False, "msg": "Manager not ready"}); return
+        if not mgr:
+            self._json({"ok": False, "msg": "Manager not ready"}); return
 
         if action == "start":
             st = mgr.get_state(str(data.get("name","")))
@@ -2748,6 +3081,14 @@ class WebHandler(BaseHTTPRequestHandler):
 
         elif action == "stop_all":
             mgr.stop_all(); self._json({"ok": True, "msg": "Stopped all streams"})
+
+        elif action == "skip_next":
+            st = mgr.get_state(str(data.get("name","")))
+            if st:
+                mgr.skip_next(st)
+                self._json({"ok": True, "msg": f"Skipping to next file in {st.config.name}"})
+            else:
+                self._json({"ok": False, "msg": "Stream not found"})
 
         elif action == "seek":
             st = mgr.get_state(str(data.get("name","")))
@@ -2771,12 +3112,12 @@ class WebHandler(BaseHTTPRequestHandler):
                 for row in streams_data:
                     name = str(row.get("name","")).strip()
                     if not name or len(name) > 64:
-                        raise ValueError("Invalid stream name")
+                        raise ValueError(f"Invalid stream name: '{name}'")
                     port = int(row.get("port", 0))
                     if not (1024 <= port <= 65535):
                         raise ValueError(f"Port {port} out of range")
-                    playlist = CSVManager.parse_files(
-                        str(row.get("files","")).replace("\n",";"))
+                    raw_files = str(row.get("files","")).replace("\n",";")
+                    playlist = CSVManager.parse_files(raw_files)
                     configs.append(StreamConfig(
                         name=name, port=port, playlist=playlist,
                         weekdays=CSVManager.parse_weekdays(str(row.get("weekdays","all"))),
@@ -2789,10 +3130,12 @@ class WebHandler(BaseHTTPRequestHandler):
                             str(row.get("audio_bitrate","128k")), "128k"),
                         hls_enabled=bool(row.get("hls_enabled", False)),
                     ))
-                # Check for duplicate ports
                 ports = [c.port for c in configs]
                 if len(set(ports)) != len(ports):
-                    raise ValueError("Duplicate port numbers")
+                    raise ValueError("Duplicate port numbers detected")
+                names = [c.name for c in configs]
+                if len(set(names)) != len(names):
+                    raise ValueError("Duplicate stream names detected")
                 CSVManager.save(configs)
                 self._json({"ok": True, "msg": "Config saved. Restart HydraCast to apply."})
             except Exception as exc:
@@ -2811,18 +3154,17 @@ class WebHandler(BaseHTTPRequestHandler):
                 if not re.fullmatch(r"\d{2}:\d{2}:\d{2}", start_pos):
                     start_pos = "00:00:00"
 
-                # Parse datetime from either "YYYY-MM-DDTHH:MM" or "YYYY-MM-DD HH:MM:SS"
+                dt = None
                 for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
                     try:
                         dt = datetime.strptime(play_at, fmt); break
                     except ValueError:
                         continue
-                else:
+                if dt is None:
                     raise ValueError("Invalid datetime format")
 
                 fp = Path(file_path)
                 safe = _safe_path(fp, MEDIA_DIR)
-                # Allow files outside MEDIA_DIR only if they exist (configured in CSV)
                 if safe is None and not fp.exists():
                     raise ValueError("File not found or path unsafe")
 
@@ -2856,7 +3198,7 @@ class WebHandler(BaseHTTPRequestHandler):
             p    = Path(raw_path)
             safe = _safe_path(p, MEDIA_DIR)
             if safe is None or not safe.is_file():
-                self._json({"ok": False, "msg": "File not in media directory"}); return
+                self._json({"ok": False, "msg": "File not in media directory or not found"}); return
             try:
                 safe.unlink()
                 self._json({"ok": True, "msg": f"Deleted {safe.name}"})
@@ -2864,8 +3206,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": str(exc)})
 
         elif action == "create_subdir":
-            raw  = str(data.get("name","")).strip()
-            # Reject path-traversal attempts and shell-special chars
+            raw = str(data.get("name","")).strip()
             if not raw or re.search(r'[/\\<>"|?*\x00]', raw) or ".." in raw:
                 self._json({"ok": False, "msg": "Invalid folder name"}); return
             target = MEDIA_DIR / raw
@@ -2874,17 +3215,16 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "Path traversal denied"}); return
             try:
                 safe.mkdir(parents=True, exist_ok=True)
-                self._json({"ok": True, "msg": f"Created: {raw}"})
+                self._json({"ok": True, "msg": f"Created folder: {raw}"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
         else:
-            self._json({"ok": False, "msg": f"Unknown action: {action}"})
+            self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
 
     def _handle_upload(self) -> None:
         import cgi
         try:
-            # Check Content-Length before reading to enforce server-side cap
             cl = int(self.headers.get("Content-Length", 0))
             if cl > UPLOAD_MAX_BYTES:
                 self._json({"ok": False, "msg": "File exceeds 10 GB server limit"}, 413)
@@ -2892,39 +3232,54 @@ class WebHandler(BaseHTTPRequestHandler):
 
             env = {
                 "REQUEST_METHOD": "POST",
-                "CONTENT_TYPE":   self.headers["Content-Type"],
+                "CONTENT_TYPE":   self.headers.get("Content-Type",""),
                 "CONTENT_LENGTH": self.headers.get("Content-Length","0"),
             }
             form   = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
                                       environ=env, keep_blank_values=True)
+
+            if "file" not in form:
+                self._json({"ok": False, "msg": "No file in request"}); return
+
             f_item = form["file"]
-            subdir = str(form.getvalue("subdir","")).strip().replace("..","")
+            subdir = str(form.getvalue("subdir","")).strip().lstrip("/\\")
+            # Sanitize subdir — no traversal
+            subdir = re.sub(r'[/\\<>"|?*\x00]', '_', subdir)[:128]
+            subdir = re.sub(r'\.\.',  '_', subdir)
 
-            # Validate file extension
-            fname = Path(f_item.filename).name
-            if not fname:
-                self._json({"ok": False, "msg": "Empty filename"}); return
-            ext = Path(fname).suffix.lower()
+            fname = Path(f_item.filename or "upload").name
+            ext   = Path(fname).suffix.lower()
             if ext not in SUPPORTED_EXTS:
-                self._json({"ok": False, "msg": f"Unsupported extension: {ext}"}); return
+                self._json({"ok": False, "msg": f"Unsupported file extension: {ext}"}); return
 
-            # Sanitize filename (no path separators or special chars)
+            # Sanitize filename
             safe_name = re.sub(r'[^\w.\-]', '_', fname)
             if not safe_name or safe_name.startswith('.'):
                 self._json({"ok": False, "msg": "Invalid filename"}); return
 
-            dest_dir = MEDIA_DIR / subdir if subdir else MEDIA_DIR
+            dest_dir = (MEDIA_DIR / subdir) if subdir else MEDIA_DIR
             safe_dir = _safe_path(dest_dir, MEDIA_DIR)
             if safe_dir is None:
                 self._json({"ok": False, "msg": "Invalid upload directory"}); return
             safe_dir.mkdir(parents=True, exist_ok=True)
+
             dest = safe_dir / safe_name
-            dest.write_bytes(f_item.file.read())
-            self._json({"ok": True, "msg": f"Saved: {safe_name}"})
+            # Stream write to avoid OOM on large files
+            chunk_size = 1024 * 1024  # 1 MB
+            with open(dest, "wb") as out:
+                while True:
+                    chunk = f_item.file.read(chunk_size)
+                    if not chunk: break
+                    out.write(chunk)
+
+            self._json({"ok": True, "msg": f"Saved: {safe_name} → {str(dest.relative_to(BASE_DIR))}"})
         except Exception as exc:
-            self._json({"ok": False, "msg": str(exc)}, 500)
+            self._json({"ok": False, "msg": f"Upload error: {exc}"}, 500)
 
 
+# =============================================================================
+# WEB SERVER
+# =============================================================================
 class WebServer:
     def __init__(self, port: int = WEB_PORT) -> None:
         self._port   = port
@@ -2934,6 +3289,9 @@ class WebServer:
     def start(self) -> None:
         try:
             self._server = HTTPServer(("0.0.0.0", self._port), WebHandler)
+            self._server.socket.setsockopt(
+                __import__('socket').SOL_SOCKET,
+                __import__('socket').SO_REUSEADDR, 1)
             self._thread = threading.Thread(
                 target=self._server.serve_forever, daemon=True, name="webui")
             self._thread.start()
@@ -2942,11 +3300,13 @@ class WebServer:
             logging.error("Web UI failed to start: %s", exc)
 
     def stop(self) -> None:
-        if self._server: self._server.shutdown()
+        if self._server:
+            try: self._server.shutdown()
+            except Exception: pass
 
 
 # =============================================================================
-# TUI  (unchanged from v3.0 except version bump)
+# TUI
 # =============================================================================
 BANNER_TEXT = """\
 [bright_cyan]  ██╗  ██╗██╗   ██╗██████╗ ██████╗  █████╗  ██████╗ █████╗ ███████╗████████╗[/]
@@ -2980,16 +3340,16 @@ class TUI:
     def _streams_table(self) -> Table:
         tbl = Table(box=box.SIMPLE_HEAD, border_style="bright_black",
                     header_style=f"bold {CW}", expand=True, padding=(0,1), show_edge=True)
-        tbl.add_column("#",        style=CD,         width=3,      no_wrap=True)
-        tbl.add_column("STREAM",   style=CW,         min_width=14, no_wrap=True)
-        tbl.add_column("PORT",     style=CC,         width=6,      no_wrap=True)
-        tbl.add_column("FILES",    style=CD,         width=8,      no_wrap=True)
-        tbl.add_column("SCHEDULE", style=CW,         width=11,     no_wrap=True)
-        tbl.add_column("STATUS",                     width=11,     no_wrap=True)
-        tbl.add_column("PROGRESS",                   min_width=30, no_wrap=True)
-        tbl.add_column("TIME",     style=CD,         width=14,     no_wrap=True)
-        tbl.add_column("FPS",      style=CD,         width=5,      no_wrap=True)
-        tbl.add_column("LOOP",     style=CD,         width=6,      no_wrap=True)
+        tbl.add_column("#",        style=CD,  width=3,  no_wrap=True)
+        tbl.add_column("STREAM",   style=CW,  min_width=14, no_wrap=True)
+        tbl.add_column("PORT",     style=CC,  width=6,  no_wrap=True)
+        tbl.add_column("FILES",    style=CD,  width=7,  no_wrap=True)
+        tbl.add_column("SCHEDULE", style=CW,  width=11, no_wrap=True)
+        tbl.add_column("STATUS",              width=11, no_wrap=True)
+        tbl.add_column("PROGRESS",            min_width=30, no_wrap=True)
+        tbl.add_column("TIME",     style=CD,  width=14, no_wrap=True)
+        tbl.add_column("FPS",      style=CD,  width=5,  no_wrap=True)
+        tbl.add_column("LOOP",     style=CD,  width=6,  no_wrap=True)
         tbl.add_column("RTSP URL", style="dim cyan", min_width=22, no_wrap=True)
 
         for i, st in enumerate(self.manager.states):
@@ -3054,9 +3414,9 @@ class TUI:
         t = Text(justify="center")
         for k, v in [
             ("↑↓/1-9","Select"),("R","Restart"),("S","Stop"),("T","Start"),
-            ("A","All Start"),("X","All Stop"),("←→","Seek ±10s"),
-            ("Shift←→","Seek ±60s"),("G","Goto time"),
-            ("L","Reload CSV"),("U","Export URLs"),("Q","Quit"),
+            ("A","All Start"),("X","All Stop"),("N","Skip Next"),
+            ("←→","Seek ±10s"),("Shift←→","Seek ±60s"),
+            ("G","Goto time"),("L","Reload CSV"),("U","Export URLs"),("Q","Quit"),
         ]:
             t.append(f" [{k}]", style=f"bold {CC}"); t.append(f" {v} ", style=CD)
         return t
@@ -3162,7 +3522,7 @@ class KeyboardHandler:
 
 
 # =============================================================================
-# SEEK PROMPT  (TUI — blocking input)
+# SEEK PROMPT (TUI)
 # =============================================================================
 def do_seek_prompt(manager: StreamManager, state: StreamState, console: Console) -> None:
     try:
@@ -3218,6 +3578,7 @@ def _preflight(console: Console) -> List[StreamConfig]:
     console.print(f"[{CD}]  CPU cores : {CPU_COUNT}[/]")
     console.print(f"[{CD}]  LAN IP    : {_local_ip()}[/]")
     console.print(f"[{CD}]  Bind addr : {LISTEN_ADDR}[/]")
+    console.print(f"[{CD}]  Base dir  : {BASE_DIR}[/]")
     console.print(f"[{CD}]  Media dir : {MEDIA_DIR}[/]")
     console.print()
 
@@ -3345,6 +3706,9 @@ def main() -> None:
                     glog.add("Start-all triggered."); manager.start_all()
                 elif key == "X":
                     glog.add("Stop-all triggered."); manager.stop_all()
+                elif key == "N" and state:
+                    glog.add(f"Skip next: {state.config.name}")
+                    manager.skip_next(state)
                 elif key == "RIGHT" and state:
                     if state.status == StreamStatus.LIVE:
                         manager.seek_stream(state, state.current_pos + 10.0)
