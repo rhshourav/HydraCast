@@ -101,7 +101,7 @@ import psutil
 # CONSTANTS & PATHS
 # =============================================================================
 APP_NAME   = "HydraCast"
-APP_VER    = "2.0.0"
+APP_VER    = "2.0.1"
 APP_AUTHOR = "rhshourav"
 APP_GITHUB = "https://github.com/rhshourav/HydraCast"
 
@@ -297,10 +297,18 @@ def _port_in_use(port: int, host: str = "127.0.0.1") -> bool:
 
 def _wait_for_port(port: int, host: str = "127.0.0.1",
                    timeout: float = 10.0, interval: float = 0.25) -> bool:
-    """Block until the port is listening or timeout expires. Returns True if ready."""
+    """Block until the port is listening or timeout expires.
+
+    Always probes 127.0.0.1 in addition to `host` — when MediaMTX binds
+    0.0.0.0 the loopback address is reachable even before the external
+    interface is ready, and covers the common case where LISTEN_ADDR is
+    the default (0.0.0.0).
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if _port_in_use(port, host):
+        if _port_in_use(port, "127.0.0.1"):
+            return True
+        if host not in ("127.0.0.1", "0.0.0.0") and _port_in_use(port, host):
             return True
         time.sleep(interval)
     return False
@@ -309,7 +317,7 @@ def _wait_for_port(port: int, host: str = "127.0.0.1",
 def _kill_orphan_on_port(port: int) -> None:
     """Terminate any process already occupying a port (best-effort)."""
     try:
-        for conn in psutil.net_connections(kind="tcp"):
+        for conn in psutil.net_connections("tcp"):
             if conn.laddr.port == port and conn.status in ("LISTEN", "ESTABLISHED"):
                 if conn.pid:
                     try:
@@ -741,12 +749,26 @@ class MediaMTXConfig:
     """
     Generates a MediaMTX v1.9.x YAML config.
 
-    Fields removed from v1.0 (caused "json: unknown field" errors in v1.9.x):
-      ✘ rtspEncryption  — dropped in v1.x; plain RTSP is implicit default
-      ✘ hls: no         — replaced by hlsDisable: yes
-      ✘ webrtc: no      — replaced by webrtcDisable: yes
-      ✘ srt: no         — replaced by srtDisable: yes
+    v1.9.x field-name reference (verified from Go unmarshal errors):
+      hls, webrtc, srt  →  plain top-level booleans (false = disabled)
+      hlsAddress, hlsAlwaysRemux, hlsSegmentCount, etc.  →  flat top-level keys
+
+    Fields that NO LONGER EXIST in v1.9.x (caused "json: unknown field"):
+      ✘ rtspEncryption   (removed in v1.x — plain RTSP is always available)
+      ✘ hlsDisable       (replaced by  hls: false)
+      ✘ webrtcDisable    (replaced by  webrtc: false)
+      ✘ srtDisable       (replaced by  srt: false)
     """
+
+    @staticmethod
+    def _purge_stale(port: int) -> None:
+        """Delete any .yml left by a previous (possibly crashed) run so MediaMTX
+        never loads a file that contains deprecated field names."""
+        stale = CONFIGS_DIR / f"mediamtx_{port}.yml"
+        try:
+            stale.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     @staticmethod
     def write(state: StreamState) -> Path:
@@ -756,25 +778,30 @@ class MediaMTXConfig:
         cfg_f = CONFIGS_DIR / f"mediamtx_{port}.yml"
         addr  = LISTEN_ADDR
 
-        # Optional HLS section
+        # Always wipe the old file first — guards against stale deprecated fields.
+        MediaMTXConfig._purge_stale(port)
+
+        # In v1.9.x  hls / webrtc / srt  are plain booleans at the top level.
+        # HLS sub-options (address, segmenting, …) are separate flat top-level keys.
         if cfg.hls_enabled:
             proto_section = (
+                f"hls: true\n"
                 f"hlsAddress: {addr}:{cfg.hls_port}\n"
                 f"hlsAlwaysRemux: yes\n"
                 f"hlsSegmentCount: 3\n"
                 f"hlsSegmentDuration: 2s\n"
                 f"hlsAllowOrigin: \"*\"\n"
-                f"\nwebrtcDisable: yes\n"
-                f"srtDisable: yes\n"
+                f"webrtc: false\n"
+                f"srt: false\n"
                 f"\npaths:\n"
                 f"  live:\n"
                 f"    source: publisher\n"
             )
         else:
             proto_section = (
-                f"hlsDisable: yes\n"
-                f"webrtcDisable: yes\n"
-                f"srtDisable: yes\n"
+                f"hls: false\n"
+                f"webrtc: false\n"
+                f"srt: false\n"
                 f"\npaths:\n"
                 f"  live: {{}}\n"
             )
@@ -785,7 +812,7 @@ class MediaMTXConfig:
             f"logDestinations: [file]\n"
             f"logFile: {str(log_f).replace(chr(92), '/')}\n"
             f"\n"
-            f"# RTSP — plain (no encryption; default in MediaMTX v1.x)\n"
+            f"# RTSP — plain, no encryption (rtspEncryption field removed in v1.x)\n"
             f"rtspAddress: {addr}:{port}\n"
             f"readTimeout: 15s\n"
             f"writeTimeout: 15s\n"
@@ -843,7 +870,7 @@ class LogBuffer:
 class StreamWorker:
     MAX_AUTO_RESTARTS = 8
     BACKOFF           = [5, 10, 20, 40, 60, 120, 120, 120]
-    MTX_READY_TIMEOUT = 10.0   # seconds to wait for MediaMTX port to bind
+    MTX_READY_TIMEOUT = 13.0   # seconds; includes 0.5 s fast-fail probe in _start_mediamtx
 
     _FFMPEG_PROGRESS_RE = re.compile(r"^(\w+)=(.+)$")
 
@@ -925,7 +952,7 @@ class StreamWorker:
     def stop(self) -> None:
         self._stop.set()
         self._kill_ffmpeg()
-        time.sleep(0.4)
+        time.sleep(1.0)   # allow FFmpeg to disconnect before MediaMTX is torn down
         self._kill_mediamtx()
         self.state.status      = StreamStatus.STOPPED
         self.state.progress    = 0.0
@@ -947,12 +974,40 @@ class StreamWorker:
         log_f = LOGS_DIR / f"mediamtx_{self.state.config.port}.log"
         try:
             with open(log_f, "a") as lf:
-                kw: Dict[str, Any] = dict(stdout=lf, stderr=lf)
+                kw: Dict[str, Any] = dict(stdout=lf, stderr=subprocess.PIPE)
                 if IS_WIN:
                     kw["creationflags"] = subprocess.CREATE_NO_WINDOW  # type: ignore[assignment]
                 proc = subprocess.Popen([str(MEDIAMTX_BIN), str(cfg_file)], **kw)
             self.state.mtx_proc = proc
             self._log(f"MediaMTX PID {proc.pid} on :{self.state.config.port}")
+
+            # Give it 0.5 s to fail fast on a bad config (bad YAML = exit code 1 immediately).
+            time.sleep(0.5)
+            if proc.poll() is not None:
+                stderr_out = ""
+                try:
+                    stderr_out = (proc.stderr.read() or b"").decode(errors="replace").strip()
+                except Exception:
+                    pass
+                msg = f"MediaMTX exited immediately (code {proc.returncode})"
+                if stderr_out:
+                    msg += f": {stderr_out[:300]}"
+                self.state.status    = StreamStatus.ERROR
+                self.state.error_msg = msg
+                self._log(msg, "ERROR")
+                return False
+
+            # Drain stderr in background so pipe buffer never fills.
+            def _drain(p: subprocess.Popen) -> None:
+                try:
+                    for raw in p.stderr:  # type: ignore[union-attr]
+                        line = raw.decode(errors="replace").strip() if isinstance(raw, bytes) else raw.strip()
+                        if line:
+                            logging.warning("MediaMTX stderr [%d]: %s", p.pid, line)
+                except Exception:
+                    pass
+            threading.Thread(target=_drain, args=(proc,), daemon=True,
+                             name=f"mtx-err-{proc.pid}").start()
             return True
         except Exception as exc:
             self.state.status    = StreamStatus.ERROR
@@ -1509,6 +1564,17 @@ def _preflight(console: Console) -> "List[StreamConfig]":
 
     console.rule(f"[{CC}]{APP_NAME} v{APP_VER}[/]  Pre-flight checks")
     console.print()
+
+    # Purge stale MediaMTX configs from any previous (possibly crashed) run.
+    # Old files may contain deprecated field names that cause "json: unknown field" crashes.
+    _purged = list(CONFIGS_DIR.glob("mediamtx_*.yml"))
+    for _f in _purged:
+        try:
+            _f.unlink()
+        except Exception:
+            pass
+    if _purged:
+        console.print(f"[{CD}]ℹ  Purged {len(_purged)} stale MediaMTX config(s).[/]")
     console.print(f"[{CD}]  OS        : {platform.system()} {platform.release()} ({ARCH_KEY})[/]")
     console.print(f"[{CD}]  Python    : {sys.version.split()[0]}[/]")
     console.print(f"[{CD}]  CPU cores : {CPU_COUNT}[/]")
