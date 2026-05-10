@@ -1463,15 +1463,50 @@ _HTML_PAGE = r"""<!DOCTYPE html>
   --glow-b: 0 0 24px rgba(62,184,250,.18);
   --glow-g: 0 0 24px rgba(57,224,122,.18);
 }
+[data-theme="light"]{
+  --bg:       #f0f5fb;
+  --bg2:      #ffffff;
+  --bg3:      #e8eef7;
+  --bg4:      #dce5f0;
+  --bg5:      #ccd6e8;
+  --border:   #bfcfdf;
+  --border2:  #a8bdd0;
+  --text:     #0a1928;
+  --muted:    #5878a0;
+  --faint:    #e0eaf5;
+  --green:    #1aaa55;
+  --red:      #d83050;
+  --yellow:   #b87a00;
+  --blue:     #0a7fd4;
+  --purple:   #6840c0;
+  --cyan:     #0898a8;
+  --orange:   #c05818;
+  --teal:     #088890;
+  --pink:     #b03870;
+  --green-g:  rgba(26,170,85,.1);
+  --red-g:    rgba(216,48,80,.08);
+  --blue-g:   rgba(10,127,212,.08);
+  --yellow-g: rgba(184,122,0,.08);
+  --purple-g: rgba(104,64,192,.08);
+  --shadow:   0 2px 16px rgba(10,30,70,.1);
+  --glow-b:   0 0 12px rgba(10,127,212,.12);
+  --glow-g:   0 0 12px rgba(26,170,85,.12);
+}
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 body{
   background:var(--bg);color:var(--text);
   font:14px/1.6 var(--font);min-height:100vh;overflow-x:hidden;
+  transition:background .35s,color .2s;
   background-image:
     radial-gradient(ellipse 80% 50% at 100% 0%,rgba(62,184,250,.05) 0%,transparent 55%),
     radial-gradient(ellipse 50% 70% at 0% 100%,rgba(168,126,250,.04) 0%,transparent 55%),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Crect width='60' height='60' fill='none'/%3E%3Cpath d='M0 60L60 0M-10 10L10-10M50 70L70 50' stroke='rgba(62,184,250,.03)' stroke-width='1'/%3E%3C/svg%3E");
+}
+[data-theme="light"] body,body[data-theme="light"]{
+  background-image:
+    radial-gradient(ellipse 80% 50% at 100% 0%,rgba(10,127,212,.04) 0%,transparent 60%),
+    radial-gradient(ellipse 50% 70% at 0% 100%,rgba(104,64,192,.03) 0%,transparent 60%);
 }
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--bg2)}
@@ -1485,6 +1520,11 @@ header{
   display:flex;align-items:center;gap:16px;padding:0 26px;
   position:sticky;top:0;z-index:100;
   box-shadow:0 1px 0 rgba(62,184,250,.06),0 8px 32px rgba(0,0,0,.5);
+  transition:background .35s,border-color .2s,box-shadow .2s;
+}
+[data-theme="light"] header{
+  background:rgba(255,255,255,.94);
+  box-shadow:0 1px 0 rgba(10,127,212,.08),0 4px 20px rgba(10,30,80,.1);
 }
 .logo-wrap{display:flex;align-items:center;gap:10px;text-decoration:none}
 .logo-badge{
@@ -1502,7 +1542,9 @@ header{
   background:var(--bg4);border:1px solid var(--border2);padding:1px 7px;border-radius:10px}
 .hdr-stats{display:flex;gap:20px;margin-left:10px;align-items:center}
 .hdr-stat{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-family:var(--mono)}
-.hdr-stat .v{color:var(--text);font-weight:600}
+.hdr-stat .v{color:var(--text);font-weight:700}
+[data-theme="light"] .hdr-stat{color:var(--muted)}
+[data-theme="light"] .hdr-stat .v{color:var(--text)}
 .live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);
   box-shadow:0 0 8px var(--green);animation:blink 2s ease-in-out infinite}
 @keyframes blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
@@ -1518,6 +1560,14 @@ nav button{
 }
 nav button.active{background:var(--blue-g);color:var(--blue);box-shadow:inset 0 0 0 1px rgba(62,184,250,.3)}
 nav button:hover:not(.active){background:rgba(255,255,255,.04);color:var(--text)}
+[data-theme="light"] nav button:hover:not(.active){background:rgba(0,0,0,.04);color:var(--text)}
+/* ── THEME TOGGLE ─────────────────────── */
+.theme-btn{
+  width:32px;height:32px;border-radius:8px;border:1px solid var(--border2);
+  background:var(--bg3);cursor:pointer;display:grid;place-items:center;
+  font-size:15px;transition:all .2s;flex-shrink:0;color:var(--text);
+}
+.theme-btn:hover{border-color:var(--blue);background:var(--blue-g);transform:scale(1.08)}
 
 /* ── LAYOUT ─────────────────────────────── */
 .container{max-width:1540px;margin:0 auto;padding:22px 26px}
@@ -1534,9 +1584,9 @@ nav button:hover:not(.active){background:rgba(255,255,255,.04);color:var(--text)
 }
 .panel:hover{border-color:var(--border2);box-shadow:0 4px 32px rgba(0,0,0,.5)}
 .panel-hdr{
-  background:linear-gradient(90deg,var(--bg3),var(--bg2));
-  padding:13px 20px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:10px;
+  background:linear-gradient(90deg,var(--bg3) 0%,var(--bg2) 60%);
+  padding:14px 22px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:12px;
 }
 .panel-title{font-size:13px;font-weight:700;color:var(--text);letter-spacing:.04em}
 .panel-sub{font-size:10.5px;color:var(--muted);font-family:var(--mono);margin-left:6px}
@@ -1546,11 +1596,14 @@ nav button:hover:not(.active){background:rgba(255,255,255,.04);color:var(--text)
 .tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
 th{
-  text-align:left;padding:10px 14px;color:var(--muted);font-weight:600;font-size:10px;
+  text-align:left;padding:11px 14px;color:var(--muted);font-weight:600;font-size:10px;
   border-bottom:1px solid var(--border2);text-transform:uppercase;letter-spacing:.1em;
-  font-family:var(--mono);white-space:nowrap;
+  font-family:var(--mono);white-space:nowrap;background:var(--bg3);
+  transition:color .2s;
 }
-td{padding:11px 14px;border-bottom:1px solid rgba(22,32,48,.8);font-size:12.5px;vertical-align:middle}
+[data-theme="light"] th{background:var(--bg3)}
+td{padding:12px 14px;border-bottom:1px solid var(--faint);font-size:12.5px;vertical-align:middle}
+[data-theme="light"] td{border-bottom-color:var(--border)}
 tr:last-child td{border-bottom:none}
 tbody tr{transition:background .12s}
 tbody tr:hover td{background:rgba(62,184,250,.025)}
@@ -1589,7 +1642,8 @@ tbody tr.row-live td:first-child{border-left:2px solid var(--green)}
 .btn-success{color:var(--green);border-color:rgba(57,224,122,.3);background:var(--green-g)}
 .btn-success:hover{border-color:var(--green);box-shadow:var(--glow-g)}
 .btn-primary{background:rgba(62,184,250,.1);border-color:rgba(62,184,250,.4);color:var(--blue)}
-.btn-primary:hover{background:var(--blue);color:#03070d;border-color:var(--blue)}
+.btn-primary:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
+[data-theme="light"] .btn-primary:hover{color:#fff}
 
 /* ── FORM ─────────────────────────────────── */
 input,select,textarea{
@@ -1621,13 +1675,21 @@ label{font-size:10.5px;color:var(--muted);margin-bottom:5px;display:block;
 .prog-track:hover{box-shadow:0 0 0 2px rgba(62,184,250,.35)}
 .prog-track.live:hover .prog-fill{filter:brightness(1.2)}
 .prog-fill{
-  height:100%;border-radius:7px;transition:width .9s linear;
-  position:relative;
+  height:100%;border-radius:7px;
+  transition:width .8s cubic-bezier(.25,.46,.45,.94);
+  position:relative;overflow:hidden;
+}
+.prog-fill::before{
+  content:'';position:absolute;top:0;left:-100%;width:50%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);
+  animation:shimmer 2.5s infinite;
 }
 .prog-fill::after{
   content:'';position:absolute;right:0;top:2px;bottom:2px;
-  width:3px;background:rgba(255,255,255,.7);border-radius:2px;
+  width:3px;background:rgba(255,255,255,.75);border-radius:2px;
+  box-shadow:0 0 6px rgba(255,255,255,.4);
 }
+@keyframes shimmer{to{left:200%}}
 .prog-labels{
   display:flex;justify-content:space-between;align-items:center;
   font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:4px;
@@ -1799,6 +1861,28 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:none;border-ra
 .ed-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:13px;border-bottom:1px solid var(--border)}
 .ed-name{font-size:15px;font-weight:800;color:var(--blue);font-family:var(--mono)}
 
+/* ── LIGHT MODE OVERRIDES ──────────── */
+[data-theme="light"] .panel{box-shadow:0 1px 8px rgba(10,30,80,.08)}
+[data-theme="light"] .panel:hover{box-shadow:0 4px 20px rgba(10,30,80,.13)}
+[data-theme="light"] tbody tr:hover td{background:rgba(10,127,212,.04)}
+[data-theme="light"] tbody tr.row-live td:first-child{border-left:2px solid var(--green)}
+[data-theme="light"] .notify.ok{background:#e6f9ee;border-color:rgba(26,170,85,.5);color:var(--green)}
+[data-theme="light"] .notify.err{background:#fde8ec;border-color:rgba(216,48,80,.5);color:var(--red)}
+[data-theme="light"] .notify.info{background:#e6f2fc;border-color:rgba(10,127,212,.5);color:var(--blue)}
+[data-theme="light"] .modal{box-shadow:0 8px 40px rgba(10,30,80,.2)}
+[data-theme="light"] .modal-overlay{background:rgba(20,40,70,.6)}
+[data-theme="light"] .log-box{border-color:var(--border2)}
+[data-theme="light"] .rtsp-chip{background:rgba(10,127,212,.06);border-color:rgba(10,127,212,.18);color:var(--blue)}
+[data-theme="light"] .rtsp-chip:hover{background:rgba(10,127,212,.12);border-color:var(--blue)}
+[data-theme="light"] .drop-zone{border-color:var(--border2)}
+[data-theme="light"] .drop-zone:hover,[data-theme="light"] .drop-zone.drag-over{border-color:var(--blue)}
+[data-theme="light"] input:focus,[data-theme="light"] select:focus,[data-theme="light"] textarea:focus{box-shadow:0 0 0 3px rgba(10,127,212,.12)}
+[data-theme="light"] .btn:hover{box-shadow:0 0 12px rgba(10,127,212,.15)}
+[data-theme="light"] .stream-link{color:var(--blue)}
+[data-theme="light"] .stream-link:hover{color:var(--cyan);text-shadow:none}
+[data-theme="light"] .prog-track{border-color:rgba(0,0,0,.08)}
+[data-theme="light"] .prog-track:hover{box-shadow:0 0 0 2px rgba(10,127,212,.3)}
+
 /* ── RESPONSIVE ──────────────────────── */
 @media(max-width:900px){
   .form-row{grid-template-columns:1fr 1fr}
@@ -1828,6 +1912,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:none;border-ra
     <div class="hdr-stat">Disk&nbsp;<span class="v" id="h-disk">—</span></div>
     <div class="hdr-stat mono" id="h-time">—</div>
   </div>
+  <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">🌙</button>
   <nav>
     <button class="active" onclick="showTab('streams')">Streams</button>
     <button onclick="showTab('upload')">Upload</button>
@@ -2198,15 +2283,13 @@ async function loadStreams(){
   }catch(e){}
 }
 
-function renderStreams(){
-  const tb=document.getElementById('stbl');
-  tb.innerHTML=streamData.map((s,i)=>{
-    const pct=(+s.progress).toFixed(1);
-    const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
-    const live=s.status==='LIVE';
-    const nf=s.playlist_count||1;
-    return `
-<tr class="${live?'row-live':''}">
+function _buildStreamRow(s,i){
+  const pct=(+s.progress).toFixed(1);
+  const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
+  const live=s.status==='LIVE';
+  const nf=s.playlist_count||1;
+  return `
+<tr class="${live?'row-live':''}" data-stream="${esc(s.name)}">
   <td class="mono" style="color:var(--muted);font-size:11px">${i+1}</td>
   <td>
     <div class="stream-link" onclick="openDetail('${esc(s.name)}')">${esc(s.name)}</div>
@@ -2218,33 +2301,33 @@ function renderStreams(){
   </td>
   <td><code class="mono" style="color:var(--cyan)">:${s.port}</code></td>
   <td style="color:var(--muted);font-size:11.5px;white-space:nowrap">${esc(s.weekdays)}</td>
-  <td><span class="badge badge-${esc(s.status)}"><div class="bdot"></div>${esc(s.status)}</span></td>
+  <td data-cell="status"><span class="badge badge-${esc(s.status)}"><div class="bdot"></div>${esc(s.status)}</span></td>
   <td style="min-width:240px">
-    <!-- Big clickable progress bar -->
     <div class="prog-wrap">
       <div class="prog-track ${live?'live':''}"
            ${live?`onclick="barClick(event,'${esc(s.name)}',${s.duration})" title="Click to seek"`:''}
            style="cursor:${live?'crosshair':'default'}">
-        <div class="prog-fill" style="width:${pct}%;background:${fc}"></div>
+        <div class="prog-fill" data-cell="fill" style="width:${pct}%;background:${fc}"></div>
       </div>
       <div class="prog-labels">
-        <span>${live?esc((s.position||'').split('/')[0].trim()||'--'):'--'}</span>
-        <span class="prog-pct">${pct}%</span>
-        <span>${live?esc((s.position||'').split('/')[1]||'--'):'--'}</span>
+        <span data-cell="pos-start">${live?esc((s.position||'').split('/')[0].trim()||'--'):'--'}</span>
+        <span class="prog-pct" data-cell="pct">${pct}%</span>
+        <span data-cell="pos-end">${live?esc((s.position||'').split('/')[1]||'--'):'--'}</span>
       </div>
     </div>
     ${live?`
     <div class="seek-slider-wrap">
-      <span class="mono" style="font-size:10px;min-width:52px">${esc((s.position||'').split('/')[0].trim()||'--')}</span>
+      <span class="mono" style="font-size:10px;min-width:52px" data-cell="sl-start">${esc((s.position||'').split('/')[0].trim()||'--')}</span>
       <input type="range" min="0" max="${Math.max(1,Math.floor(s.duration))}"
              value="${Math.floor(s.current_secs)}"
+             data-cell="slider" data-stream="${esc(s.name)}" data-dur="${Math.floor(s.duration)}"
              title="Drag to seek"
              oninput="this.previousElementSibling.textContent=fmtSecs(this.value)"
              onchange="inlineSeek('${esc(s.name)}',+this.value)">
-      <span class="mono" style="font-size:10px;min-width:52px;text-align:right">${esc((s.position||'').split('/')[1]||'--')}</span>
+      <span class="mono" style="font-size:10px;min-width:52px;text-align:right" data-cell="sl-end">${esc((s.position||'').split('/')[1]||'--')}</span>
     </div>`:''}
   </td>
-  <td class="mono" style="color:var(--muted);font-size:11px;white-space:nowrap">${esc(s.position||'--')}</td>
+  <td class="mono pos-cell" style="color:var(--muted);font-size:11px;white-space:nowrap">${esc(s.position||'--')}</td>
   <td class="mono" style="color:var(--muted)">${s.fps>0?Math.round(s.fps):'--'}</td>
   <td>
     <span class="rtsp-chip" onclick="copyURL('${esc(s.rtsp_url)}')" title="Click to copy">${esc(s.rtsp_url)}</span>
@@ -2261,9 +2344,66 @@ function renderStreams(){
     </div>
   </td>
 </tr>`;
-  }).join('');
 }
 
+function renderStreams(){
+  const tb=document.getElementById('stbl');
+  const nameKey=streamData.map(s=>s.name).join('\x00');
+
+  // Full rebuild when stream list changes
+  if(tb.dataset.nameKey!==nameKey){
+    tb.dataset.nameKey=nameKey;
+    tb.innerHTML=streamData.map((s,i)=>_buildStreamRow(s,i)).join('');
+    return;
+  }
+
+  // In-place update — keeps slider thumb position while user drags
+  const activeSlider=document.activeElement?.dataset?.stream;
+  streamData.forEach((s,i)=>{
+    const row=tb.querySelector(`tr[data-stream="${CSS.escape(s.name)}"]`);
+    if(!row)return;
+    const pct=(+s.progress).toFixed(1);
+    const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
+    const live=s.status==='LIVE';
+    const pos=(s.position||'');
+    const posStart=pos.split('/')[0]?.trim()||'--';
+    const posEnd=pos.split('/')[1]?.trim()||'--';
+
+    // Update row class
+    row.className=live?'row-live':'';
+
+    // Status badge
+    const sc=row.querySelector('[data-cell="status"]');
+    if(sc)sc.innerHTML=`<span class="badge badge-${esc(s.status)}"><div class="bdot"></div>${esc(s.status)}</span>`;
+
+    // Progress fill & labels
+    const fill=row.querySelector('[data-cell="fill"]');
+    if(fill){fill.style.width=pct+'%';fill.style.background=fc;}
+    const pctEl=row.querySelector('[data-cell="pct"]');
+    if(pctEl)pctEl.textContent=pct+'%';
+    const ps=row.querySelector('[data-cell="pos-start"]');
+    if(ps)ps.textContent=live?posStart:'--';
+    const pe=row.querySelector('[data-cell="pos-end"]');
+    if(pe)pe.textContent=live?posEnd:'--';
+
+    // Seek slider — skip if user is actively dragging this stream's slider
+    if(s.name!==activeSlider){
+      const sl=row.querySelector('[data-cell="slider"]');
+      if(sl){
+        sl.value=Math.floor(s.current_secs);
+        sl.max=Math.max(1,Math.floor(s.duration));
+        const slStart=row.querySelector('[data-cell="sl-start"]');
+        const slEnd=row.querySelector('[data-cell="sl-end"]');
+        if(slStart)slStart.textContent=posStart;
+        if(slEnd)slEnd.textContent=posEnd;
+      }
+    }
+
+    // Position cell
+    const posCell=row.querySelector('.pos-cell');
+    if(posCell)posCell.textContent=s.position||'--';
+  });
+}
 function copyURL(url){navigator.clipboard.writeText(url).then(()=>notify('Copied ✓','info'));}
 function barClick(e,name,dur){
   if(dur<=0)return;
@@ -2780,6 +2920,27 @@ function renderLogs(){
 // ════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+// THEME TOGGLE
+// ════════════════════════════════════════════════════════════
+function toggleTheme(){
+  const root=document.documentElement;
+  const isLight=root.dataset.theme==='light';
+  root.dataset.theme=isLight?'dark':'light';
+  document.getElementById('theme-btn').textContent=isLight?'🌙':'☀️';
+  try{localStorage.setItem('hc-theme',root.dataset.theme);}catch(_){}
+}
+(function(){
+  try{
+    const saved=localStorage.getItem('hc-theme');
+    if(saved){
+      document.documentElement.dataset.theme=saved;
+      const btn=document.getElementById('theme-btn');
+      if(btn)btn.textContent=saved==='light'?'☀️':'🌙';
+    }
+  }catch(_){}
+})();
+
 loadStreams();
 updateHdrStats();
 startRefresh();
@@ -3223,37 +3384,78 @@ class WebHandler(BaseHTTPRequestHandler):
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
 
     def _handle_upload(self) -> None:
-        import cgi
+        """Parse multipart/form-data without deprecated cgi module (works on Python 3.13+)."""
         try:
             cl = int(self.headers.get("Content-Length", 0))
             if cl > UPLOAD_MAX_BYTES:
                 self._json({"ok": False, "msg": "File exceeds 10 GB server limit"}, 413)
                 return
 
-            env = {
-                "REQUEST_METHOD": "POST",
-                "CONTENT_TYPE":   self.headers.get("Content-Type",""),
-                "CONTENT_LENGTH": self.headers.get("Content-Length","0"),
-            }
-            form   = cgi.FieldStorage(fp=self.rfile, headers=self.headers,
-                                      environ=env, keep_blank_values=True)
+            ct = self.headers.get("Content-Type", "")
+            boundary: Optional[bytes] = None
+            for part in ct.split(";"):
+                p = part.strip()
+                if p.lower().startswith("boundary="):
+                    boundary = p[9:].strip('"').encode("latin-1")
+                    break
 
-            if "file" not in form:
-                self._json({"ok": False, "msg": "No file in request"}); return
+            if not boundary:
+                self._json({"ok": False, "msg": "Missing multipart boundary"}); return
 
-            f_item = form["file"]
-            subdir = str(form.getvalue("subdir","")).strip().lstrip("/\\")
+            # Read the entire request body.  For huge files the 10 GB cap above
+            # already guards against pathological clients; typical uploads are fine.
+            raw = self.rfile.read(cl)
+
+            sep = b"--" + boundary
+            file_bytes: Optional[bytes] = None
+            file_name:  Optional[str]   = None
+            subdir = ""
+
+            for seg in raw.split(sep):
+                seg = seg.lstrip(b"\r\n")
+                if not seg or seg.startswith(b"--"):
+                    continue
+                if b"\r\n\r\n" not in seg:
+                    continue
+
+                hdr_raw, body = seg.split(b"\r\n\r\n", 1)
+                if body.endswith(b"\r\n"):
+                    body = body[:-2]
+
+                hdr_str = hdr_raw.decode("utf-8", errors="replace")
+                cd_line = next(
+                    (ln for ln in hdr_str.splitlines()
+                     if ln.lower().startswith("content-disposition:")),
+                    ""
+                )
+
+                field_name = fname = ""
+                for tok in cd_line.split(";"):
+                    tok = tok.strip()
+                    if tok.startswith("name="):
+                        field_name = tok[5:].strip('"')
+                    elif tok.startswith("filename="):
+                        fname = tok[9:].strip('"')
+
+                if field_name == "file" and fname:
+                    file_bytes = body
+                    file_name  = fname
+                elif field_name == "subdir":
+                    subdir = body.decode("utf-8", errors="replace").strip().lstrip("/\\")
+
+            if file_bytes is None or not file_name:
+                self._json({"ok": False, "msg": "No file field found in request"}); return
+
             # Sanitize subdir — no traversal
             subdir = re.sub(r'[/\\<>"|?*\x00]', '_', subdir)[:128]
-            subdir = re.sub(r'\.\.',  '_', subdir)
+            subdir = re.sub(r'\.\.',            '_', subdir)
 
-            fname = Path(f_item.filename or "upload").name
-            ext   = Path(fname).suffix.lower()
+            fname_clean = Path(file_name).name
+            ext         = Path(fname_clean).suffix.lower()
             if ext not in SUPPORTED_EXTS:
                 self._json({"ok": False, "msg": f"Unsupported file extension: {ext}"}); return
 
-            # Sanitize filename
-            safe_name = re.sub(r'[^\w.\-]', '_', fname)
+            safe_name = re.sub(r'[^\w.\-]', '_', fname_clean)
             if not safe_name or safe_name.startswith('.'):
                 self._json({"ok": False, "msg": "Invalid filename"}); return
 
@@ -3264,13 +3466,8 @@ class WebHandler(BaseHTTPRequestHandler):
             safe_dir.mkdir(parents=True, exist_ok=True)
 
             dest = safe_dir / safe_name
-            # Stream write to avoid OOM on large files
-            chunk_size = 1024 * 1024  # 1 MB
             with open(dest, "wb") as out:
-                while True:
-                    chunk = f_item.file.read(chunk_size)
-                    if not chunk: break
-                    out.write(chunk)
+                out.write(file_bytes)
 
             self._json({"ok": True, "msg": f"Saved: {safe_name} → {str(dest.relative_to(BASE_DIR))}"})
         except Exception as exc:
