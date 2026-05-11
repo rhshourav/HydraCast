@@ -15,6 +15,13 @@ RTP port assignment (v5 fix):
 
   With the recommended ≥10-port gap between streams this never collides.
   Example: 8554 → rtp=8556, rtcp=8557 | 8564 → rtp=8566, rtcp=8567
+
+Fixes (v5.0.1):
+  • rtmp: false  — prevents MediaMTX from trying to bind :1935 (RTMP)
+  • rtmps: false — prevents :1936 bind attempts
+  • srt: false, webrtc: false — belt-and-suspenders protocol lockdown
+  • hlsSegmentCount: 7 — Low-Latency HLS requires ≥7 segments (was 3)
+  • hlsSegmentDuration: 1s — tighter latency for LL-HLS
 """
 from __future__ import annotations
 
@@ -54,16 +61,23 @@ class MediaMTXConfig:
         rtcp_addr = f"{addr}:{rtp_base + 1}"
 
         # ── Protocol section (HLS optional) ──────────────────────────────────
+        # NOTE: Low-Latency HLS requires at minimum 7 segments.
+        # hlsSegmentCount < 7 causes repeated "[HLS] Low-Latency HLS requires
+        # at least 7 segments" errors in the MediaMTX log.
         if cfg.hls_enabled:
             proto_section = (
                 f"hls: true\n"
                 f"hlsAddress: {addr}:{cfg.hls_port}\n"
                 f"hlsAlwaysRemux: yes\n"
-                f"hlsSegmentCount: 3\n"
-                f"hlsSegmentDuration: 2s\n"
+                f"hlsVariant: lowLatency\n"
+                f"hlsSegmentCount: 7\n"
+                f"hlsSegmentDuration: 1s\n"
+                f"hlsPartDuration: 200ms\n"
                 f"hlsAllowOrigin: \"*\"\n"
                 f"webrtc: false\n"
                 f"srt: false\n"
+                f"rtmp: false\n"
+                f"rtmps: false\n"
                 f"\npaths:\n"
                 f"  {spath}:\n"
                 f"    source: publisher\n"
@@ -73,6 +87,10 @@ class MediaMTXConfig:
                 f"hls: false\n"
                 f"webrtc: false\n"
                 f"srt: false\n"
+                # Explicitly disable RTMP/RTMPS so MediaMTX never attempts
+                # to bind :1935 / :1936 — the most common startup error.
+                f"rtmp: false\n"
+                f"rtmps: false\n"
                 f"\npaths:\n"
                 f"  {spath}: {{}}\n"
             )
