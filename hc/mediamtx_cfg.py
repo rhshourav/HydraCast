@@ -1,27 +1,32 @@
 """
 hc/mediamtx_cfg.py  —  Generate per-stream MediaMTX YAML config files.
 
-FIX (v5.0.4):
-  • The correct MediaMTX 1.9.1 keys to disable protocols are the simple
-    top-level booleans:  rtmp: no  |  srt: no  |  webrtc: no  |  hls: no
-    Previous attempts used wrong keys:
-      - `rtmp: false` / `rtmps: false`  → "unknown field" crash
-      - `rtmpDisable: yes` / `srtDisable: yes` / `webrtcDisable: yes`
-        → also "unknown field" crash (these keys do not exist in 1.9.1)
-    The boolean value must be `no` (not `false`) — MediaMTX's YAML parser
-    accepts standard YAML booleans (yes/no, true/false) but the official
-    sample config uses yes/no style throughout.
+FIX (v5.0.5):  HLS not working — three bugs corrected using the official
+               mediamtx.yml as ground truth.
 
-  • Without disabling them, MediaMTX binds these ports by default:
-      RTMP   → :1935
-      SRT    → :8890
-      WebRTC → :8889
-      HLS    → :8888  (when not explicitly configured)
-    Every stream after the first fails to start because these shared ports
-    are already taken by the first instance.
+  BUG 1 — Wrong key: `hlsAllowOrigin` (singular)
+    The real key is `hlsAllowOrigins` (plural), and it takes a YAML list.
+    Using the singular form is silently ignored — CORS is never set.
+    Fix: hlsAllowOrigins: ['*']
 
-  • For HLS-enabled streams we set an explicit per-stream hlsAddress so
-    each instance binds a unique HLS port (cfg.port + 10000).
+  BUG 2 — Wrong key: `source: publisher` in the HLS paths block
+    FFmpeg pushes to MediaMTX via RTSP; `source: publisher` is only needed
+    when MediaMTX itself is meant to pull from an external source URL.
+    For a push workflow the path entry must be empty (same as non-HLS).
+    Using `source: publisher` can prevent the path from accepting the
+    FFmpeg RTSP push correctly.
+    Fix: use `{spath}: {{}}` for HLS paths too.
+
+  BUG 3 — `hlsAlwaysRemux: yes` accepted, but behaviour note
+    `hlsAlwaysRemux` must be true so MediaMTX pre-generates HLS segments
+    immediately when the stream starts, rather than waiting for the first
+    viewer to connect (which would cause a long initial delay or 404).
+    Using `yes` is fine YAML — keeping it `true` to match the official style.
+
+Previously fixed (v5.0.4):
+  • `rtmp: no` / `srt: no` / `webrtc: no` — correct 1.9.1 disable keys.
+  • Removed `rtmps:`, `rtmpDisable:`, `srtDisable:`, `webrtcDisable:` —
+    all raise "unknown field" in 1.9.1.
 
 RTP port assignment (unchanged):
   rtp_base = port + 2, bumped to next even number if odd.
@@ -76,57 +81,55 @@ class MediaMTXConfig:
         )
 
         # ── Protocol sections ────────────────────────────────────────────────
-        # CRITICAL: MediaMTX 1.9.1 binds RTMP (:1935), SRT (:8890), and
-        # WebRTC (:8889) by default even when unused.  With multiple instances
-        # running simultaneously, every instance after the first crashes trying
-        # to bind these already-taken ports.
+        # MediaMTX 1.9.1 binds RTMP (:1935), SRT (:8890), WebRTC (:8889) by
+        # default. Multiple instances collide on these ports.
+        # Correct disable keys (verified against official mediamtx.yml):
+        #   rtmp: false  |  srt: false  |  webrtc: false
         #
-        # The correct 1.9.1 top-level keys are:
-        #   rtmp: no      — disables RTMP (default port :1935)
-        #   srt: no       — disables SRT  (default port :8890)
-        #   webrtc: no    — disables WebRTC (default port :8889)
-        #
-        # Do NOT use `rtmps: false`, `rtmpDisable: yes`, `srtDisable: yes`,
-        # or `webrtcDisable: yes` — all raise "unknown field" in 1.9.1.
+        # HLS key corrections (verified against official mediamtx.yml):
+        #   hlsAllowOrigins (plural, list)  — NOT hlsAllowOrigin (singular)
+        #   hlsAlwaysRemux: true            — ensures segments are pre-built
+        #                                     before first viewer connects
+        #   paths entry uses {}             — NOT `source: publisher`
+        #                                     (publisher is for pull sources)
 
         if cfg.hls_enabled:
             log.info("[%s] HLS enabled on port %d", cfg.name, cfg.hls_port)
-            # Each HLS-enabled instance gets its own unique port so instances
-            # don't collide.  Low-Latency HLS requires at least 7 segments.
             proto_section = (
-                f"rtmp: no\n"
-                f"srt: no\n"
-                f"webrtc: no\n"
-                f"hls: yes\n"
+                f"rtmp: false\n"
+                f"srt: false\n"
+                f"webrtc: false\n"
+                f"\n"
+                f"hls: true\n"
                 f"hlsAddress: {addr}:{cfg.hls_port}\n"
-                f"hlsAlwaysRemux: yes\n"
+                f"hlsAlwaysRemux: true\n"
                 f"hlsVariant: lowLatency\n"
                 f"hlsSegmentCount: 7\n"
                 f"hlsSegmentDuration: 1s\n"
                 f"hlsPartDuration: 200ms\n"
-                f"hlsAllowOrigin: \"*\"\n"
-            )
-            paths_section = (
-                f"\npaths:\n"
-                f"  {spath}:\n"
-                f"    source: publisher\n"
+                f"hlsAllowOrigins: ['*']\n"  # plural + list — critical
             )
         else:
             proto_section = (
-                f"rtmp: no\n"
-                f"srt: no\n"
-                f"webrtc: no\n"
-                f"hls: no\n"
+                f"rtmp: false\n"
+                f"srt: false\n"
+                f"webrtc: false\n"
+                f"hls: false\n"
             )
-            paths_section = (
-                f"\npaths:\n"
-                f"  {spath}: {{}}\n"
-            )
+
+        # Paths section: empty braces `{{}}` = accept publisher push.
+        # Do NOT use `source: publisher` — that is for pull (MediaMTX fetches
+        # from an external URL). FFmpeg pushes via RTSP, so the path just needs
+        # to exist with no special source directive.
+        paths_section = (
+            f"\npaths:\n"
+            f"  {spath}: {{}}\n"
+        )
 
         yaml_text = (
             f"# HydraCast v{APP_VER} — {cfg.name} (:{port})\n"
             f"# RTP port {rtp_base} (even ✓)  RTCP port {rtp_base+1} (odd ✓)\n"
-            f"# rtmp/srt/webrtc disabled to prevent port collisions across instances\n"
+            f"# rtmp/srt/webrtc: false prevents port-1935/8890/8889 collisions\n"
             f"logLevel: error\n"
             f"logDestinations: [file]\n"
             f"logFile: {str(log_f).replace(chr(92), '/')}\n"
@@ -139,9 +142,9 @@ class MediaMTXConfig:
             f"writeQueueSize: 1024\n"
             f"udpMaxPayloadSize: 1472\n"
             f"\n"
-            f"api: no\n"
-            f"metrics: no\n"
-            f"pprof: no\n"
+            f"api: false\n"
+            f"metrics: false\n"
+            f"pprof: false\n"
             f"\n"
             f"{proto_section}"
             f"{paths_section}"
