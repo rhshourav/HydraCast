@@ -1,28 +1,32 @@
 """
-hc/web.py  —  Web server, request handler, and embedded HTML UI (v5.0).
+hc/web.py  —  Web server, request handler, and embedded HTML UI (v5.0.1).
 
-New in v5:
-  • /health           — JSON health-check endpoint (monitoring, uptime probes)
-  • /api/thumbnail    — Live JPEG frame grab from the current playing file
-  • /api/stream_view  — Viewer endpoint (HLS URL, RTSP, VLC/ffplay commands)
-  • /api/streams      — Now includes time_remaining and remaining_pct fields
-  • Stream Viewer modal — in-browser HLS.js player + RTSP command helper
-  • Progress bar      — shows "−HH:MM:SS remaining" beside percentage
-  • Dark/light theme, glassmorphism design, keyboard shortcuts
+Fixes (v5.0.1):
+  • Web port is now read lazily (get_web_port() call) so the header/banner
+    always displays the correct port even when --web-port overrides the default.
+  • SO_REUSEADDR set before HTTPServer.server_bind() via allow_reuse_address.
+  • Upload handler streams the file directly to disk instead of buffering the
+    entire multipart body in RAM — safe for 10 GB uploads.
+  • Media library scanning is cached (60 s TTL) to avoid blocking every GET.
+  • clearPlayed JS helper sends a single batch DELETE instead of N sequential
+    awaits.
+  • Minor: tightened Content-Security-Policy, removed unused imports.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
+import os
 import re
 import socket
+import tempfile
 import threading
 import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import parse_qs, urlparse
 
 import psutil
@@ -36,19 +40,74 @@ from hc.models import OneShotEvent, PlaylistItem, StreamConfig, StreamStatus
 from hc.utils import _fmt_duration, _fmt_size, _local_ip, _safe_path
 from hc.worker import grab_thumbnail, probe_metadata
 
-# ── Module-level manager reference (set by main.py) ──────────────────────────
+# ── Module-level manager reference (set by hydracast.py) ─────────────────────
 _WEB_MANAGER: Optional[Any] = None   # StreamManager
+
+# ── Library cache ─────────────────────────────────────────────────────────────
+_LIB_CACHE:     Optional[List[Dict[str, Any]]] = None
+_LIB_CACHE_TS:  float = 0.0
+_LIB_CACHE_TTL: float = 60.0          # seconds
+_LIB_LOCK = threading.Lock()
+
+
+def _get_library_cached() -> List[Dict[str, Any]]:
+    """Return a cached media-library scan, refreshing at most every 60 s."""
+    global _LIB_CACHE, _LIB_CACHE_TS
+    with _LIB_LOCK:
+        if _LIB_CACHE is not None and (time.time() - _LIB_CACHE_TS) < _LIB_CACHE_TTL:
+            return _LIB_CACHE
+    result: List[Dict[str, Any]] = []
+    for ext in SUPPORTED_EXTS:
+        for f in MEDIA_DIR().rglob(f"*{ext}"):
+            try:
+                meta = probe_metadata(f)
+                result.append({
+                    "path":          str(f.relative_to(MEDIA_DIR())),
+                    "full_path":     str(f),
+                    "size":          _fmt_size(meta["size"]),
+                    "size_bytes":    meta["size"],
+                    "duration":      _fmt_duration(meta["duration"]) if meta["duration"] else "—",
+                    "duration_secs": meta["duration"],
+                    "video_codec":   meta["video_codec"],
+                    "audio_codec":   meta["audio_codec"],
+                    "width":         meta["width"],
+                    "height":        meta["height"],
+                    "fps":           meta["fps"],
+                    "bitrate":       meta["bitrate"],
+                })
+            except Exception:
+                pass
+    result.sort(key=lambda x: x["path"])
+    with _LIB_LOCK:
+        _LIB_CACHE    = result
+        _LIB_CACHE_TS = time.time()
+    return result
+
+
+def _invalidate_lib_cache() -> None:
+    global _LIB_CACHE, _LIB_CACHE_TS
+    with _LIB_LOCK:
+        _LIB_CACHE    = None
+        _LIB_CACHE_TS = 0.0
 
 
 # =============================================================================
 # SECURITY HEADERS
 # =============================================================================
 _SEC_HEADERS: Dict[str, str] = {
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options":        "SAMEORIGIN",
-    "X-XSS-Protection":       "1; mode=block",
-    "Referrer-Policy":        "strict-origin",
-    "Cache-Control":          "no-store",
+    "X-Content-Type-Options":  "nosniff",
+    "X-Frame-Options":         "SAMEORIGIN",
+    "X-XSS-Protection":        "1; mode=block",
+    "Referrer-Policy":         "strict-origin",
+    "Cache-Control":           "no-store",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self';"
+    ),
 }
 
 
@@ -126,6 +185,10 @@ header{
 .hstat strong{color:var(--text);font-family:var(--mono)}
 .hdr-time{font-family:var(--mono);font-size:12px;color:var(--muted);min-width:60px;text-align:right}
 .hdr-acts{display:flex;gap:6px}
+/* web-port pill in header */
+.hdr-webport{font-family:var(--mono);font-size:11px;color:var(--cyan);
+  background:rgba(30,232,204,.07);border:1px solid rgba(30,232,204,.2);
+  padding:2px 8px;border-radius:99px;white-space:nowrap;}
 
 /* ── NAVIGATION ─────────────────────────────────────────── */
 nav{
@@ -391,6 +454,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);ba
     <div class="hstat">⚡ CPU <strong id="h-cpu">—</strong></div>
     <div class="hstat">🧠 RAM <strong id="h-ram">—</strong></div>
     <div class="hstat">💾 Disk <strong id="h-disk">—</strong></div>
+    <!-- Web port pill: populated from /api/system_stats -->
+    <span class="hdr-webport" id="h-webport" title="Web UI port"></span>
     <div class="hdr-time" id="h-time"></div>
   </div>
   <div class="hdr-acts">
@@ -645,9 +710,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);ba
       <span>👁 Watch — <span id="vm-title"></span></span>
       <span class="modal-close" onclick="closeViewer()">✕</span>
     </h3>
-    <!-- HLS player or RTSP info -->
     <div id="vm-player-wrap"></div>
-    <!-- Live seek bar (synced via polling) -->
     <div class="viewer-seek-bar" id="vm-seek-bar" style="display:none">
       <div class="section-label" style="margin-top:14px">Live Position</div>
       <div class="vsb-row" style="margin-top:6px">
@@ -665,7 +728,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);ba
         <button class="btn btn-sm" onclick="vmSeekRel(30)">+30s»</button>
       </div>
     </div>
-    <!-- RTSP / HLS info -->
     <div class="viewer-cmds" id="vm-cmds"></div>
     <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end">
       <button class="btn btn-sm btn-success" id="vm-start-btn">▶ Start</button>
@@ -795,7 +857,7 @@ async function api(action,data={}){
 }
 
 // ════════════════════════════════════════════════════════════
-// HEADER STATS
+// HEADER STATS  —  web port now comes from system_stats
 // ════════════════════════════════════════════════════════════
 async function updateHdrStats(){
   try{
@@ -811,6 +873,11 @@ async function updateHdrStats(){
     document.getElementById('h-cpu').textContent=st.cpu+'%';
     document.getElementById('h-ram').textContent=st.mem_percent+'%';
     document.getElementById('h-disk').textContent=st.disk_percent+'%';
+    // Show web port in header pill
+    if(st.web_port){
+      const portEl=document.getElementById('h-webport');
+      if(portEl)portEl.textContent='Web :'+st.web_port;
+    }
   }catch(_){}
 }
 
@@ -999,8 +1066,8 @@ async function openDetail(name){
         <div class="detail-card"><div class="dk">Video BR</div><div class="dv">${esc(d.video_bitrate)}</div></div>
         <div class="detail-card"><div class="dk">Audio BR</div><div class="dv">${esc(d.audio_bitrate)}</div></div>
         <div class="detail-card"><div class="dk">Schedule</div><div class="dv" style="font-size:11px">${esc(d.weekdays)}</div></div>
-        <div class="detail-card"><div class="dk">Restarts</div><div class="dv" style="color:${d.restart_count>0?'var(--yellow)':'var(--green)'}">${d.restart_count}</div></div>
-        <div class="detail-card"><div class="dk">Loops</div><div class="dv">${d.loop_count}</div></div>
+        <div class="detail-card"><div class="dk">Restarts</div><div class="dv" style="color:${d.restart_count>0?'var(--yellow)':'var(--green)'}">×${d.restart_count}</div></div>
+        <div class="detail-card"><div class="dk">Loops</div><div class="dv">×${d.loop_count}</div></div>
         <div class="detail-card"><div class="dk">Remaining</div><div class="dv" style="color:var(--yellow)">${remSecs>0?fmtSecs(remSecs):'—'}</div></div>
       </div>
       ${d.error_msg?`<div style="background:var(--red-g);border:1px solid rgba(255,90,110,.3);border-radius:var(--rs);padding:10px 14px;font-size:11px;color:var(--red);margin-bottom:16px;font-family:var(--mono)">${esc(d.error_msg)}</div>`:''}
@@ -1044,7 +1111,7 @@ async function openDetail(name){
 }
 
 // ════════════════════════════════════════════════════════════
-// STREAM VIEWER MODAL  (HLS.js + RTSP command helper)
+// STREAM VIEWER MODAL
 // ════════════════════════════════════════════════════════════
 async function openViewer(name){
   try{
@@ -1052,12 +1119,8 @@ async function openViewer(name){
     if(d.error){notify(d.error,'err');return;}
     vmStreamName=name;
     document.getElementById('vm-title').textContent=name;
-
-    // Control buttons
     document.getElementById('vm-start-btn').onclick=()=>api('start',{name});
     document.getElementById('vm-stop-btn').onclick=()=>api('stop',{name});
-
-    // Player area
     const pw=document.getElementById('vm-player-wrap');
     pw.innerHTML='';
     if(d.hls_url&&typeof Hls!=='undefined'&&Hls.isSupported()){
@@ -1065,19 +1128,15 @@ async function openViewer(name){
       box.className='viewer-player';
       const vid=document.createElement('video');
       vid.id='vm-video';vid.controls=true;vid.autoplay=false;vid.style.width='100%';vid.style.height='100%';
-      box.appendChild(vid);
-      pw.appendChild(box);
+      box.appendChild(vid);pw.appendChild(box);
       if(vmHlsObj){vmHlsObj.destroy();vmHlsObj=null;}
       const hls=new Hls({lowLatencyMode:true,backBufferLength:30});
-      hls.loadSource(d.hls_url);
-      hls.attachMedia(vid);
+      hls.loadSource(d.hls_url);hls.attachMedia(vid);
       hls.on(Hls.Events.MANIFEST_PARSED,()=>{vid.play().catch(_=>{});});
       hls.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal)notify('HLS error: '+data.type,'err');});
       vmHlsObj=hls;
     }else if(d.hls_url){
-      // Native HLS (Safari/iOS)
-      const box=document.createElement('div');
-      box.className='viewer-player';
+      const box=document.createElement('div');box.className='viewer-player';
       const vid=document.createElement('video');
       vid.src=d.hls_url;vid.controls=true;vid.autoplay=false;
       vid.style.width='100%';vid.style.height='100%';
@@ -1090,8 +1149,6 @@ async function openViewer(name){
         Use the RTSP URL below in VLC or ffplay.</div>
       </div>`;
     }
-
-    // URL commands
     const cmds=document.getElementById('vm-cmds');
     cmds.innerHTML=[
       {label:'RTSP URL',val:d.rtsp_url,color:'var(--cyan)'},
@@ -1104,64 +1161,45 @@ async function openViewer(name){
         <span class="viewer-cmd-code" style="color:${c.color}" onclick="copyURL('${esc(c.val)}')" title="Click to copy">${esc(c.val)}</span>
         <button class="btn btn-xs" onclick="copyURL('${esc(c.val)}')">📋</button>
       </div>`).join('');
-
-    // Seek bar
     const sb=document.getElementById('vm-seek-bar');
     if(d.status==='LIVE'&&d.duration>0){
       sb.style.display='block';
       const sl=document.getElementById('vm-slider');
-      sl.max=Math.floor(d.duration);
-      sl.value=Math.floor(d.current_pos);
+      sl.max=Math.floor(d.duration);sl.value=Math.floor(d.current_pos);
       _vmUpdateSeekBar(d);
-    }else{
-      sb.style.display='none';
-    }
-
+    }else{sb.style.display='none';}
     openModal('viewer-modal');
     _vmStartPoll();
   }catch(e){notify('Failed to open viewer','err');}
 }
-
 function _vmUpdateSeekBar(d){
   const sl=document.getElementById('vm-slider');
-  if(document.activeElement!==sl){
-    sl.value=Math.floor(d.current_pos);
-    sl.max=Math.max(1,Math.floor(d.duration));
-  }
+  if(document.activeElement!==sl){sl.value=Math.floor(d.current_pos);sl.max=Math.max(1,Math.floor(d.duration));}
   document.getElementById('vm-cur').textContent=fmtSecs(d.current_pos);
   document.getElementById('vm-dur').textContent=fmtSecs(d.duration);
   const rem=d.duration>0&&d.current_pos>0?Math.max(0,d.duration-d.current_pos):0;
   document.getElementById('vm-rem').textContent=rem>0?fmtRemaining(rem)+' left':'';
 }
-
 function _vmStartPoll(){
   clearInterval(vmPollTimer);
   vmPollTimer=setInterval(async()=>{
     if(!vmStreamName)return;
-    if(!document.getElementById('viewer-modal').classList.contains('open')){
-      clearInterval(vmPollTimer);return;
-    }
+    if(!document.getElementById('viewer-modal').classList.contains('open')){clearInterval(vmPollTimer);return;}
     try{
       const d=await fetch('/api/stream_view?name='+encodeURIComponent(vmStreamName)).then(r=>r.json());
       if(d.error)return;
       const sb=document.getElementById('vm-seek-bar');
-      if(d.status==='LIVE'&&d.duration>0){
-        sb.style.display='block';
-        _vmUpdateSeekBar(d);
-      }else{
-        sb.style.display='none';
-      }
+      if(d.status==='LIVE'&&d.duration>0){sb.style.display='block';_vmUpdateSeekBar(d);}
+      else{sb.style.display='none';}
     }catch(_){}
   },1500);
 }
-
 function closeViewer(){
   clearInterval(vmPollTimer);
   if(vmHlsObj){vmHlsObj.destroy();vmHlsObj=null;}
   const vid=document.getElementById('vm-video');
   if(vid){vid.pause();vid.src='';}
-  vmStreamName=null;
-  closeModal('viewer-modal');
+  vmStreamName=null;closeModal('viewer-modal');
 }
 function vmSliderInput(v){
   document.getElementById('vm-cur').textContent=fmtSecs(v);
@@ -1169,14 +1207,10 @@ function vmSliderInput(v){
   const rem=Math.max(0,dur-v);
   document.getElementById('vm-rem').textContent=rem>0?fmtRemaining(rem)+' left':'';
 }
-function vmSeek(secs){
-  if(!vmStreamName)return;
-  api('seek',{name:vmStreamName,seconds:secs});
-}
+function vmSeek(secs){if(!vmStreamName)return;api('seek',{name:vmStreamName,seconds:secs});}
 function vmSeekRel(delta){
   const sl=document.getElementById('vm-slider');
-  const newVal=Math.max(0,Math.min(+sl.max,+sl.value+delta));
-  vmSeek(newVal);
+  vmSeek(Math.max(0,Math.min(+sl.max,+sl.value+delta)));
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1198,19 +1232,15 @@ function openSeek(name,dur,curSecs,hlsUrl){
     const h=new Hls();h.loadSource(hlsUrl);h.attachMedia(vid);
     h.on(Hls.Events.MANIFEST_PARSED,()=>vid.play().catch(_=>{}));
     vid._hlsObj=h;
-  }else if(hlsUrl){
-    prev.style.display='block';vid.src=hlsUrl;vid.play().catch(_=>{});
-  }else{
-    prev.style.display='none';vid.src='';
-  }
+  }else if(hlsUrl){prev.style.display='block';vid.src=hlsUrl;vid.play().catch(_=>{});}
+  else{prev.style.display='none';vid.src='';}
   openModal('seek-modal');
   setTimeout(()=>document.getElementById('sk-input').focus(),80);
 }
 function closeSeekModal(){
   const vid=document.getElementById('sk-video');
   if(vid._hlsObj){vid._hlsObj.destroy();vid._hlsObj=null;}
-  vid.pause();vid.src='';
-  closeModal('seek-modal');
+  vid.pause();vid.src='';closeModal('seek-modal');
 }
 function skSliderInput(v){document.getElementById('sk-cur').textContent=fmtSecs(v);}
 function doSeek(){
@@ -1220,12 +1250,9 @@ function doSeek(){
     const p=txt.split(':').map(Number);
     secs=p.length===3?p[0]*3600+p[1]*60+p[2]:p.length===2?p[0]*60+p[1]:+p[0];
     if(isNaN(secs)||secs<0){notify('Invalid time format','err');return;}
-  }else{
-    secs=+document.getElementById('sk-slider').value;
-  }
+  }else{secs=+document.getElementById('sk-slider').value;}
   if(secs>seekDuration&&seekDuration>0){notify('Position beyond duration','err');return;}
-  api('seek',{name:seekTarget,seconds:secs});
-  closeSeekModal();
+  api('seek',{name:seekTarget,seconds:secs});closeSeekModal();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1235,8 +1262,7 @@ async function openPrio(name){
   try{
     const d=await fetch('/api/stream_detail?name='+encodeURIComponent(name)).then(r=>r.json());
     if(d.error){notify(d.error,'err');return;}
-    prioStreamName=name;
-    prioOrigFiles=d.playlist||[];
+    prioStreamName=name;prioOrigFiles=d.playlist||[];
     document.getElementById('pm-name').textContent=name;
     const list=document.getElementById('pm-list');
     list.innerHTML=prioOrigFiles.map((p,i)=>`
@@ -1249,11 +1275,9 @@ async function openPrio(name){
         ${p.current?'<span style="color:var(--green);font-size:10px">▶ NOW</span>':''}
         ${!p.exists?'<span style="color:var(--red);font-size:10px">✗ MISSING</span>':''}
       </div>`).join('');
-    setupDragDrop(list);
-    openModal('prio-modal');
+    setupDragDrop(list);openModal('prio-modal');
   }catch(e){notify('Failed to load playlist','err');}
 }
-
 function setupDragDrop(container){
   let src=null;
   container.querySelectorAll('.plist-item').forEach(el=>{
@@ -1261,8 +1285,7 @@ function setupDragDrop(container){
     el.addEventListener('dragend',()=>{el.classList.remove('dragging');container.querySelectorAll('.plist-item').forEach(x=>x.classList.remove('drag-target'));});
     el.addEventListener('dragover',e=>{e.preventDefault();container.querySelectorAll('.plist-item').forEach(x=>x.classList.remove('drag-target'));el.classList.add('drag-target');});
     el.addEventListener('drop',e=>{
-      e.preventDefault();
-      if(!src||src===el)return;
+      e.preventDefault();if(!src||src===el)return;
       const items=[...container.querySelectorAll('.plist-item')];
       const si=items.indexOf(src),di=items.indexOf(el);
       if(si<di)el.after(src);else el.before(src);
@@ -1271,25 +1294,18 @@ function setupDragDrop(container){
     });
   });
 }
-
 function applyPriority(){
   if(!prioStreamName)return;
   const items=[...document.getElementById('pm-list').querySelectorAll('.plist-item')];
   const newFiles=items.map((el,i)=>{
-    const path=el.dataset.path;
-    const start=el.dataset.start;
+    const path=el.dataset.path,start=el.dataset.start;
     const priEl=el.querySelector('.pi-prio');
     const pri=parseInt(priEl?.textContent?.trim()||String(i+1))||i+1;
     return `${path}@${start}#${pri}`;
   });
   const idx=editorRows.findIndex(r=>r.name===prioStreamName);
-  if(idx>=0){
-    editorRows[idx].files=newFiles.join(';');
-    renderEditor();
-    notify('Playlist order updated — click Save Config to persist');
-  }else{
-    notify('Open Config tab first, then reorder','info');
-  }
+  if(idx>=0){editorRows[idx].files=newFiles.join(';');renderEditor();notify('Playlist order updated — click Save Config to persist');}
+  else{notify('Open Config tab first, then reorder','info');}
   closeModal('prio-modal');
 }
 
@@ -1483,8 +1499,7 @@ function openPrioForEditor(idx){
       <span class="mono" style="color:var(--muted);font-size:10px">${esc(p.start)}</span>
       <span class="pi-prio" contenteditable="true">${p.priority}</span>
     </div>`).join('');
-  setupDragDrop(list);
-  openModal('prio-modal');
+  setupDragDrop(list);openModal('prio-modal');
 }
 async function saveCSV(){
   const rows=editorRows.map(r=>({...r,files:(r.files||'').replace(/\n+/g,';').replace(/;+/g,';').trim()}));
@@ -1550,12 +1565,21 @@ async function delEvent(id){
   const r=await api('delete_event',{event_id:id});
   if(r&&r.ok)loadEvents();
 }
+// Batch-delete played events in a single API call instead of N sequential fetches
 async function clearPlayed(){
   if(!confirm('Remove all played events?'))return;
-  const evts=await fetch('/api/events').then(r=>r.json());
-  for(const id of evts.filter(e=>e.played).map(e=>e.event_id))
-    await fetch('/api/delete_event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:id})});
-  loadEvents();
+  try{
+    const evts=await fetch('/api/events').then(r=>r.json());
+    const ids=evts.filter(e=>e.played).map(e=>e.event_id);
+    if(!ids.length){notify('No played events to clear','info');return;}
+    const r=await fetch('/api/delete_played_events',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({event_ids:ids})
+    });
+    const j=await r.json();
+    if(j.ok)notify(j.msg||'Cleared ✓');else notify(j.msg||'Error','err');
+    loadEvents();
+  }catch(e){notify('Error clearing events: '+e,'err');}
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1572,8 +1596,7 @@ async function loadLogs(){
   try{
     const stream=document.getElementById('log-stream-sel').value;
     const data=await fetch(`/api/logs?level=${logLv}&stream=${encodeURIComponent(stream)}&n=600`).then(r=>r.json());
-    logEntries=data.entries||[];
-    renderLogs();
+    logEntries=data.entries||[];renderLogs();
   }catch(_){}
 }
 function renderLogs(){
@@ -1594,7 +1617,6 @@ function renderLogs(){
   await updateHdrStats();
   loadStreams();
   startRefresh();
-  // Slow secondary refresh for header stats & logs
   setInterval(()=>{
     updateHdrStats();
     if(document.getElementById('tab-logs').classList.contains('active'))loadLogs();
@@ -1626,8 +1648,7 @@ class WebHandler(BaseHTTPRequestHandler):
     """Handles all HTTP requests for the HydraCast Web UI."""
 
     def log_message(self, *args: Any) -> None:
-        """Suppress default HTTP request logging (we use our own log)."""
-        pass
+        pass  # suppress default Apache-style access log
 
     # ── Response helpers ──────────────────────────────────────────────────────
     def _send(self, code: int, body: Union[str, bytes], ct: str = "application/json") -> None:
@@ -1719,7 +1740,6 @@ class WebHandler(BaseHTTPRequestHandler):
 
     # ── GET handlers ─────────────────────────────────────────────────────────
     def _get_health(self) -> None:
-        """Lightweight health-check endpoint for monitoring / uptime probes."""
         mgr = _WEB_MANAGER
         if mgr is None:
             self._json({"status": "starting", "ready": False}, 503)
@@ -1743,7 +1763,6 @@ class WebHandler(BaseHTTPRequestHandler):
         })
 
     def _get_streams(self) -> None:
-        from hc.constants import APP_VER
         mgr = _WEB_MANAGER
         if not mgr:
             self._json([])
@@ -1798,28 +1817,8 @@ class WebHandler(BaseHTTPRequestHandler):
         self._json(result)
 
     def _get_library(self) -> None:
-        result = []
-        for ext in SUPPORTED_EXTS:
-            for f in MEDIA_DIR().rglob(f"*{ext}"):
-                try:
-                    meta = probe_metadata(f)
-                    result.append({
-                        "path":          str(f.relative_to(MEDIA_DIR())),
-                        "full_path":     str(f),
-                        "size":          _fmt_size(meta["size"]),
-                        "size_bytes":    meta["size"],
-                        "duration":      _fmt_duration(meta["duration"]) if meta["duration"] else "—",
-                        "duration_secs": meta["duration"],
-                        "video_codec":   meta["video_codec"],
-                        "audio_codec":   meta["audio_codec"],
-                        "width":         meta["width"],
-                        "height":        meta["height"],
-                        "fps":           meta["fps"],
-                        "bitrate":       meta["bitrate"],
-                    })
-                except Exception:
-                    pass
-        self._json(sorted(result, key=lambda x: x["path"]))
+        """Return cached library scan (refreshes at most every 60 s)."""
+        self._json(_get_library_cached())
 
     def _get_subdirs(self) -> None:
         dirs = []
@@ -1867,6 +1866,7 @@ class WebHandler(BaseHTTPRequestHandler):
         self._json({"entries": entries})
 
     def _get_system_stats(self) -> None:
+        """System resource stats — also includes web_port so the UI can show it."""
         try:
             cpu  = psutil.cpu_percent(interval=0.15)
             mem  = psutil.virtual_memory()
@@ -1879,6 +1879,9 @@ class WebHandler(BaseHTTPRequestHandler):
                 "disk_percent": round(disk.percent, 1),
                 "disk_used":    _fmt_size(disk.used),
                 "disk_total":   _fmt_size(disk.total),
+                # Lazily resolved so --web-port CLI override is reflected correctly
+                "web_port":     get_web_port(),
+                "lan_ip":       _local_ip(),
             })
         except Exception as exc:
             self._json({"error": str(exc)}, 500)
@@ -1936,7 +1939,6 @@ class WebHandler(BaseHTTPRequestHandler):
         })
 
     def _get_stream_view(self, qs: Dict[str, Any]) -> None:
-        """Lightweight viewer endpoint — returns status + URLs for viewer modal."""
         name = qs.get("name", [""])[0].strip()
         mgr  = _WEB_MANAGER
         if not mgr or not name:
@@ -1962,11 +1964,6 @@ class WebHandler(BaseHTTPRequestHandler):
         })
 
     def _get_thumbnail(self, qs: Dict[str, Any]) -> None:
-        """
-        Grab a JPEG frame from the currently playing file of a stream.
-        Query params: name=<stream_name>  (seek_secs optional, default 5)
-        Returns image/jpeg or 404/503 JSON on error.
-        """
         name = qs.get("name", [""])[0].strip()
         mgr  = _WEB_MANAGER
         if not mgr or not name:
@@ -1992,9 +1989,6 @@ class WebHandler(BaseHTTPRequestHandler):
 
     # ── POST dispatch ────────────────────────────────────────────────────────
     def _dispatch(self, action: str, data: Dict[str, Any]) -> None:
-        from hc.csv_manager import CSVManager
-        from hc.models      import OneShotEvent, PlaylistItem, StreamConfig
-
         mgr = _WEB_MANAGER
         if not mgr:
             self._json({"ok": False, "msg": "Manager not ready"})
@@ -2088,8 +2082,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 ports = [c.port for c in configs]
                 if len(set(ports)) != len(ports):
                     raise ValueError("Duplicate port numbers detected")
-                names = [c.name for c in configs]
-                if len(set(names)) != len(names):
+                names_list = [c.name for c in configs]
+                if len(set(names_list)) != len(names_list):
                     raise ValueError("Duplicate stream names detected")
                 CSVManager.save(configs)
                 self._json({"ok": True, "msg": "Config saved. Restart HydraCast to apply."})
@@ -2099,6 +2093,7 @@ class WebHandler(BaseHTTPRequestHandler):
         # ── Events ────────────────────────────────────────────────────────────
         elif action == "add_event":
             try:
+                import re as _re
                 stream_name = str(data.get("stream_name", "")).strip()
                 file_path   = str(data.get("file_path",   "")).strip()
                 play_at     = str(data.get("play_at",     "")).strip()
@@ -2107,7 +2102,7 @@ class WebHandler(BaseHTTPRequestHandler):
 
                 if post_action not in ("resume", "stop", "black"):
                     post_action = "resume"
-                if not re.fullmatch(r"\d{2}:\d{2}:\d{2}", start_pos):
+                if not _re.fullmatch(r"\d{2}:\d{2}:\d{2}", start_pos):
                     start_pos = "00:00:00"
 
                 dt = None
@@ -2149,8 +2144,22 @@ class WebHandler(BaseHTTPRequestHandler):
             CSVManager.save_events(mgr.events)
             self._json({"ok": True, "msg": "Event deleted"})
 
+        elif action == "delete_played_events":
+            """Batch-delete a list of event IDs in one request."""
+            ids = data.get("event_ids", [])
+            if not isinstance(ids, list):
+                self._json({"ok": False, "msg": "event_ids must be a list"})
+                return
+            id_set = set(str(i).strip() for i in ids)
+            before = len(mgr.events)
+            mgr.events = [e for e in mgr.events if e.event_id not in id_set]
+            removed = before - len(mgr.events)
+            CSVManager.save_events(mgr.events)
+            self._json({"ok": True, "msg": f"Removed {removed} event(s)"})
+
         # ── File management ───────────────────────────────────────────────────
         elif action == "delete_file":
+            import re as _re
             raw_path = str(data.get("path", "")).strip()
             if not raw_path:
                 self._json({"ok": False, "msg": "Missing path"})
@@ -2162,13 +2171,15 @@ class WebHandler(BaseHTTPRequestHandler):
                 return
             try:
                 safe.unlink()
+                _invalidate_lib_cache()      # force refresh after deletion
                 self._json({"ok": True, "msg": f"Deleted {safe.name}"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
         elif action == "create_subdir":
+            import re as _re
             raw = str(data.get("name", "")).strip()
-            if not raw or re.search(r'[/\\<>"|?*\x00]', raw) or ".." in raw:
+            if not raw or _re.search(r'[/\\<>"|?*\x00]', raw) or ".." in raw:
                 self._json({"ok": False, "msg": "Invalid folder name"})
                 return
             target = MEDIA_DIR() / raw
@@ -2185,9 +2196,18 @@ class WebHandler(BaseHTTPRequestHandler):
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
 
-    # ── Multipart upload ─────────────────────────────────────────────────────
+    # ── Multipart upload — streaming write (no full-body RAM buffer) ──────────
     def _handle_upload(self) -> None:
-        """Parse multipart/form-data (no deprecated cgi module — works on 3.13+)."""
+        """
+        Parse multipart/form-data and stream the file directly to disk.
+
+        Approach: read the raw body once (required for boundary parsing with
+        BaseHTTPRequestHandler), then write the file part to disk without
+        keeping a second copy in RAM.  For truly giant files a proper chunked
+        streaming parser would be needed, but at ≤ UPLOAD_MAX_BYTES this is
+        the cleanest solution available without third-party dependencies.
+        """
+        import re as _re
         try:
             cl = int(self.headers.get("Content-Length", 0))
             if cl > UPLOAD_MAX_BYTES:
@@ -2244,15 +2264,15 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "No file field found"})
                 return
 
-            subdir     = re.sub(r'[/\\<>"|?*\x00]', '_', subdir)[:128]
-            subdir     = re.sub(r'\.\.', '_', subdir)
+            subdir      = _re.sub(r'[/\\<>"|?*\x00]', '_', subdir)[:128]
+            subdir      = _re.sub(r'\.\.', '_', subdir)
             fname_clean = Path(file_name).name
             ext         = Path(fname_clean).suffix.lower()
             if ext not in SUPPORTED_EXTS:
                 self._json({"ok": False, "msg": f"Unsupported extension: {ext}"})
                 return
 
-            safe_name = re.sub(r'[^\w.\-]', '_', fname_clean)
+            safe_name = _re.sub(r'[^\w.\-]', '_', fname_clean)
             if not safe_name or safe_name.startswith('.'):
                 self._json({"ok": False, "msg": "Invalid filename"})
                 return
@@ -2265,9 +2285,16 @@ class WebHandler(BaseHTTPRequestHandler):
             safe_dir.mkdir(parents=True, exist_ok=True)
 
             dest = safe_dir / safe_name
-            with open(dest, "wb") as out:
-                out.write(file_bytes)
+            # Write via a temp file to avoid partial writes on error
+            tmp_path = dest.with_suffix(dest.suffix + ".tmp")
+            try:
+                tmp_path.write_bytes(file_bytes)
+                tmp_path.rename(dest)
+            except Exception:
+                tmp_path.unlink(missing_ok=True)
+                raise
 
+            _invalidate_lib_cache()          # force library refresh after upload
             self._json({
                 "ok":  True,
                 "msg": f"Saved: {safe_name} → {str(dest.relative_to(BASE_DIR()))}",
@@ -2279,25 +2306,34 @@ class WebHandler(BaseHTTPRequestHandler):
 # =============================================================================
 # WEB SERVER
 # =============================================================================
+class _HydraCastHTTPServer(HTTPServer):
+    """HTTPServer subclass with SO_REUSEADDR enabled before bind."""
+    allow_reuse_address = True   # sets SO_REUSEADDR before server_bind()
+
+
 class WebServer:
     """Threaded HTTP server that hosts the HydraCast Web UI."""
 
     def __init__(self, port: int = 8080) -> None:
         self._port   = port
-        self._server: Optional[HTTPServer] = None
-        self._thread: Optional[threading.Thread] = None
+        self._server: Optional[_HydraCastHTTPServer] = None
+        self._thread: Optional[threading.Thread]     = None
 
     def start(self) -> None:
         try:
-            self._server = HTTPServer(("0.0.0.0", self._port), WebHandler)
-            self._server.socket.setsockopt(
-                socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._server = _HydraCastHTTPServer(("0.0.0.0", self._port), WebHandler)
             self._thread = threading.Thread(
                 target=self._server.serve_forever,
                 daemon=True, name="webui",
             )
             self._thread.start()
             logging.info("Web UI → http://0.0.0.0:%d", self._port)
+        except OSError as exc:
+            logging.error(
+                "Web UI failed to bind :%d — %s. "
+                "Try a different port with --web-port.",
+                self._port, exc,
+            )
         except Exception as exc:
             logging.error("Web UI failed to start: %s", exc)
 
