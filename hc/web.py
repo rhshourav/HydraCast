@@ -1800,11 +1800,11 @@ class WebHandler(BaseHTTPRequestHandler):
     def _get_library(self) -> None:
         result = []
         for ext in SUPPORTED_EXTS:
-            for f in MEDIA_DIR.rglob(f"*{ext}"):
+            for f in MEDIA_DIR().rglob(f"*{ext}"):
                 try:
                     meta = probe_metadata(f)
                     result.append({
-                        "path":          str(f.relative_to(MEDIA_DIR)),
+                        "path":          str(f.relative_to(MEDIA_DIR())),
                         "full_path":     str(f),
                         "size":          _fmt_size(meta["size"]),
                         "size_bytes":    meta["size"],
@@ -1823,12 +1823,12 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _get_subdirs(self) -> None:
         dirs = []
-        for d in MEDIA_DIR.rglob("*"):
+        for d in MEDIA_DIR().rglob("*"):
             if d.is_dir():
-                rel = str(d.relative_to(MEDIA_DIR))
+                rel = str(d.relative_to(MEDIA_DIR()))
                 if rel:
                     dirs.append(rel)
-        self._json({"dirs": sorted(set(dirs)), "root_label": str(MEDIA_DIR)})
+        self._json({"dirs": sorted(set(dirs)), "root_label": str(MEDIA_DIR())})
 
     def _get_events(self) -> None:
         mgr = _WEB_MANAGER
@@ -1870,7 +1870,7 @@ class WebHandler(BaseHTTPRequestHandler):
         try:
             cpu  = psutil.cpu_percent(interval=0.15)
             mem  = psutil.virtual_memory()
-            disk = psutil.disk_usage(str(BASE_DIR))
+            disk = psutil.disk_usage(str(BASE_DIR()))
             self._json({
                 "cpu":          round(cpu,  1),
                 "mem_percent":  round(mem.percent, 1),
@@ -2121,7 +2121,7 @@ class WebHandler(BaseHTTPRequestHandler):
                     raise ValueError("Invalid datetime format")
 
                 fp   = Path(file_path)
-                safe = _safe_path(fp, MEDIA_DIR)
+                safe = _safe_path(fp, MEDIA_DIR())
                 if safe is None and not fp.exists():
                     raise ValueError("File not found or path unsafe")
 
@@ -2156,7 +2156,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "Missing path"})
                 return
             p    = Path(raw_path)
-            safe = _safe_path(p, MEDIA_DIR)
+            safe = _safe_path(p, MEDIA_DIR())
             if safe is None or not safe.is_file():
                 self._json({"ok": False, "msg": "File not in media dir or not found"})
                 return
@@ -2171,8 +2171,8 @@ class WebHandler(BaseHTTPRequestHandler):
             if not raw or re.search(r'[/\\<>"|?*\x00]', raw) or ".." in raw:
                 self._json({"ok": False, "msg": "Invalid folder name"})
                 return
-            target = MEDIA_DIR / raw
-            safe   = _safe_path(target, MEDIA_DIR)
+            target = MEDIA_DIR() / raw
+            safe   = _safe_path(target, MEDIA_DIR())
             if safe is None:
                 self._json({"ok": False, "msg": "Path traversal denied"})
                 return
@@ -2257,8 +2257,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "Invalid filename"})
                 return
 
-            dest_dir = (MEDIA_DIR / subdir) if subdir else MEDIA_DIR
-            safe_dir = _safe_path(dest_dir, MEDIA_DIR)
+            dest_dir = (MEDIA_DIR() / subdir) if subdir else MEDIA_DIR()
+            safe_dir = _safe_path(dest_dir, MEDIA_DIR())
             if safe_dir is None:
                 self._json({"ok": False, "msg": "Invalid upload directory"})
                 return
@@ -2270,7 +2270,7 @@ class WebHandler(BaseHTTPRequestHandler):
 
             self._json({
                 "ok":  True,
-                "msg": f"Saved: {safe_name} → {str(dest.relative_to(BASE_DIR))}",
+                "msg": f"Saved: {safe_name} → {str(dest.relative_to(BASE_DIR()))}",
             })
         except Exception as exc:
             self._json({"ok": False, "msg": f"Upload error: {exc}"}, 500)
