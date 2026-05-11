@@ -1,32 +1,16 @@
 """
 hc/mediamtx_cfg.py  —  Generate per-stream MediaMTX YAML config files.
 
-FIX (v5.0.5):  HLS not working — three bugs corrected using the official
-               mediamtx.yml as ground truth.
+FIX (v5.0.6):
+  • hlsAllowOrigin: '*'  — singular, plain string.
+    v1.9.1 uses the OLD singular key. The plural `hlsAllowOrigins` with a
+    list was introduced in a later release; using it in v1.9.1 raises
+    ERR: json: unknown field "hlsAllowOrigins".
 
-  BUG 1 — Wrong key: `hlsAllowOrigin` (singular)
-    The real key is `hlsAllowOrigins` (plural), and it takes a YAML list.
-    Using the singular form is silently ignored — CORS is never set.
-    Fix: hlsAllowOrigins: ['*']
-
-  BUG 2 — Wrong key: `source: publisher` in the HLS paths block
-    FFmpeg pushes to MediaMTX via RTSP; `source: publisher` is only needed
-    when MediaMTX itself is meant to pull from an external source URL.
-    For a push workflow the path entry must be empty (same as non-HLS).
-    Using `source: publisher` can prevent the path from accepting the
-    FFmpeg RTSP push correctly.
-    Fix: use `{spath}: {{}}` for HLS paths too.
-
-  BUG 3 — `hlsAlwaysRemux: yes` accepted, but behaviour note
-    `hlsAlwaysRemux` must be true so MediaMTX pre-generates HLS segments
-    immediately when the stream starts, rather than waiting for the first
-    viewer to connect (which would cause a long initial delay or 404).
-    Using `yes` is fine YAML — keeping it `true` to match the official style.
-
-Previously fixed (v5.0.4):
-  • `rtmp: no` / `srt: no` / `webrtc: no` — correct 1.9.1 disable keys.
-  • Removed `rtmps:`, `rtmpDisable:`, `srtDisable:`, `webrtcDisable:` —
-    all raise "unknown field" in 1.9.1.
+Previously fixed:
+  v5.0.5 — hlsAlwaysRemux: true, removed `source: publisher` from paths
+  v5.0.4 — rtmp/srt/webrtc: false (correct v1.9.1 disable keys)
+  v5.0.3 — log file opened with "w" so stale errors don't pollute new runs
 
 RTP port assignment (unchanged):
   rtp_base = port + 2, bumped to next even number if odd.
@@ -81,17 +65,20 @@ class MediaMTXConfig:
         )
 
         # ── Protocol sections ────────────────────────────────────────────────
-        # MediaMTX 1.9.1 binds RTMP (:1935), SRT (:8890), WebRTC (:8889) by
-        # default. Multiple instances collide on these ports.
-        # Correct disable keys (verified against official mediamtx.yml):
-        #   rtmp: false  |  srt: false  |  webrtc: false
+        # Disable keys verified against v1.9.1 YAML:
+        #   rtmp: false | srt: false | webrtc: false
+        # Without these, every instance after the first fails binding :1935/:8890/:8889.
         #
-        # HLS key corrections (verified against official mediamtx.yml):
-        #   hlsAllowOrigins (plural, list)  — NOT hlsAllowOrigin (singular)
-        #   hlsAlwaysRemux: true            — ensures segments are pre-built
-        #                                     before first viewer connects
-        #   paths entry uses {}             — NOT `source: publisher`
-        #                                     (publisher is for pull sources)
+        # HLS CORS key for v1.9.1:
+        #   hlsAllowOrigin: '*'   ← singular, plain string
+        #   hlsAllowOrigins: ['*'] was introduced in a later version;
+        #   using it in v1.9.1 raises ERR: unknown field "hlsAllowOrigins".
+        #
+        # hlsAlwaysRemux: true — pre-generates segments so viewers don't get
+        #   a 404 before the first reader connects.
+        #
+        # paths block uses {} (empty) — FFmpeg pushes via RTSP so no source
+        #   directive is needed. `source: publisher` is for pull sources only.
 
         if cfg.hls_enabled:
             log.info("[%s] HLS enabled on port %d", cfg.name, cfg.hls_port)
@@ -107,7 +94,7 @@ class MediaMTXConfig:
                 f"hlsSegmentCount: 7\n"
                 f"hlsSegmentDuration: 1s\n"
                 f"hlsPartDuration: 200ms\n"
-                f"hlsAllowOrigins: ['*']\n"  # plural + list — critical
+                f"hlsAllowOrigin: '*'\n"
             )
         else:
             proto_section = (
@@ -117,10 +104,6 @@ class MediaMTXConfig:
                 f"hls: false\n"
             )
 
-        # Paths section: empty braces `{{}}` = accept publisher push.
-        # Do NOT use `source: publisher` — that is for pull (MediaMTX fetches
-        # from an external URL). FFmpeg pushes via RTSP, so the path just needs
-        # to exist with no special source directive.
         paths_section = (
             f"\npaths:\n"
             f"  {spath}: {{}}\n"
