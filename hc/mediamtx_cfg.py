@@ -1,14 +1,16 @@
 """
 hc/mediamtx_cfg.py  —  Generate per-stream MediaMTX YAML config files.
 
-FIX (v5.0.2):
-  • Removed `rtmps: false` — MediaMTX v1.9.1 does NOT support this field.
-    Keeping it caused immediate startup crash with:
-      ERR: json: unknown field "rtmps"
-  • Removed `rtmp: false` for the same reason (not supported in 1.9.1 YAML).
-    Both RTMP and RTMPS are simply not listed, which causes MediaMTX to use
-    its built-in defaults (disabled unless explicitly configured elsewhere).
-  • Added verbose logging at every step so failures are traceable.
+FIX (v5.0.3):
+  • Added `rtmpDisable: yes` — MediaMTX 1.9.1 YAML uses this key (NOT `rtmp: false`
+    or `rtmps: false`). Without it, every MediaMTX instance tries to bind port 1935
+    for RTMP, causing "address already in use" crashes on the 2nd+ stream.
+  • Added `srtDisable: yes` and `webrtcDisable: yes` — same reason; MediaMTX binds
+    default SRT (:8890) and WebRTC (:8889) ports unless explicitly disabled.
+    With multiple instances these ports also collide.
+  • Kept `hls: false` / `hls: true` as-is — these ARE valid 1.9.1 keys.
+  • Removed any use of `rtmp:`, `rtmps:`, `webrtc:`, `srt:` boolean keys — all
+    raise "unknown field" in MediaMTX 1.9.1.
 
 RTP port assignment (unchanged from v5.0.1):
   rtp_base = port + 2, bumped to next even number if odd.
@@ -62,16 +64,30 @@ class MediaMTXConfig:
             cfg.name, port, rtp_base, rtp_base + 1,
         )
 
-        # ── Protocol section ─────────────────────────────────────────────────
-        # IMPORTANT: Do NOT include `rtmp: false` or `rtmps: false`.
-        # MediaMTX 1.9.1 YAML parser raises "unknown field" for these and
-        # the process exits immediately (code 1).  Omitting them is safe —
-        # RTMP/RTMPS simply remain at their built-in defaults (disabled).
+        # ── Protocol disable section ─────────────────────────────────────────
+        # CRITICAL: MediaMTX 1.9.1 binds RTMP (:1935), SRT (:8890), and
+        # WebRTC (:8889) by DEFAULT even if not configured. With multiple
+        # MediaMTX instances, these ports collide on the 2nd instance.
+        #
+        # The correct 1.9.1 YAML keys to disable them are:
+        #   rtmpDisable: yes
+        #   srtDisable: yes
+        #   webrtcDisable: yes
+        #
+        # Do NOT use `rtmp: false`, `rtmps: false`, `srt: false`,
+        # `webrtc: false` — these raise "unknown field" and crash MediaMTX.
+        proto_disable = (
+            "rtmpDisable: yes\n"
+            "srtDisable: yes\n"
+            "webrtcDisable: yes\n"
+        )
+
+        # ── HLS section ──────────────────────────────────────────────────────
         if cfg.hls_enabled:
             log.info("[%s] HLS enabled on port %d", cfg.name, cfg.hls_port)
             # Low-Latency HLS requires at least 7 segments.
-            proto_section = (
-                f"hls: true\n"
+            hls_section = (
+                f"hls: yes\n"
                 f"hlsAddress: {addr}:{cfg.hls_port}\n"
                 f"hlsAlwaysRemux: yes\n"
                 f"hlsVariant: lowLatency\n"
@@ -79,17 +95,15 @@ class MediaMTXConfig:
                 f"hlsSegmentDuration: 1s\n"
                 f"hlsPartDuration: 200ms\n"
                 f"hlsAllowOrigin: \"*\"\n"
-                f"webrtc: false\n"
-                f"srt: false\n"
+            )
+            paths_section = (
                 f"\npaths:\n"
                 f"  {spath}:\n"
                 f"    source: publisher\n"
             )
         else:
-            proto_section = (
-                f"hls: false\n"
-                f"webrtc: false\n"
-                f"srt: false\n"
+            hls_section = "hls: no\n"
+            paths_section = (
                 f"\npaths:\n"
                 f"  {spath}: {{}}\n"
             )
@@ -97,7 +111,7 @@ class MediaMTXConfig:
         yaml_text = (
             f"# HydraCast v{APP_VER} — {cfg.name} (:{port})\n"
             f"# RTP port {rtp_base} (even ✓)  RTCP port {rtp_base+1} (odd ✓)\n"
-            f"# NOTE: rtmp/rtmps keys omitted — not supported by MediaMTX 1.9.1 YAML\n"
+            f"# rtmpDisable/srtDisable/webrtcDisable prevent port-1935/8890/8889 conflicts\n"
             f"logLevel: error\n"
             f"logDestinations: [file]\n"
             f"logFile: {str(log_f).replace(chr(92), '/')}\n"
@@ -110,11 +124,13 @@ class MediaMTXConfig:
             f"writeQueueSize: 1024\n"
             f"udpMaxPayloadSize: 1472\n"
             f"\n"
-            f"api: false\n"
-            f"metrics: false\n"
-            f"pprof: false\n"
+            f"api: no\n"
+            f"metrics: no\n"
+            f"pprof: no\n"
             f"\n"
-            f"{proto_section}"
+            f"{proto_disable}"
+            f"{hls_section}"
+            f"{paths_section}"
         )
 
         try:
@@ -124,7 +140,6 @@ class MediaMTXConfig:
             log.error("[%s] FAILED to write config %s: %s", cfg.name, cfg_f, exc)
             raise
 
-        # Log the full config at DEBUG level for deep troubleshooting
         log.debug("[%s] Config content:\n%s", cfg.name, yaml_text)
 
         return cfg_f
