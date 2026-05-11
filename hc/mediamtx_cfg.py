@@ -1,34 +1,28 @@
 """
 hc/mediamtx_cfg.py  —  Generate per-stream MediaMTX YAML config files.
 
-RTP port assignment (v5 fix):
-  Each MediaMTX instance receives:
-    rtspAddress : base_port           (TCP, must be ≥1024)
-    rtpAddress  : rtp_port            (UDP, **must be even** per RTP RFC 3550)
-    rtcpAddress : rtp_port + 1        (UDP, odd — one above RTP)
+FIX (v5.0.2):
+  • Removed `rtmps: false` — MediaMTX v1.9.1 does NOT support this field.
+    Keeping it caused immediate startup crash with:
+      ERR: json: unknown field "rtmps"
+  • Removed `rtmp: false` for the same reason (not supported in 1.9.1 YAML).
+    Both RTMP and RTMPS are simply not listed, which causes MediaMTX to use
+    its built-in defaults (disabled unless explicitly configured elsewhere).
+  • Added verbose logging at every step so failures are traceable.
 
-  We compute:
-    rtp_base = base_port + 2
-    if rtp_base is odd: rtp_base += 1   ← bump to next even number
-    rtp_port  = rtp_base
-    rtcp_port = rtp_base + 1
-
-  With the recommended ≥10-port gap between streams this never collides.
+RTP port assignment (unchanged from v5.0.1):
+  rtp_base = port + 2, bumped to next even number if odd.
   Example: 8554 → rtp=8556, rtcp=8557 | 8564 → rtp=8566, rtcp=8567
-
-Fixes (v5.0.1):
-  • rtmp: false  — prevents MediaMTX from trying to bind :1935 (RTMP)
-  • rtmps: false — prevents :1936 bind attempts
-  • srt: false, webrtc: false — belt-and-suspenders protocol lockdown
-  • hlsSegmentCount: 7 — Low-Latency HLS requires ≥7 segments (was 3)
-  • hlsSegmentDuration: 1s — tighter latency for LL-HLS
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from hc.constants import APP_VER, CONFIGS_DIR, LISTEN_ADDR, LOGS_DIR
 from hc.models import StreamState
+
+log = logging.getLogger(__name__)
 
 
 class MediaMTXConfig:
@@ -38,8 +32,9 @@ class MediaMTXConfig:
         stale = CONFIGS_DIR() / f"mediamtx_{port}.yml"
         try:
             stale.unlink(missing_ok=True)
-        except Exception:
-            pass
+            log.debug("Purged stale config for port %d", port)
+        except Exception as exc:
+            log.warning("Could not purge stale config for port %d: %s", port, exc)
 
     @staticmethod
     def write(state: StreamState) -> Path:
@@ -50,21 +45,31 @@ class MediaMTXConfig:
         log_f = (LOGS_DIR() / f"mediamtx_{port}.log").resolve()
         cfg_f = CONFIGS_DIR() / f"mediamtx_{port}.yml"
 
+        log.info("[%s] Writing MediaMTX config → %s", cfg.name, cfg_f)
+
         MediaMTXConfig._purge_stale(port)
 
-        # ── Compute RTP / RTCP ports ─────────────────────────────────────────
-        # RTP must be even (RFC 3550 §11). RTCP = RTP + 1.
+        # ── RTP / RTCP port calculation ──────────────────────────────────────
+        # RFC 3550 §11: RTP port MUST be even, RTCP = RTP + 1.
         rtp_base = port + 2
-        if rtp_base % 2 != 0:   # ensure even
+        if rtp_base % 2 != 0:
             rtp_base += 1
         rtp_addr  = f"{addr}:{rtp_base}"
         rtcp_addr = f"{addr}:{rtp_base + 1}"
 
-        # ── Protocol section (HLS optional) ──────────────────────────────────
-        # NOTE: Low-Latency HLS requires at minimum 7 segments.
-        # hlsSegmentCount < 7 causes repeated "[HLS] Low-Latency HLS requires
-        # at least 7 segments" errors in the MediaMTX log.
+        log.info(
+            "[%s] Port assignment: RTSP=%d  RTP=%d (even✓)  RTCP=%d",
+            cfg.name, port, rtp_base, rtp_base + 1,
+        )
+
+        # ── Protocol section ─────────────────────────────────────────────────
+        # IMPORTANT: Do NOT include `rtmp: false` or `rtmps: false`.
+        # MediaMTX 1.9.1 YAML parser raises "unknown field" for these and
+        # the process exits immediately (code 1).  Omitting them is safe —
+        # RTMP/RTMPS simply remain at their built-in defaults (disabled).
         if cfg.hls_enabled:
+            log.info("[%s] HLS enabled on port %d", cfg.name, cfg.hls_port)
+            # Low-Latency HLS requires at least 7 segments.
             proto_section = (
                 f"hls: true\n"
                 f"hlsAddress: {addr}:{cfg.hls_port}\n"
@@ -76,8 +81,6 @@ class MediaMTXConfig:
                 f"hlsAllowOrigin: \"*\"\n"
                 f"webrtc: false\n"
                 f"srt: false\n"
-                f"rtmp: false\n"
-                f"rtmps: false\n"
                 f"\npaths:\n"
                 f"  {spath}:\n"
                 f"    source: publisher\n"
@@ -87,10 +90,6 @@ class MediaMTXConfig:
                 f"hls: false\n"
                 f"webrtc: false\n"
                 f"srt: false\n"
-                # Explicitly disable RTMP/RTMPS so MediaMTX never attempts
-                # to bind :1935 / :1936 — the most common startup error.
-                f"rtmp: false\n"
-                f"rtmps: false\n"
                 f"\npaths:\n"
                 f"  {spath}: {{}}\n"
             )
@@ -98,6 +97,7 @@ class MediaMTXConfig:
         yaml_text = (
             f"# HydraCast v{APP_VER} — {cfg.name} (:{port})\n"
             f"# RTP port {rtp_base} (even ✓)  RTCP port {rtp_base+1} (odd ✓)\n"
+            f"# NOTE: rtmp/rtmps keys omitted — not supported by MediaMTX 1.9.1 YAML\n"
             f"logLevel: error\n"
             f"logDestinations: [file]\n"
             f"logFile: {str(log_f).replace(chr(92), '/')}\n"
@@ -117,5 +117,14 @@ class MediaMTXConfig:
             f"{proto_section}"
         )
 
-        cfg_f.write_text(yaml_text, encoding="utf-8")
+        try:
+            cfg_f.write_text(yaml_text, encoding="utf-8")
+            log.info("[%s] Config written successfully: %s", cfg.name, cfg_f)
+        except Exception as exc:
+            log.error("[%s] FAILED to write config %s: %s", cfg.name, cfg_f, exc)
+            raise
+
+        # Log the full config at DEBUG level for deep troubleshooting
+        log.debug("[%s] Config content:\n%s", cfg.name, yaml_text)
+
         return cfg_f
