@@ -90,10 +90,10 @@ class MediaMTXConfig:
                 f"hls: true\n"
                 f"hlsAddress: {addr}:{cfg.hls_port}\n"
                 f"hlsAlwaysRemux: true\n"
-                f"hlsVariant: lowLatency\n"
-                f"hlsSegmentCount: 7\n"
-                f"hlsSegmentDuration: 1s\n"
-                f"hlsPartDuration: 200ms\n"
+                f"hlsVariant: fmp4\n"
+                f"hlsSegmentCount: 6\n"
+                f"hlsSegmentDuration: 4s\n"
+                f""
                 f"hlsAllowOrigin: '*'\n"
             )
         else:
