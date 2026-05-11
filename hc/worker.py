@@ -452,7 +452,7 @@ class StreamWorker:
         self._log(f"Launching MediaMTX | config={cfg_file} | log={log_f}")
 
         try:
-            with open(log_f, "a") as lf:
+            with open(log_f, "w") as lf:  # "w" clears stale errors from previous runs
                 kw: Dict[str, Any] = dict(stdout=lf, stderr=subprocess.PIPE)
                 if IS_WIN:
                     kw["creationflags"] = subprocess.CREATE_NO_WINDOW
