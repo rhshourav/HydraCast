@@ -43,277 +43,792 @@ _WEB_MANAGER: Optional[Any] = None
 # =============================================================================
 # MINIMAL HTML UI
 # =============================================================================
-_HTML = r"""<!DOCTYPE html>
+_HTML = r"""
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HydraCast</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap');
+
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0e1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;
-  --text:#e6edf3;--muted:#7d8590;--green:#3fb950;--red:#f85149;
-  --yellow:#d29922;--blue:#58a6ff;--cyan:#39d0d8;
-  --font:'Courier New',monospace;
+  --bg:#080b10;
+  --bg2:#0d1117;
+  --bg3:#161b24;
+  --bg4:#1c2333;
+  --border:#21293a;
+  --border2:#2d3748;
+  --text:#e2e8f0;
+  --text2:#94a3b8;
+  --text3:#64748b;
+  --green:#22d3a0;
+  --green-dim:rgba(34,211,160,0.12);
+  --red:#f87171;
+  --red-dim:rgba(248,113,113,0.12);
+  --yellow:#fbbf24;
+  --yellow-dim:rgba(251,191,36,0.12);
+  --blue:#60a5fa;
+  --blue-dim:rgba(96,165,250,0.1);
+  --cyan:#22d3ee;
+  --purple:#a78bfa;
+  --purple-dim:rgba(167,139,250,0.15);
+  --accent:#22d3a0;
+  --glow:0 0 20px rgba(34,211,160,0.15);
+  --font-mono:'JetBrains Mono',monospace;
+  --font-display:'Syne',sans-serif;
+  --radius:8px;
+  --radius-lg:12px;
 }
-body{background:var(--bg);color:var(--text);font:13px/1.5 var(--font);min-height:100vh}
+
+html{background:var(--bg)}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;line-height:1.5;min-height:100vh;overflow-x:hidden}
 a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
+::selection{background:rgba(34,211,160,0.25);color:#fff}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text3)}
 
-/* ─ HEADER ─ */
-header{
-  background:var(--bg2);border-bottom:1px solid var(--border);
-  padding:10px 20px;display:flex;align-items:center;gap:16px;
-  position:sticky;top:0;z-index:50;
+/* ─────────── LAYOUT ─────────── */
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* ─────────── TOP BAR ─────────── */
+.topbar{
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  padding:0 20px;
+  display:flex;align-items:center;gap:0;
+  height:48px;
+  flex-shrink:0;
+  position:relative;
+  z-index:100;
 }
-.logo{font-weight:bold;font-size:16px;color:var(--cyan)}
-.logo span{color:var(--muted);font-size:11px;margin-left:6px}
-.hstats{margin-left:auto;display:flex;gap:16px;font-size:11px;color:var(--muted)}
-.hstats b{color:var(--text)}
+.topbar::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);
+  opacity:0.4;
+}
 
-/* ─ TABS ─ */
-nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;display:flex;gap:0}
-nav button{
-  background:none;border:none;color:var(--muted);cursor:pointer;
-  font:13px var(--font);padding:8px 16px;
+.logo{
+  display:flex;align-items:center;gap:10px;
+  font-family:var(--font-display);font-weight:800;font-size:18px;
+  color:var(--text);letter-spacing:-0.5px;
+  margin-right:24px;white-space:nowrap;
+}
+.logo-icon{
+  width:30px;height:30px;
+  background:linear-gradient(135deg,var(--accent),var(--cyan));
+  border-radius:7px;display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:900;color:#080b10;flex-shrink:0;
+}
+.logo sub{font-family:var(--font-mono);font-size:10px;color:var(--text3);font-weight:400;vertical-align:middle;margin-left:2px}
+
+.nav-tabs{display:flex;gap:0;align-items:stretch;height:100%;flex:1}
+.nav-tab{
+  background:none;border:none;color:var(--text3);cursor:pointer;
+  font-family:var(--font-mono);font-size:12px;padding:0 16px;
   border-bottom:2px solid transparent;
+  display:flex;align-items:center;gap:6px;
+  transition:all 0.15s;white-space:nowrap;
+  letter-spacing:0.03em;
 }
-nav button:hover{color:var(--text)}
-nav button.on{color:var(--blue);border-bottom-color:var(--blue)}
+.nav-tab:hover{color:var(--text2);background:rgba(255,255,255,0.02)}
+.nav-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.nav-tab .tab-dot{
+  width:6px;height:6px;border-radius:50%;background:currentColor;
+  opacity:0;transition:opacity 0.2s;
+}
+.nav-tab.active .tab-dot{opacity:1}
 
-/* ─ MAIN ─ */
-.main{padding:16px 20px;max-width:1400px;margin:0 auto}
+.topbar-right{
+  margin-left:auto;display:flex;align-items:center;gap:12px;
+}
+.stat-pill{
+  display:flex;align-items:center;gap:6px;
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:6px;padding:4px 10px;font-size:11px;
+  color:var(--text3);
+}
+.stat-pill b{color:var(--text);font-weight:600}
+.stat-pill.live b{color:var(--green)}
+.pulse{
+  display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 6px var(--green);
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
 
-/* ─ TABLES ─ */
+.topbar-btns{display:flex;gap:4px}
+.hbtn{
+  background:var(--bg3);border:1px solid var(--border);color:var(--text2);
+  cursor:pointer;font:11px var(--font-mono);padding:5px 12px;border-radius:6px;
+  display:inline-flex;align-items:center;gap:5px;
+  transition:all 0.15s;white-space:nowrap;
+}
+.hbtn:hover{border-color:var(--border2);color:var(--text)}
+.hbtn.g{border-color:rgba(34,211,160,0.4);color:var(--green);background:var(--green-dim)}
+.hbtn.g:hover{background:rgba(34,211,160,0.2)}
+.hbtn.r{border-color:rgba(248,113,113,0.4);color:var(--red);background:var(--red-dim)}
+.hbtn.r:hover{background:rgba(248,113,113,0.2)}
+
+/* ─────────── MAIN AREA ─────────── */
+.main-area{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.tab-panel{display:none;flex:1;overflow:auto;padding:20px}
+.tab-panel.active{display:flex;flex-direction:column;gap:16px}
+
+/* ─────────── SECTION HEADER ─────────── */
+.section-hdr{
+  display:flex;align-items:center;gap:10px;margin-bottom:2px;
+}
+.section-hdr h2{
+  font-family:var(--font-display);font-size:14px;font-weight:700;
+  color:var(--text2);letter-spacing:0.05em;text-transform:uppercase;
+}
+.section-hdr .sep{flex:1;height:1px;background:var(--border);margin-left:8px}
+.count-badge{
+  font-size:10px;font-weight:700;
+  background:var(--bg4);border:1px solid var(--border2);
+  color:var(--text3);border-radius:10px;padding:1px 7px;
+}
+
+/* ─────────── CARD ─────────── */
+.card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;
+}
+.card-hdr{
+  padding:12px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;
+}
+.card-hdr h3{font-size:12px;font-weight:600;color:var(--text2);letter-spacing:0.04em;text-transform:uppercase}
+.card-body{padding:16px}
+
+/* ─────────── TABLE ─────────── */
+.tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;padding:7px 10px;color:var(--muted);font-weight:normal;
-   border-bottom:1px solid var(--border);white-space:nowrap;font-size:11px;
-   text-transform:uppercase;letter-spacing:.06em}
-td{padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
-tr:hover td{background:rgba(255,255,255,.02)}
+th{
+  text-align:left;padding:8px 12px;color:var(--text3);font-weight:500;
+  border-bottom:1px solid var(--border);white-space:nowrap;font-size:10px;
+  text-transform:uppercase;letter-spacing:0.08em;background:var(--bg3);
+}
+td{padding:8px 12px;border-bottom:1px solid rgba(33,41,58,0.5);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,0.015)}
+.td-name{font-weight:600;color:var(--text)}
+.td-muted{color:var(--text3);font-size:11px}
 
-/* ─ BUTTONS ─ */
+/* ─────────── BUTTONS ─────────── */
 .btn{
-  background:var(--bg3);border:1px solid var(--border);color:var(--text);
-  cursor:pointer;font:11px var(--font);padding:4px 10px;border-radius:4px;
+  background:var(--bg3);border:1px solid var(--border);color:var(--text2);
+  cursor:pointer;font:11px var(--font-mono);padding:4px 10px;border-radius:6px;
   display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+  transition:all 0.15s;
 }
-.btn:hover{border-color:var(--muted)}
-.g{background:rgba(63,185,80,.12);border-color:rgba(63,185,80,.3);color:var(--green)}
-.g:hover{background:rgba(63,185,80,.2)}
-.r{background:rgba(248,81,73,.12);border-color:rgba(248,81,73,.3);color:var(--red)}
-.r:hover{background:rgba(248,81,73,.2)}
-.b{background:rgba(88,166,255,.1);border-color:rgba(88,166,255,.25);color:var(--blue)}
-.b:hover{background:rgba(88,166,255,.2)}
+.btn:hover{border-color:var(--border2);color:var(--text)}
+.btn.g{border-color:rgba(34,211,160,0.35);color:var(--green);background:var(--green-dim)}
+.btn.g:hover{background:rgba(34,211,160,0.2)}
+.btn.r{border-color:rgba(248,113,113,0.35);color:var(--red);background:var(--red-dim)}
+.btn.r:hover{background:rgba(248,113,113,0.2)}
+.btn.b{border-color:rgba(96,165,250,0.3);color:var(--blue);background:var(--blue-dim)}
+.btn.b:hover{background:rgba(96,165,250,0.18)}
+.btn.y{border-color:rgba(251,191,36,0.3);color:var(--yellow);background:var(--yellow-dim)}
+.btn.y:hover{background:rgba(251,191,36,0.2)}
+.btn.p{border-color:rgba(167,139,250,0.35);color:var(--purple);background:var(--purple-dim)}
+.btn.p:hover{background:rgba(167,139,250,0.25)}
+.btn-group{display:flex;gap:3px;flex-wrap:wrap}
 
-/* ─ STATUS BADGE ─ */
+/* ─────────── BADGE ─────────── */
 .badge{
-  display:inline-block;font-size:10px;font-weight:bold;
-  padding:2px 7px;border-radius:10px;letter-spacing:.04em;
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:10px;letter-spacing:0.05em;
+  white-space:nowrap;
 }
-.LIVE{background:rgba(63,185,80,.18);color:var(--green);border:1px solid rgba(63,185,80,.35)}
-.STOPPED{background:rgba(125,133,144,.1);color:var(--muted);border:1px solid var(--border)}
-.STARTING{background:rgba(210,153,34,.15);color:var(--yellow);border:1px solid rgba(210,153,34,.3)}
-.ERROR{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3)}
-.SCHED{background:rgba(88,166,255,.12);color:var(--blue);border:1px solid rgba(88,166,255,.25)}
-.DISABLED{background:rgba(50,50,60,.2);color:var(--muted);border:1px solid var(--border)}
-.ONESHOT{background:rgba(130,80,255,.15);color:#a78bfa;border:1px solid rgba(130,80,255,.3)}
+.LIVE{background:var(--green-dim);color:var(--green);border:1px solid rgba(34,211,160,0.3)}
+.LIVE::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);display:inline-block;box-shadow:0 0 4px var(--green);animation:pulse 2s infinite}
+.STOPPED{background:rgba(100,116,139,0.1);color:var(--text3);border:1px solid var(--border)}
+.STARTING{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(251,191,36,0.3)}
+.ERROR{background:var(--red-dim);color:var(--red);border:1px solid rgba(248,113,113,0.3)}
+.SCHED{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(96,165,250,0.25)}
+.DISABLED{background:rgba(50,50,70,0.2);color:var(--text3);border:1px solid var(--border)}
+.ONESHOT{background:var(--purple-dim);color:var(--purple);border:1px solid rgba(167,139,250,0.3)}
 
-/* ─ PROGRESS ─ */
-.prog{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;min-width:100px}
-.prog-fill{height:100%;border-radius:3px;background:var(--green);transition:width .5s}
+/* ─────────── PROGRESS ─────────── */
+.prog{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;min-width:100px;position:relative}
+.prog-fill{height:100%;border-radius:2px;background:var(--green);transition:width .5s ease}
+.prog-label{font-size:10px;color:var(--text3);margin-top:3px}
 
-/* ─ LOG BOX ─ */
+/* ─────────── CHIP / URL ─────────── */
+.chip{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--bg4);border:1px solid var(--border);
+  border-radius:5px;padding:3px 8px;font-size:10px;color:var(--cyan);
+  cursor:pointer;max-width:200px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;vertical-align:middle;transition:all 0.15s;
+  font-family:var(--font-mono);
+}
+.chip:hover{border-color:var(--cyan);background:rgba(34,211,238,0.06)}
+
+/* ─────────── LOGBOX ─────────── */
 #logbox{
-  background:var(--bg);border:1px solid var(--border);border-radius:4px;
-  padding:10px;height:480px;overflow-y:auto;font-size:11px;line-height:1.7;
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px;height:440px;overflow-y:auto;font-size:11px;line-height:1.8;
+  font-family:var(--font-mono);
 }
-.li{color:var(--text)}.lw{color:var(--yellow)}.le{color:var(--red);font-weight:bold}
+.le{color:var(--red)}.lw{color:var(--yellow)}.li{color:var(--text2)}
+.log-time{color:var(--text3);margin-right:6px}
 
-/* ─ FORM ─ */
-.form-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px}
-.fg{display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px}
-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+/* ─────────── FORMS ─────────── */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;align-items:end}
+.form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end}
+.fg{display:flex;flex-direction:column;gap:4px}
+label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;font-weight:500}
 input,select,textarea{
   background:var(--bg3);border:1px solid var(--border);color:var(--text);
-  border-radius:4px;padding:5px 8px;font:12px var(--font);width:100%;
+  border-radius:var(--radius);padding:7px 10px;font:12px var(--font-mono);width:100%;
+  transition:border-color 0.15s,box-shadow 0.15s;
 }
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
-textarea{resize:vertical}
-
-/* ─ MONO CHIP ─ */
-.chip{
-  display:inline-block;background:var(--bg3);border:1px solid var(--border);
-  border-radius:3px;padding:1px 6px;font-size:10px;color:var(--cyan);
-  cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;vertical-align:middle;
+input:focus,select:focus,textarea:focus{
+  outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(34,211,160,0.1);
 }
-.chip:hover{border-color:var(--cyan)}
+input::placeholder{color:var(--text3)}
+textarea{resize:vertical;min-height:80px}
+select option{background:var(--bg3)}
 
-/* ─ TOAST ─ */
+/* ─────────── UPLOAD ZONE ─────────── */
+#dropzone{
+  border:2px dashed var(--border);border-radius:var(--radius-lg);padding:40px;
+  text-align:center;cursor:pointer;color:var(--text3);
+  transition:all 0.2s;background:var(--bg3);
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+}
+#dropzone:hover,#dropzone.over{border-color:var(--accent);color:var(--text);background:rgba(34,211,160,0.04)}
+.dz-icon{font-size:32px;opacity:0.5;margin-bottom:4px}
+#uplist{list-style:none;display:flex;flex-direction:column;gap:6px;margin-top:12px}
+#uplist li{
+  display:flex;align-items:center;gap:10px;font-size:11px;
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;
+}
+.ubar{flex:1;height:3px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.ufill{height:100%;background:var(--blue);border-radius:2px;transition:width 0.2s}
+
+/* ─────────── TOAST ─────────── */
 #toast{
-  position:fixed;bottom:20px;right:20px;z-index:999;
-  background:var(--bg2);border:1px solid var(--border);border-radius:4px;
-  padding:8px 16px;font-size:12px;
-  transform:translateX(120%);transition:transform .25s;pointer-events:none;
+  position:fixed;bottom:24px;right:24px;z-index:9999;
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 18px;font-size:12px;display:flex;align-items:center;gap:8px;
+  transform:translateX(120%);transition:transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  pointer-events:none;min-width:200px;max-width:360px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.4);
 }
 #toast.show{transform:translateX(0)}
-#toast.err{border-color:var(--red);color:var(--red)}
-#toast.ok{border-color:var(--green);color:var(--green)}
+#toast.err{border-color:rgba(248,113,113,0.5);color:var(--red)}
+#toast.ok{border-color:rgba(34,211,160,0.5);color:var(--green)}
+#toast.info{border-color:rgba(96,165,250,0.4);color:var(--blue)}
 
-.tab{display:none}.tab.on{display:block}
-.section-title{font-size:11px;color:var(--muted);text-transform:uppercase;
-  letter-spacing:.07em;margin-bottom:8px;padding-bottom:4px;
-  border-bottom:1px solid var(--border)}
-
-/* ─ UPLOAD ─ */
-#dropzone{
-  border:2px dashed var(--border);border-radius:6px;padding:32px;
-  text-align:center;cursor:pointer;color:var(--muted);font-size:13px;
-  margin-bottom:12px;
+/* ─────────── STREAM VIEWER ─────────── */
+.viewer-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+  gap:12px;
 }
-#dropzone:hover,#dropzone.over{border-color:var(--blue);color:var(--blue)}
-#uplist{list-style:none;display:flex;flex-direction:column;gap:5px}
-#uplist li{display:flex;align-items:center;gap:8px;font-size:11px;
-  background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:5px 10px}
-.ubar{flex:1;height:3px;background:var(--bg);border-radius:3px;overflow:hidden}
-.ufill{height:100%;background:var(--blue);border-radius:3px}
+.stream-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;transition:border-color 0.2s,box-shadow 0.2s;
+}
+.stream-card:hover{border-color:var(--border2);box-shadow:0 4px 24px rgba(0,0,0,0.3)}
+.stream-card.is-live{border-color:rgba(34,211,160,0.25)}
+.stream-card-header{
+  padding:10px 14px;display:flex;align-items:center;gap:8px;
+  border-bottom:1px solid var(--border);background:var(--bg3);
+}
+.stream-card-title{font-weight:600;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stream-preview{
+  height:160px;background:var(--bg);display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--text3);position:relative;overflow:hidden;
+}
+.stream-preview canvas{width:100%;height:100%;object-fit:contain}
+.stream-preview video{width:100%;height:100%;object-fit:contain;background:#000}
+.stream-overlay{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;
+  background:rgba(8,11,16,0.85);
+}
+.stream-play-btn{
+  width:44px;height:44px;border-radius:50%;
+  background:rgba(34,211,160,0.15);border:2px solid var(--accent);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:16px;
+  transition:all 0.2s;color:var(--accent);
+}
+.stream-play-btn:hover{background:rgba(34,211,160,0.25);transform:scale(1.1)}
+.stream-card-footer{
+  padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;
+}
+.stream-stats{display:flex;gap:10px}
+.stat-item{font-size:10px;color:var(--text3)}
+.stat-item b{color:var(--text2)}
+
+/* ─────────── CONFIG PANEL ─────────── */
+.config-layout{display:grid;grid-template-columns:220px 1fr;gap:16px;height:100%}
+.config-sidebar{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;
+}
+.config-sidebar-hdr{
+  padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg3);
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);
+}
+.config-stream-item{
+  padding:10px 14px;cursor:pointer;border-bottom:1px solid rgba(33,41,58,0.4);
+  display:flex;align-items:center;gap:8px;transition:background 0.15s;
+  font-size:12px;
+}
+.config-stream-item:hover{background:var(--bg4)}
+.config-stream-item.active{background:rgba(34,211,160,0.07);border-left:2px solid var(--accent)}
+.config-stream-item .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--text3)}
+.config-stream-item .dot.live{background:var(--green);box-shadow:0 0 5px var(--green)}
+.config-stream-item .dot.error{background:var(--red)}
+.config-main{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;display:flex;flex-direction:column;
+}
+.config-main-hdr{
+  padding:14px 20px;border-bottom:1px solid var(--border);background:var(--bg3);
+  display:flex;align-items:center;gap:10px;
+}
+.config-main-hdr h2{font-family:var(--font-display);font-size:16px;font-weight:700}
+.config-main-body{padding:20px;overflow:auto;flex:1}
+.config-section{margin-bottom:24px}
+.config-section-title{
+  font-size:10px;text-transform:uppercase;letter-spacing:0.1em;
+  color:var(--text3);font-weight:700;margin-bottom:12px;padding-bottom:6px;
+  border-bottom:1px solid var(--border);
+}
+.config-main-footer{
+  padding:14px 20px;border-top:1px solid var(--border);background:var(--bg3);
+  display:flex;gap:8px;justify-content:flex-end;
+}
+
+/* ─────────── SETTINGS ─────────── */
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.setting-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;
+}
+.setting-card h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--text2);margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.setting-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(33,41,58,0.4)}
+.setting-row:last-child{border-bottom:none}
+.setting-label{font-size:12px;color:var(--text2)}
+.setting-desc{font-size:10px;color:var(--text3);margin-top:1px}
+.toggle{
+  position:relative;width:40px;height:22px;
+  background:var(--bg4);border:1px solid var(--border);border-radius:11px;
+  cursor:pointer;transition:all 0.2s;flex-shrink:0;
+}
+.toggle::after{
+  content:'';position:absolute;left:3px;top:3px;
+  width:14px;height:14px;border-radius:50%;background:var(--text3);
+  transition:all 0.2s;
+}
+.toggle.on{background:rgba(34,211,160,0.2);border-color:var(--accent)}
+.toggle.on::after{transform:translateX(18px);background:var(--accent)}
+
+/* ─────────── RESPONSIVE ─────────── */
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+
+/* ─────────── SEEK MODAL ─────────── */
+.modal-bg{
+  position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;
+  display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);
+}
+.modal-bg.open{display:flex}
+.modal{
+  background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius-lg);
+  padding:24px;width:380px;max-width:90vw;
+  box-shadow:0 24px 64px rgba(0,0,0,0.6);
+}
+.modal h3{font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:16px}
+.modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
+/* ─────────── INLINE TAGS ─────────── */
+.tag-shuf{font-size:9px;color:var(--purple);background:var(--purple-dim);border:1px solid rgba(167,139,250,0.3);border-radius:4px;padding:1px 5px;vertical-align:middle}
+.tag-dis{font-size:9px;color:var(--text3);background:var(--bg4);border:1px solid var(--border);border-radius:4px;padding:1px 5px;vertical-align:middle}
+
+/* ─────────── EMPTY STATE ─────────── */
+.empty{
+  padding:48px;text-align:center;color:var(--text3);
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+}
+.empty-icon{font-size:36px;opacity:0.3;margin-bottom:4px}
+
+/* ─────────── STREAM INFO CHIP ROW ─────────── */
+.info-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.info-chip{
+  font-size:10px;background:var(--bg4);border:1px solid var(--border);
+  border-radius:5px;padding:2px 8px;color:var(--text3);
+  display:flex;align-items:center;gap:3px;
+}
+.info-chip b{color:var(--text2)}
+
 </style>
 </head>
 <body>
 
-<header>
-  <div class="logo">HydraCast <span id="ver"></span></div>
-  <div class="hstats">
-    <span>LIVE <b id="h-live">0</b></span>
-    <span>CPU <b id="h-cpu">—</b></span>
-    <span>RAM <b id="h-ram">—</b></span>
-    <span id="h-time"></span>
+<div class="app">
+
+<!-- ══ TOP BAR ══ -->
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-icon">H</div>
+    HydraCast
+    <sub id="ver-badge">v—</sub>
   </div>
-  <div style="display:flex;gap:6px;margin-left:16px">
-    <button class="btn g" onclick="api('start_all',{})">▶ All</button>
-    <button class="btn r" onclick="api('stop_all',{})">■ All</button>
+
+  <nav class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab('streams',this)">
+      <span class="tab-dot"></span>Streams
+    </button>
+    <button class="nav-tab" onclick="switchTab('viewer',this)">
+      <span class="tab-dot"></span>Viewer
+    </button>
+    <button class="nav-tab" onclick="switchTab('logs',this)">
+      <span class="tab-dot"></span>Logs
+    </button>
+    <button class="nav-tab" onclick="switchTab('upload',this)">
+      <span class="tab-dot"></span>Upload
+    </button>
+    <button class="nav-tab" onclick="switchTab('events',this)">
+      <span class="tab-dot"></span>Events
+    </button>
+    <button class="nav-tab" onclick="switchTab('config',this)">
+      <span class="tab-dot"></span>Configure
+    </button>
+    <button class="nav-tab" onclick="switchTab('settings',this)">
+      <span class="tab-dot"></span>Settings
+    </button>
+  </nav>
+
+  <div class="topbar-right">
+    <div class="stat-pill live">
+      <span class="pulse"></span>
+      LIVE <b id="h-live">0</b>
+    </div>
+    <div class="stat-pill">CPU <b id="h-cpu">—</b></div>
+    <div class="stat-pill">RAM <b id="h-ram">—</b></div>
+    <div class="stat-pill" style="font-variant-numeric:tabular-nums"><b id="h-time">—</b></div>
+    <div class="topbar-btns">
+      <button class="hbtn g" onclick="api('start_all',{})">▶ All</button>
+      <button class="hbtn r" onclick="api('stop_all',{})">■ All</button>
+    </div>
   </div>
 </header>
 
-<nav>
-  <button class="on" onclick="tab('streams',this)">Streams</button>
-  <button onclick="tab('logs',this)">Logs</button>
-  <button onclick="tab('upload',this)">Upload</button>
-  <button onclick="tab('events',this)">Events</button>
-</nav>
-
-<div class="main">
-
-<!-- STREAMS -->
-<div id="tab-streams" class="tab on">
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-    <span class="section-title" style="margin:0">Live Streams</span>
-    <button class="btn b" onclick="loadStreams()">↻ Refresh</button>
-    <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px">
-      <input type="checkbox" id="auto" checked onchange="toggleAuto(this.checked)">
+<!-- ══ STREAMS TAB ══ -->
+<div id="tab-streams" class="tab-panel active">
+  <div class="section-hdr">
+    <h2>Live Streams</h2>
+    <span class="sep"></span>
+    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="auto-ref" checked onchange="toggleAuto(this.checked)" style="width:auto">
       Auto-refresh
     </label>
+    <button class="btn b" onclick="loadStreams()">↻ Refresh</button>
   </div>
-  <div style="overflow-x:auto">
-    <table>
-      <thead><tr>
-        <th>#</th><th>Name</th><th>Port</th><th>Status</th>
-        <th>Progress</th><th>Position</th><th>FPS</th>
-        <th>RTSP URL</th><th>Actions</th>
-      </tr></thead>
-      <tbody id="stbl"></tbody>
-    </table>
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Stream</th>
+            <th>Port</th>
+            <th>Status</th>
+            <th style="min-width:140px">Progress</th>
+            <th>Position</th>
+            <th>FPS</th>
+            <th>RTSP URL</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="stbl">
+          <tr><td colspan="9" class="empty"><div class="empty"><div class="empty-icon">📡</div>Loading streams…</div></td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
-<!-- LOGS -->
-<div id="tab-logs" class="tab">
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-    <span class="section-title" style="margin:0">Event Log</span>
-    <select id="log-stream" style="width:150px;height:26px;padding:2px 6px" onchange="loadLogs()">
+<!-- ══ VIEWER TAB ══ -->
+<div id="tab-viewer" class="tab-panel">
+  <div class="section-hdr">
+    <h2>Stream Viewer</h2>
+    <span class="sep"></span>
+    <button class="btn b" onclick="loadViewer()">↻ Refresh</button>
+  </div>
+  <div id="viewer-grid" class="viewer-grid">
+    <div class="empty"><div class="empty-icon">📺</div>Switch to this tab to load viewers…</div>
+  </div>
+</div>
+
+<!-- ══ LOGS TAB ══ -->
+<div id="tab-logs" class="tab-panel">
+  <div class="section-hdr">
+    <h2>Event Log</h2>
+    <span class="sep"></span>
+    <select id="log-stream" style="width:160px" onchange="loadLogs()">
       <option value="">All streams</option>
     </select>
-    <select id="log-level" style="width:100px;height:26px;padding:2px 6px" onchange="loadLogs()">
+    <select id="log-level" style="width:110px" onchange="loadLogs()">
       <option value="ALL">ALL</option>
       <option value="INFO">INFO</option>
       <option value="WARN">WARN</option>
       <option value="ERROR">ERROR</option>
     </select>
     <button class="btn b" onclick="loadLogs()">↻</button>
-    <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px">
-      <input type="checkbox" id="log-auto" checked> Auto-scroll
+    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="log-auto" checked style="width:auto"> Auto-scroll
     </label>
   </div>
   <div id="logbox"></div>
 </div>
 
-<!-- UPLOAD -->
-<div id="tab-upload" class="tab">
-  <div style="margin-bottom:10px">
-    <div class="section-title">Upload Media</div>
-    <div class="form-row" style="margin-bottom:10px">
-      <div class="fg" style="max-width:260px">
-        <label>Sub-folder (optional)</label>
+<!-- ══ UPLOAD TAB ══ -->
+<div id="tab-upload" class="tab-panel">
+  <div class="section-hdr"><h2>Upload Media</h2><span class="sep"></span></div>
+  <div class="card card-body" style="padding:16px">
+    <div class="row" style="margin-bottom:16px">
+      <div class="fg" style="max-width:280px">
+        <label>Destination Sub-folder</label>
         <select id="upload-subdir"></select>
       </div>
-      <button class="btn" onclick="mkSubdir()" style="margin-bottom:1px">+ New folder</button>
+      <button class="btn" onclick="mkSubdir()" style="margin-top:16px">＋ New folder</button>
     </div>
-  </div>
-  <div id="dropzone" onclick="document.getElementById('fpick').click()">
-    Drop files here or click to browse<br>
-    <span style="font-size:11px">MP4 MKV AVI MOV TS FLV WMV WEBM MPG MP3 AAC FLAC WAV OGG — max 10 GB</span>
-  </div>
-  <input type="file" id="fpick" multiple accept="video/*,audio/*" style="display:none"
-         onchange="doUpload(this.files)">
-  <ul id="uplist"></ul>
-</div>
-
-<!-- EVENTS -->
-<div id="tab-events" class="tab">
-  <div class="section-title" style="margin-bottom:12px">Schedule One-Shot Event</div>
-  <div class="form-row">
-    <div class="fg"><label>Stream</label><select id="ev-stream"></select></div>
-    <div class="fg"><label>Video file</label><select id="ev-file"></select></div>
-    <div class="fg"><label>Play at (local time)</label>
-      <input type="datetime-local" id="ev-dt"></div>
-  </div>
-  <div class="form-row">
-    <div class="fg" style="max-width:160px"><label>Start position</label>
-      <input type="text" id="ev-pos" value="00:00:00" placeholder="HH:MM:SS"></div>
-    <div class="fg"><label>After playback</label>
-      <select id="ev-post">
-        <option value="resume">Resume playlist</option>
-        <option value="stop">Stop stream</option>
-        <option value="black">Black screen</option>
-      </select></div>
-    <button class="btn g" onclick="schedEvent()" style="margin-bottom:1px">Schedule</button>
-  </div>
-
-  <div style="margin-top:20px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <span class="section-title" style="margin:0">Pending Events</span>
-      <button class="btn r" onclick="clearPlayed()">Clear Played</button>
-      <button class="btn b" onclick="loadEvents()">↻</button>
+    <div id="dropzone" onclick="document.getElementById('fpick').click()">
+      <div class="dz-icon">⬆</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text2)">Drop files or click to browse</div>
+      <div style="font-size:11px">MP4 MKV AVI MOV TS FLV WMV WEBM MPG · MP3 AAC FLAC WAV OGG — max 10 GB</div>
     </div>
-    <table>
-      <thead><tr>
-        <th>Stream</th><th>File</th><th>Play At</th>
-        <th>Countdown</th><th>After</th><th>Status</th><th></th>
-      </tr></thead>
-      <tbody id="evtbl"></tbody>
-    </table>
+    <input type="file" id="fpick" multiple accept="video/*,audio/*" style="display:none" onchange="doUpload(this.files)">
+    <ul id="uplist"></ul>
   </div>
 </div>
 
-</div><!-- /main -->
+<!-- ══ EVENTS TAB ══ -->
+<div id="tab-events" class="tab-panel">
+  <div class="section-hdr"><h2>Schedule Event</h2><span class="sep"></span></div>
+  <div class="card">
+    <div class="card-hdr"><h3>One-Shot Event</h3></div>
+    <div class="card-body">
+      <div class="form-grid" style="margin-bottom:12px">
+        <div class="fg"><label>Stream</label><select id="ev-stream"></select></div>
+        <div class="fg"><label>Video File</label><select id="ev-file"></select></div>
+        <div class="fg"><label>Play at (local time)</label><input type="datetime-local" id="ev-dt"></div>
+        <div class="fg"><label>Start position</label><input type="text" id="ev-pos" value="00:00:00" placeholder="HH:MM:SS"></div>
+        <div class="fg"><label>After playback</label>
+          <select id="ev-post">
+            <option value="resume">Resume playlist</option>
+            <option value="stop">Stop stream</option>
+            <option value="black">Black screen</option>
+          </select>
+        </div>
+        <div class="fg" style="justify-content:flex-end">
+          <label>&nbsp;</label>
+          <button class="btn g" onclick="schedEvent()">✓ Schedule</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-hdr">
+    <h2>Pending Events</h2>
+    <span class="sep"></span>
+    <button class="btn r" onclick="clearPlayed()">✕ Clear Played</button>
+    <button class="btn b" onclick="loadEvents()">↻</button>
+  </div>
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Stream</th><th>File</th><th>Play At</th>
+          <th>Countdown</th><th>After</th><th>Status</th><th></th>
+        </tr></thead>
+        <tbody id="evtbl"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONFIGURE TAB ══ -->
+<div id="tab-config" class="tab-panel">
+  <div class="section-hdr">
+    <h2>Stream Configuration</h2>
+    <span class="sep"></span>
+    <button class="btn b" onclick="loadConfig()">↻ Reload</button>
+  </div>
+  <div class="config-layout">
+    <div class="config-sidebar">
+      <div class="config-sidebar-hdr">Streams</div>
+      <div id="config-stream-list"></div>
+    </div>
+    <div class="config-main">
+      <div class="config-main-hdr" id="config-main-hdr">
+        <h2 style="color:var(--text3);font-size:14px">Select a stream</h2>
+      </div>
+      <div class="config-main-body" id="config-main-body">
+        <div class="empty"><div class="empty-icon">⚙</div>Select a stream from the sidebar to configure it.</div>
+      </div>
+      <div class="config-main-footer" id="config-main-footer" style="display:none">
+        <button class="btn" onclick="cancelConfig()">Cancel</button>
+        <button class="btn g" onclick="saveConfig()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SETTINGS TAB ══ -->
+<div id="tab-settings" class="tab-panel">
+  <div class="section-hdr"><h2>Application Settings</h2><span class="sep"></span></div>
+  <div class="settings-grid">
+    <!-- UI Preferences -->
+    <div class="setting-card">
+      <h3>UI Preferences</h3>
+      <div class="setting-row">
+        <div><div class="setting-label">Auto-refresh streams</div><div class="setting-desc">Poll every 2.5 seconds</div></div>
+        <div class="toggle on" id="st-autoref" onclick="toggleSetting('autoref',this)"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Auto-scroll logs</div><div class="setting-desc">Jump to newest log entry</div></div>
+        <div class="toggle on" id="st-autoscroll" onclick="toggleSetting('autoscroll',this)"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Compact stream table</div><div class="setting-desc">Reduce row padding</div></div>
+        <div class="toggle" id="st-compact" onclick="toggleSetting('compact',this)"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Show RTSP chip</div><div class="setting-desc">Display URL in stream table</div></div>
+        <div class="toggle on" id="st-showrtsp" onclick="toggleSetting('showrtsp',this)"></div>
+      </div>
+    </div>
+
+    <!-- Notifications -->
+    <div class="setting-card">
+      <h3>Notifications</h3>
+      <div class="setting-row">
+        <div><div class="setting-label">Toast on stream start</div><div class="setting-desc">Show notification when stream goes LIVE</div></div>
+        <div class="toggle on" id="st-notif-start" onclick="toggleSetting('notifStart',this)"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Toast on stream error</div><div class="setting-desc">Alert when ERROR status detected</div></div>
+        <div class="toggle on" id="st-notif-err" onclick="toggleSetting('notifErr',this)"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Event countdown alerts</div><div class="setting-desc">Warn 1 min before scheduled event</div></div>
+        <div class="toggle" id="st-notif-event" onclick="toggleSetting('notifEvent',this)"></div>
+      </div>
+    </div>
+
+    <!-- Refresh Intervals -->
+    <div class="setting-card">
+      <h3>Refresh Intervals</h3>
+      <div class="setting-row">
+        <div class="setting-label">Stream poll interval</div>
+        <select id="st-poll-interval" onchange="applyPollInterval()" style="width:100px">
+          <option value="1500">1.5 s</option>
+          <option value="2500" selected>2.5 s</option>
+          <option value="5000">5 s</option>
+          <option value="10000">10 s</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">System stats interval</div>
+        <select id="st-stats-interval" style="width:100px">
+          <option value="5000">5 s</option>
+          <option value="8000" selected>8 s</option>
+          <option value="15000">15 s</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Log auto-refresh</div>
+        <select id="st-log-interval" style="width:100px">
+          <option value="2000">2 s</option>
+          <option value="4000" selected>4 s</option>
+          <option value="8000">8 s</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="setting-card">
+      <h3>System Info</h3>
+      <div class="setting-row">
+        <div class="setting-label">Version</div>
+        <code id="sys-ver" style="font-size:11px;color:var(--cyan)">—</code>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">CPU Usage</div>
+        <b id="sys-cpu" style="color:var(--text)">—</b>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">RAM Usage</div>
+        <b id="sys-ram" style="color:var(--text)">—</b>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Active Streams</div>
+        <b id="sys-live" style="color:var(--green)">—</b>
+      </div>
+      <div class="setting-row" style="border:none;padding-top:12px">
+        <button class="btn b" onclick="updateSysInfo()" style="width:100%;justify-content:center">↻ Refresh Info</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Danger Zone -->
+  <div style="margin-top:4px">
+    <div class="section-hdr"><h2 style="color:var(--red)">Danger Zone</h2><span class="sep"></span></div>
+    <div class="card card-body" style="border-color:rgba(248,113,113,0.2);padding:16px">
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        <button class="btn r" onclick="if(confirm('Stop ALL streams?')) api('stop_all',{})">■ Stop All Streams</button>
+        <button class="btn r" onclick="if(confirm('Restart ALL streams?')) api('restart_all',{})">↺ Restart All</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:10px">These actions affect all streams immediately.</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app -->
+
+<!-- ══ SEEK MODAL ══ -->
+<div class="modal-bg" id="seek-modal">
+  <div class="modal">
+    <h3>Seek Stream</h3>
+    <div id="seek-info" style="font-size:11px;color:var(--text3);margin-bottom:12px"></div>
+    <div class="fg" style="margin-bottom:10px">
+      <label>Seek position (seconds or HH:MM:SS)</label>
+      <input type="text" id="seek-val" placeholder="e.g. 120 or 00:02:00">
+    </div>
+    <div class="fg">
+      <input type="range" id="seek-slider" min="0" max="100" value="0" style="accent-color:var(--accent)">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeSeek()">Cancel</button>
+      <button class="btn g" onclick="doSeek()">⏩ Seek</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TOAST ══ -->
 <div id="toast"></div>
 
 <script>
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 // UTILS
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 function esc(s){
   return String(s??'')
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
@@ -321,39 +836,46 @@ function esc(s){
 }
 function fmtSecs(s){
   s=Math.max(0,Math.floor(+s||0));
-  return [Math.floor(s/3600),Math.floor((s%3600)/60),s%60]
+  return[Math.floor(s/3600),Math.floor((s%3600)/60),s%60]
     .map(n=>String(n).padStart(2,'0')).join(':');
 }
 function fmtBytes(n){
   if(n<1024)return n+' B';
-  if(n<1048576)return (n/1024).toFixed(1)+' KB';
-  if(n<1073741824)return (n/1048576).toFixed(1)+' MB';
-  return (n/1073741824).toFixed(2)+' GB';
+  if(n<1048576)return(n/1024).toFixed(1)+' KB';
+  if(n<1073741824)return(n/1048576).toFixed(1)+' MB';
+  return(n/1073741824).toFixed(2)+' GB';
 }
+
 let _nt;
 function toast(msg,type='ok'){
   const el=document.getElementById('toast');
-  el.textContent=msg;el.className='show '+type;
-  clearTimeout(_nt);_nt=setTimeout(()=>el.className='',type==='err'?5000:2800);
+  const icons={ok:'✓',err:'✕',info:'ℹ'};
+  el.innerHTML=`<span>${icons[type]||'•'}</span><span>${msg}</span>`;
+  el.className='show '+type;
+  clearTimeout(_nt);
+  _nt=setTimeout(()=>el.className='',type==='err'?5000:2800);
 }
 
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 // TABS
-// ═══════════════════════════════════════════════════
-function tab(name,btn){
-  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('on'));
-  document.querySelectorAll('nav button').forEach(el=>el.classList.remove('on'));
-  document.getElementById('tab-'+name).classList.add('on');
-  btn.classList.add('on');
-  if(name==='streams') loadStreams();
+// ═══════════════════════════════════
+function switchTab(name,btn){
+  document.querySelectorAll('.tab-panel').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='streams'){loadStreams();}
   else if(name==='logs'){fillLogStreamSel();loadLogs();}
-  else if(name==='upload') loadSubdirs();
+  else if(name==='upload'){loadSubdirs();}
   else if(name==='events'){loadEvtForm();loadEvents();}
+  else if(name==='viewer'){loadViewer();}
+  else if(name==='config'){loadConfig();}
+  else if(name==='settings'){updateSysInfo();}
 }
 
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 // API
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 async function api(action,data){
   try{
     const r=await fetch('/api/'+action,{
@@ -361,28 +883,40 @@ async function api(action,data){
       body:JSON.stringify(data)
     });
     const j=await r.json();
-    if(j.ok) toast(j.msg||'Done ✓','ok');
-    else toast(j.msg||'Error','err');
+    toast(j.msg||(j.ok?'Done':'Error'),j.ok?'ok':'err');
     loadStreams();
     return j;
   }catch(e){toast('Request failed','err');}
 }
 
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 // HEADER STATS
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 async function updateStats(){
   try{
-    const r=await fetch('/api/system_stats');
-    const s=await r.json();
+    const s=await fetch('/api/system_stats').then(r=>r.json());
     document.getElementById('h-cpu').textContent=s.cpu+'%';
     document.getElementById('h-ram').textContent=s.mem_percent+'%';
   }catch(_){}
 }
+async function updateSysInfo(){
+  try{
+    const s=await fetch('/api/system_stats').then(r=>r.json());
+    const cpu=document.getElementById('sys-cpu');
+    const ram=document.getElementById('sys-ram');
+    if(cpu) cpu.textContent=s.cpu+'%';
+    if(ram) ram.textContent=s.mem_percent+'%';
+    const live=document.getElementById('sys-live');
+    const streams=await fetch('/api/streams').then(r=>r.json());
+    if(live) live.textContent=streams.filter(s=>s.status==='LIVE').length+' / '+streams.length;
+    const sv=document.getElementById('sys-ver');
+    if(sv&&streams[0]) sv.textContent='v'+streams[0].app_ver;
+  }catch(_){}
+}
 
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 // STREAMS
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 let _autoTimer=null;
 function toggleAuto(on){
   clearInterval(_autoTimer);
@@ -394,66 +928,172 @@ async function loadStreams(){
     const data=await fetch('/api/streams').then(r=>r.json());
     const live=data.filter(s=>s.status==='LIVE').length;
     document.getElementById('h-live').textContent=live;
-    if(data[0]) document.getElementById('ver').textContent='v'+data[0].app_ver;
+    if(data[0]) {
+      document.getElementById('ver-badge').textContent='v'+data[0].app_ver;
+      const sv=document.getElementById('sys-ver');
+      if(sv) sv.textContent='v'+data[0].app_ver;
+    }
     renderStreams(data);
   }catch(_){}
 }
 
 function renderStreams(data){
   const tb=document.getElementById('stbl');
+  if(!data.length){
+    tb.innerHTML=`<tr><td colspan="9"><div class="empty"><div class="empty-icon">📡</div>No streams configured.</div></td></tr>`;
+    return;
+  }
+  const showRtsp=document.getElementById('st-showrtsp')?.classList.contains('on')!==false;
   tb.innerHTML=data.map((s,i)=>{
     const pct=Math.max(0,Math.min(100,+s.progress)).toFixed(1);
     const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
     const status=s.status||'STOPPED';
-    const pos=s.position||'--';
     return `<tr>
-      <td style="color:var(--muted)">${i+1}</td>
-      <td><b>${esc(s.name)}</b>${s.shuffle?' <small style="color:var(--muted)">[SHUF]</small>':''}</td>
+      <td class="td-muted">${i+1}</td>
+      <td>
+        <span class="td-name">${esc(s.name)}</span>
+        ${s.shuffle?`<span class="tag-shuf">SHUF</span>`:''}
+        ${!s.enabled?`<span class="tag-dis">OFF</span>`:''}
+        ${s.playlist_count>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(${s.playlist_count} files)</span>`:''}
+      </td>
       <td style="color:var(--cyan)">:${s.port}</td>
       <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
-      <td style="min-width:130px">
+      <td style="min-width:140px">
         <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
-        <div style="font-size:10px;color:var(--muted);margin-top:2px">${pct}%</div>
+        <div class="prog-label">${pct}% ${s.time_remaining?'· '+esc(s.time_remaining)+' left':''}</div>
       </td>
-      <td style="font-size:11px;color:var(--muted);white-space:nowrap">${esc(pos)}</td>
-      <td style="color:var(--muted)">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
+      <td class="td-muted" style="white-space:nowrap">${esc(s.position||'--')}</td>
+      <td class="td-muted">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
       <td>
-        <span class="chip" onclick="copy('${esc(s.rtsp_url)}')" title="${esc(s.rtsp_url)}">${esc(s.rtsp_url)}</span>
+        ${s.rtsp_url?`<span class="chip" onclick="copyText('${esc(s.rtsp_url)}')" title="${esc(s.rtsp_url)}">📋 ${esc(s.rtsp_url)}</span>`:'<span class="td-muted">—</span>'}
       </td>
       <td>
-        <div style="display:flex;gap:3px;flex-wrap:wrap">
+        <div class="btn-group">
           <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})">▶</button>
           <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})">■</button>
           <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>
           ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})">⏭</button>`:''}
           ${s.status==='LIVE'?`<button class="btn b" onclick="openSeek('${esc(s.name)}',${s.duration||0},${s.current_secs||0})">⏩</button>`:''}
         </div>
-        ${s.error_msg?`<div style="font-size:10px;color:var(--red);margin-top:3px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.error_msg)}">⚠ ${esc(s.error_msg)}</div>`:''}
+        ${s.error_msg?`<div style="font-size:10px;color:var(--red);margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.error_msg)}">⚠ ${esc(s.error_msg)}</div>`:''}
       </td>
     </tr>`;
   }).join('');
 }
 
-function copy(url){
-  navigator.clipboard.writeText(url).then(()=>toast('Copied ✓','ok'));
+function copyText(url){
+  navigator.clipboard.writeText(url).then(()=>toast('Copied to clipboard','ok'));
 }
 
-// ── Inline seek ──
+// ═══════════════════════════════════
+// SEEK MODAL
+// ═══════════════════════════════════
+let _seekName='';
 function openSeek(name,dur,cur){
-  const secs=prompt(`Seek [${name}] to (seconds or HH:MM:SS)\nDuration: ${fmtSecs(dur)}\nCurrent: ${fmtSecs(cur)}`);
-  if(secs===null) return;
+  _seekName=name;
+  document.getElementById('seek-info').innerHTML=
+    `Stream: <b style="color:var(--text)">${esc(name)}</b> &nbsp;·&nbsp; Duration: <b>${fmtSecs(dur)}</b> &nbsp;·&nbsp; Current: <b>${fmtSecs(cur)}</b>`;
+  document.getElementById('seek-val').value=fmtSecs(cur);
+  const slider=document.getElementById('seek-slider');
+  slider.max=dur||100;slider.value=cur||0;
+  slider.oninput=()=>{document.getElementById('seek-val').value=fmtSecs(+slider.value);};
+  document.getElementById('seek-modal').classList.add('open');
+  document.getElementById('seek-val').focus();
+}
+function closeSeek(){document.getElementById('seek-modal').classList.remove('open');}
+function doSeek(){
+  const raw=document.getElementById('seek-val').value.trim();
   let s;
-  const p=secs.trim().split(':').map(Number);
-  if(p.length===3) s=p[0]*3600+p[1]*60+p[2];
-  else if(p.length===2) s=p[0]*60+p[1];
+  const p=raw.split(':').map(Number);
+  if(p.length===3)s=p[0]*3600+p[1]*60+p[2];
+  else if(p.length===2)s=p[0]*60+p[1];
   else s=+p[0];
   if(isNaN(s)||s<0){toast('Invalid time','err');return;}
-  api('seek',{name,seconds:s});
+  api('seek',{name:_seekName,seconds:s});
+  closeSeek();
 }
 
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
+// VIEWER TAB
+// ═══════════════════════════════════
+async function loadViewer(){
+  const grid=document.getElementById('viewer-grid');
+  try{
+    const data=await fetch('/api/streams').then(r=>r.json());
+    if(!data.length){
+      grid.innerHTML=`<div class="empty"><div class="empty-icon">📺</div>No streams available.</div>`;
+      return;
+    }
+    grid.innerHTML=data.map(s=>{
+      const status=s.status||'STOPPED';
+      const isLive=status==='LIVE';
+      return `<div class="stream-card ${isLive?'is-live':''}" id="vc-${esc(s.name)}">
+        <div class="stream-card-header">
+          <span class="badge ${esc(status)}" style="font-size:9px">${esc(status)}</span>
+          <span class="stream-card-title">${esc(s.name)}</span>
+          <span style="font-size:11px;color:var(--cyan)">:${s.port}</span>
+        </div>
+        <div class="stream-preview" id="vp-${esc(s.name)}">
+          <div class="stream-overlay" id="vo-${esc(s.name)}">
+            ${isLive?`
+              <div class="stream-play-btn" onclick="loadHLSStream('${esc(s.name)}','${esc(s.hls_url||'')}','${esc(s.rtsp_url||'')}')" title="Click to load stream">
+                ▶
+              </div>
+              <div style="font-size:10px;color:var(--text3)">Click to preview</div>
+            `:`<div style="font-size:12px;color:var(--text3)">Stream offline</div>`}
+          </div>
+        </div>
+        <div class="stream-card-footer">
+          <div class="stream-stats">
+            <div class="stat-item">Progress <b>${(+s.progress||0).toFixed(1)}%</b></div>
+            <div class="stat-item">FPS <b>${s.fps>0?Math.round(s.fps)+'fps':'—'}</b></div>
+            <div class="stat-item">Pos <b>${esc(s.position||'—')}</b></div>
+          </div>
+          <div class="btn-group">
+            ${isLive?`<button class="btn g" style="font-size:10px" onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>`:''}
+            <button class="btn b" style="font-size:10px" onclick="copyText('${esc(s.rtsp_url||'')}')">📋</button>
+          </div>
+        </div>
+        ${s.rtsp_url?`<div style="padding:0 14px 10px">
+          <div class="info-row">
+            <span class="info-chip">RTSP <b>${esc(s.rtsp_url)}</b></span>
+            ${s.hls_url?`<span class="info-chip">HLS <b>enabled</b></span>`:''}
+          </div>
+        </div>`:''}
+      </div>`;
+    }).join('');
+  }catch(_){
+    grid.innerHTML=`<div class="empty"><div class="empty-icon">⚠</div>Failed to load streams.</div>`;
+  }
+}
+
+function loadHLSStream(name,hlsUrl,rtspUrl){
+  const overlay=document.getElementById('vo-'+name);
+  const preview=document.getElementById('vp-'+name);
+  if(!hlsUrl&&!rtspUrl){
+    toast('No HLS or RTSP URL available','err');return;
+  }
+  if(hlsUrl){
+    // Try HLS.js if available, else native video
+    preview.innerHTML=`
+      <video id="vid-${esc(name)}" controls autoplay muted style="width:100%;height:100%;object-fit:contain;background:#000"
+        onerror="this.outerHTML='<div class=\\'stream-overlay\\'><div style=\\'color:var(--red);font-size:11px\\'>HLS load failed</div></div>'">
+        <source src="${esc(hlsUrl)}" type="application/x-mpegURL">
+        Your browser doesn't support HLS.
+      </video>`;
+  } else {
+    overlay.innerHTML=`
+      <div style="font-size:11px;color:var(--text3);text-align:center;padding:20px">
+        <div style="margin-bottom:8px;font-size:20px">📺</div>
+        <div>RTSP streams require a native player.</div>
+        <div style="margin-top:6px"><span class="chip" onclick="copyText('${esc(rtspUrl)}')" style="max-width:none">📋 ${esc(rtspUrl)}</span></div>
+      </div>`;
+  }
+}
+
+// ═══════════════════════════════════
 // LOGS
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 async function fillLogStreamSel(){
   try{
     const data=await fetch('/api/streams').then(r=>r.json());
@@ -461,7 +1101,7 @@ async function fillLogStreamSel(){
     const cur=sel.value;
     sel.innerHTML='<option value="">All streams</option>'+
       data.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
-    if(cur) sel.value=cur;
+    if(cur)sel.value=cur;
   }catch(_){}
 }
 
@@ -475,15 +1115,18 @@ async function loadLogs(){
     const box=document.getElementById('logbox');
     box.innerHTML=entries.slice().reverse().map(([m,lv])=>{
       const cls=lv==='ERROR'?'le':lv==='WARN'?'lw':'li';
-      return `<div class="${cls}">${esc(m)}</div>`;
-    }).join('')||'<span style="color:var(--muted)">No log entries.</span>';
+      const badge=lv==='ERROR'?`<span style="color:var(--red);font-size:9px;font-weight:700;margin-right:4px">[ERR]</span>`
+                 :lv==='WARN'?`<span style="color:var(--yellow);font-size:9px;font-weight:700;margin-right:4px">[WRN]</span>`
+                 :`<span style="color:var(--text3);font-size:9px;margin-right:4px">[INF]</span>`;
+      return `<div class="${cls}" style="padding:1px 0;border-bottom:1px solid rgba(33,41,58,0.3)">${badge}${esc(m)}</div>`;
+    }).join('')||'<div style="color:var(--text3);padding:12px">No log entries.</div>';
     if(document.getElementById('log-auto').checked) box.scrollTop=0;
   }catch(_){}
 }
 
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 // UPLOAD
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 async function loadSubdirs(){
   try{
     const data=await fetch('/api/subdirs').then(r=>r.json());
@@ -494,50 +1137,53 @@ async function loadSubdirs(){
 }
 async function mkSubdir(){
   const n=prompt('New folder name:');
-  if(!n||!n.trim()) return;
+  if(!n||!n.trim())return;
   const r=await api('create_subdir',{name:n.trim()});
-  if(r&&r.ok) loadSubdirs();
+  if(r&&r.ok)loadSubdirs();
 }
+
 const dz=document.getElementById('dropzone');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over')});
 dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('over');doUpload(e.dataTransfer.files)});
+
 function doUpload(files){Array.from(files).forEach(upOne);}
 function upOne(file){
   if(file.size>10*1024*1024*1024){toast(file.name+': exceeds 10 GB','err');return;}
   const id='u'+Math.random().toString(36).slice(2,7);
   const li=document.createElement('li');
-  li.innerHTML=`<span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(file.name)}</span>
-    <span style="color:var(--muted)">${fmtBytes(file.size)}</span>
+  li.innerHTML=`
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;color:var(--text2)">${esc(file.name)}</span>
+    <span class="td-muted">${fmtBytes(file.size)}</span>
     <div class="ubar"><div class="ufill" id="uf-${id}" style="width:0"></div></div>
-    <span id="up-${id}" style="min-width:30px;text-align:right;color:var(--muted)">0%</span>`;
+    <span id="up-${id}" style="min-width:32px;text-align:right;color:var(--text3);font-size:11px">0%</span>`;
   document.getElementById('uplist').appendChild(li);
   const fd=new FormData();
   fd.append('file',file);
   fd.append('subdir',document.getElementById('upload-subdir').value);
   const xhr=new XMLHttpRequest();
   xhr.upload.onprogress=e=>{
-    if(!e.lengthComputable) return;
+    if(!e.lengthComputable)return;
     const p=Math.round(e.loaded/e.total*100);
-    const b=document.getElementById('uf-'+id);
-    const t=document.getElementById('up-'+id);
-    if(b)b.style.width=p+'%';if(t)t.textContent=p+'%';
+    const b=document.getElementById('uf-'+id),t=document.getElementById('up-'+id);
+    if(b){b.style.width=p+'%';b.style.background=p===100?'var(--green)':'var(--blue)';}
+    if(t)t.textContent=p+'%';
   };
   xhr.onload=()=>{
     const t=document.getElementById('up-'+id);
     try{
       const j=JSON.parse(xhr.responseText);
       if(xhr.status===200&&j.ok){if(t){t.textContent='✓';t.style.color='var(--green)';}toast(file.name+' uploaded','ok');}
-      else{if(t){t.textContent='✗';t.style.color='var(--red)';}toast('Failed: '+(j.msg||file.name),'err');}
-    }catch(_){if(t){t.textContent='✗';t.style.color='var(--red)';}}
+      else{if(t){t.textContent='✕';t.style.color='var(--red)';}toast('Failed: '+(j.msg||file.name),'err');}
+    }catch(_){if(t){t.textContent='✕';t.style.color='var(--red)';}}
   };
   xhr.onerror=()=>toast('Network error: '+file.name,'err');
   xhr.open('POST','/api/upload');xhr.send(fd);
 }
 
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 // EVENTS
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 async function loadEvtForm(){
   try{
     const[streams,lib]=await Promise.all([
@@ -560,7 +1206,7 @@ async function schedEvent(){
   const dt=document.getElementById('ev-dt').value;
   const pos=document.getElementById('ev-pos').value||'00:00:00';
   const post=document.getElementById('ev-post').value;
-  if(!stream||!file||!dt){toast('Fill all fields','err');return;}
+  if(!stream||!file||!dt){toast('Fill all required fields','err');return;}
   await api('add_event',{stream_name:stream,file_path:file,play_at:dt,start_pos:pos,post_action:post});
   loadEvents();
 }
@@ -573,44 +1219,200 @@ async function loadEvents(){
       const pa=new Date(ev.play_at.replace(' ','T'));
       const d=((pa-now)/1000).toFixed(0);
       const cd=ev.played?'—':d>0?`in ${Math.floor(d/60)}m ${d%60}s`:`${Math.abs(d)}s ago`;
+      const cdColor=d>0?'var(--yellow)':'var(--text3)';
       return `<tr>
         <td style="color:var(--blue)">${esc(ev.stream_name)}</td>
-        <td style="font-size:11px">${esc(ev.file_name)}</td>
-        <td style="font-size:11px;white-space:nowrap">${esc(ev.play_at)}</td>
-        <td style="font-size:11px;color:${d>0?'var(--yellow)':'var(--muted)'}">${cd}</td>
-        <td style="font-size:11px">${esc(ev.post_action)}</td>
+        <td class="td-muted">${esc(ev.file_name)}</td>
+        <td class="td-muted" style="white-space:nowrap">${esc(ev.play_at)}</td>
+        <td style="font-size:11px;color:${cdColor}">${cd}</td>
+        <td class="td-muted">${esc(ev.post_action)}</td>
         <td><span class="badge ${ev.played?'STOPPED':'SCHED'}">${ev.played?'Played':'Pending'}</span></td>
         <td><button class="btn r" onclick="delEvent('${esc(ev.event_id)}')">✕</button></td>
       </tr>`;
-    }).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">No events.</td></tr>';
+    }).join('')||`<tr><td colspan="7"><div class="empty"><div class="empty-icon">📅</div>No scheduled events.</div></td></tr>`;
   }catch(_){}
 }
 
 async function delEvent(id){
-  if(!confirm('Delete event?')) return;
+  if(!confirm('Delete this event?'))return;
   const r=await api('delete_event',{event_id:id});
-  if(r&&r.ok) loadEvents();
+  if(r&&r.ok)loadEvents();
 }
 
 async function clearPlayed(){
-  if(!confirm('Remove all played events?')) return;
+  if(!confirm('Remove all played events?'))return;
   try{
     const evts=await fetch('/api/events').then(r=>r.json());
     const ids=evts.filter(e=>e.played).map(e=>e.event_id);
-    if(!ids.length){toast('Nothing to clear','ok');return;}
+    if(!ids.length){toast('No played events to clear','info');return;}
     const r=await fetch('/api/delete_played_events',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({event_ids:ids})
     });
     const j=await r.json();
-    toast(j.ok?(j.msg||'Cleared ✓'):(j.msg||'Error'),j.ok?'ok':'err');
+    toast(j.ok?(j.msg||'Cleared'):(j.msg||'Error'),j.ok?'ok':'err');
     loadEvents();
   }catch(e){toast('Error: '+e,'err');}
 }
 
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
+// CONFIGURE TAB
+// ═══════════════════════════════════
+let _configStreams=[];
+let _configSelected=null;
+
+async function loadConfig(){
+  try{
+    const data=await fetch('/api/streams_config').then(r=>r.json());
+    const statusData=await fetch('/api/streams').then(r=>r.json());
+    _configStreams=data.map(c=>{
+      const st=statusData.find(s=>s.name===c.name)||{};
+      return{...c,_status:st.status||'STOPPED'};
+    });
+    renderConfigSidebar();
+    if(_configSelected){
+      const s=_configStreams.find(s=>s.name===_configSelected);
+      if(s)renderConfigEditor(s);
+    }
+  }catch(_){toast('Failed to load config','err');}
+}
+
+function renderConfigSidebar(){
+  const list=document.getElementById('config-stream-list');
+  list.innerHTML=_configStreams.map(s=>`
+    <div class="config-stream-item ${s.name===_configSelected?'active':''}" onclick="selectConfigStream('${esc(s.name)}')">
+      <div class="dot ${s._status==='LIVE'?'live':s._status==='ERROR'?'error':''}"></div>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}</span>
+      <span style="font-size:10px;color:var(--text3)">:${s.port}</span>
+    </div>`).join('')||`<div class="empty" style="padding:20px"><div class="empty-icon">⚙</div>No streams.</div>`;
+}
+
+function selectConfigStream(name){
+  _configSelected=name;
+  renderConfigSidebar();
+  const s=_configStreams.find(s=>s.name===name);
+  if(s)renderConfigEditor(s);
+}
+
+function renderConfigEditor(s){
+  document.getElementById('config-main-hdr').innerHTML=`
+    <span class="badge ${esc(s._status)}">${esc(s._status)}</span>
+    <h2>${esc(s.name)}</h2>
+    <span style="font-size:11px;color:var(--text3)">Port :${s.port}</span>`;
+
+  document.getElementById('config-main-body').innerHTML=`
+    <div class="config-section">
+      <div class="config-section-title">Basic</div>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        <div class="fg"><label>Stream Name</label><input id="cfg-name" value="${esc(s.name)}" readonly style="opacity:0.6"></div>
+        <div class="fg"><label>Port</label><input id="cfg-port" type="number" value="${s.port}" min="1024" max="65535"></div>
+        <div class="fg"><label>Stream Path</label><input id="cfg-path" value="${esc(s.stream_path||'')}"></div>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Encoding</div>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate||'')}"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate||'')}"></div>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Playback</div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="cfg-shuffle" ${s.shuffle?'checked':''} style="width:auto;accent-color:var(--accent)">
+          Shuffle playlist
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="cfg-enabled" ${s.enabled!==false?'checked':''} style="width:auto;accent-color:var(--accent)">
+          Stream enabled
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="cfg-hls" ${s.hls_enabled?'checked':''} style="width:auto;accent-color:var(--accent)">
+          HLS enabled
+        </label>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Schedule (Weekdays)</div>
+      <div style="font-size:12px;color:var(--text2)">${esc(s.weekdays||'All days')}</div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Playlist Files</div>
+      <textarea id="cfg-files" rows="6" style="font-size:11px;font-family:var(--font-mono)">${esc(s.files||'')}</textarea>
+      <div style="font-size:10px;color:var(--text3);margin-top:6px">One file per line (or semicolon-separated). Format: path@HH:MM:SS#priority</div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Stream Actions</div>
+      <div class="btn-group">
+        <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})">▶ Start</button>
+        <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})">■ Stop</button>
+        <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})">↺ Restart</button>
+        ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})">⏭ Skip</button>`:''}
+      </div>
+    </div>`;
+
+  document.getElementById('config-main-footer').style.display='flex';
+}
+
+function cancelConfig(){
+  _configSelected=null;
+  renderConfigSidebar();
+  document.getElementById('config-main-hdr').innerHTML=`<h2 style="color:var(--text3);font-size:14px">Select a stream</h2>`;
+  document.getElementById('config-main-body').innerHTML=`<div class="empty"><div class="empty-icon">⚙</div>Select a stream from the sidebar to configure it.</div>`;
+  document.getElementById('config-main-footer').style.display='none';
+}
+
+async function saveConfig(){
+  if(!_configSelected){toast('No stream selected','err');return;}
+  const payload={
+    name:_configSelected,
+    port:parseInt(document.getElementById('cfg-port')?.value||0),
+    stream_path:document.getElementById('cfg-path')?.value||'',
+    video_bitrate:document.getElementById('cfg-vbr')?.value||'',
+    audio_bitrate:document.getElementById('cfg-abr')?.value||'',
+    shuffle:document.getElementById('cfg-shuffle')?.checked||false,
+    enabled:document.getElementById('cfg-enabled')?.checked!==false,
+    hls_enabled:document.getElementById('cfg-hls')?.checked||false,
+    files:document.getElementById('cfg-files')?.value||'',
+  };
+  const r=await api('update_config',payload);
+  if(r?.ok)loadConfig();
+}
+
+// ═══════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════
+const _settings={autoref:true,autoscroll:true,compact:false,showrtsp:true,notifStart:true,notifErr:true,notifEvent:false};
+
+function toggleSetting(key,el){
+  _settings[key]=!_settings[key];
+  el.classList.toggle('on',_settings[key]);
+  applySettings();
+}
+
+function applySettings(){
+  // compact mode
+  document.querySelectorAll('td').forEach(td=>{
+    td.style.paddingTop=_settings.compact?'4px':'8px';
+    td.style.paddingBottom=_settings.compact?'4px':'8px';
+  });
+  // sync checkboxes
+  const arEl=document.getElementById('auto-ref');
+  if(arEl)arEl.checked=_settings.autoref;
+  const asEl=document.getElementById('log-auto');
+  if(asEl)asEl.checked=_settings.autoscroll;
+}
+
+function applyPollInterval(){
+  const v=parseInt(document.getElementById('st-poll-interval').value)||2500;
+  clearInterval(_autoTimer);
+  if(_settings.autoref) _autoTimer=setInterval(loadStreams,v);
+}
+
+// ═══════════════════════════════════
 // INIT
-// ═══════════════════════════════════════════════════
+// ═══════════════════════════════════
 (async function init(){
   loadStreams();
   updateStats();
@@ -622,21 +1424,31 @@ async function clearPlayed(){
     if(el) el.textContent=[now.getHours(),now.getMinutes(),now.getSeconds()]
       .map(n=>String(n).padStart(2,'0')).join(':');
   },1000);
-  // Auto-refresh logs when on that tab
   setInterval(()=>{
-    if(document.getElementById('tab-logs').classList.contains('on')) loadLogs();
+    if(document.getElementById('tab-logs').classList.contains('active')) loadLogs();
   },4000);
+  setInterval(()=>{
+    if(document.getElementById('tab-events').classList.contains('active')) loadEvents();
+  },10000);
+  setInterval(()=>{
+    if(document.getElementById('tab-viewer').classList.contains('active')) loadViewer();
+  },5000);
 })();
 
+// Keyboard shortcuts
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){}
-  if((e.key==='r'||e.key==='R')&&document.activeElement.tagName==='BODY'){
-    loadStreams();toast('Refreshed','ok');
-  }
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT')return;
+  if((e.key==='r'||e.key==='R')&&!e.ctrlKey&&!e.metaKey){loadStreams();toast('Refreshed','info');}
+  if(e.key==='Escape'){closeSeek();}
+});
+document.getElementById('seek-modal').addEventListener('click',e=>{
+  if(e.target===e.currentTarget)closeSeek();
 });
 </script>
 </body>
-</html>"""
+</html>
+
+"""
 
 
 # =============================================================================
@@ -1025,6 +1837,14 @@ class WebHandler(BaseHTTPRequestHandler):
             mgr.stop_all()
             self._json({"ok": True, "msg": "Stopped all streams"})
 
+        elif action == "restart_all":
+            for st in mgr.states:
+                try:
+                    mgr.restart_stream(st)
+                except Exception:
+                    pass
+            self._json({"ok": True, "msg": "Restarting all streams"})
+
         elif action == "skip_next":
             st = mgr.get_state(str(data.get("name", "")))
             if st:
@@ -1047,6 +1867,52 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "msg": f"Seeking to {_fmt_duration(secs)}"})
             else:
                 self._json({"ok": False, "msg": "Stream not found"})
+
+        elif action == "update_config":
+            # Update a single stream's mutable config fields
+            try:
+                name_s = str(data.get("name", "")).strip()
+                if not name_s:
+                    self._json({"ok": False, "msg": "Missing stream name"})
+                    return
+                st = mgr.get_state(name_s)
+                if not st:
+                    self._json({"ok": False, "msg": "Stream not found"})
+                    return
+                cfg = st.config
+                # Port
+                new_port = int(data.get("port", cfg.port))
+                if not (1024 <= new_port <= 65535):
+                    raise ValueError(f"Port {new_port} out of range")
+                cfg.port = new_port
+                # Stream path
+                sp = str(data.get("stream_path", cfg.stream_path)).strip()
+                if sp:
+                    cfg.stream_path = sp
+                # Bitrates
+                vbr = str(data.get("video_bitrate", "")).strip()
+                if vbr:
+                    cfg.video_bitrate = CSVManager._sanitize_bitrate(vbr, cfg.video_bitrate)
+                abr = str(data.get("audio_bitrate", "")).strip()
+                if abr:
+                    cfg.audio_bitrate = CSVManager._sanitize_bitrate(abr, cfg.audio_bitrate)
+                # Booleans
+                cfg.shuffle     = bool(data.get("shuffle",     cfg.shuffle))
+                cfg.enabled     = bool(data.get("enabled",     cfg.enabled))
+                cfg.hls_enabled = bool(data.get("hls_enabled", cfg.hls_enabled))
+                # Playlist files (semicolon or newline separated)
+                raw_files = str(data.get("files", "")).strip()
+                if raw_files:
+                    raw_files = raw_files.replace("\n", ";")
+                    parsed = CSVManager.parse_files(raw_files)
+                    if parsed:
+                        cfg.playlist = parsed
+                # Persist
+                all_cfgs = [s.config for s in mgr.states]
+                CSVManager.save(all_cfgs)
+                self._json({"ok": True, "msg": f"Config updated for {name_s}"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
         elif action == "save_config":
             try:
