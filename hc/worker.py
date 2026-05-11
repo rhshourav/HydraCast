@@ -1,5 +1,14 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
+
+Changes (v5.0.2):
+  • Comprehensive step-by-step logging throughout _do_start(), _start_mediamtx(),
+    _start_ffmpeg(), _monitor(), and _auto_restart() so every failure is visible.
+  • MediaMTX log file is tailed immediately on crash for context in the error msg.
+  • FFmpeg stderr is captured and logged on non-zero exit.
+  • Port-check results are logged explicitly.
+  • Probe duration/metadata results logged.
+  • All exception paths log the full exception string.
 """
 from __future__ import annotations
 
@@ -23,6 +32,8 @@ from hc.mediamtx_cfg import MediaMTXConfig
 from hc.models import OneShotEvent, PlaylistItem, StreamState, StreamStatus
 from hc.utils import _fmt_duration, _kill_orphan_on_port, _port_in_use, _wait_for_port
 
+log = logging.getLogger(__name__)
+
 
 # =============================================================================
 # LOG BUFFER
@@ -35,10 +46,18 @@ class LogBuffer:
 
     def add(self, msg: str, level: str = "INFO") -> None:
         ts = __import__("datetime").datetime.now().strftime("%H:%M:%S")
+        entry = (f"[{ts}] {msg}", level)
         with self._lock:
-            self._entries.append((f"[{ts}] {msg}", level))
+            self._entries.append(entry)
             if len(self._entries) > self._cap:
                 self._entries.pop(0)
+        # Mirror to Python root logger so it goes to hydracast.log
+        py_level = (
+            logging.ERROR   if level == "ERROR" else
+            logging.WARNING if level == "WARN"  else
+            logging.INFO
+        )
+        log.log(py_level, "%s", msg)
 
     def last(self, n: int = 9) -> List[Tuple[str, str]]:
         with self._lock:
@@ -65,6 +84,10 @@ class LogBuffer:
 # =============================================================================
 def probe_duration(file_path: Path) -> float:
     """Return duration in seconds (0 on failure)."""
+    log.debug("Probing duration: %s", file_path)
+    if not file_path.exists():
+        log.warning("probe_duration: file does not exist: %s", file_path)
+        return 0.0
     try:
         r = subprocess.run(
             [FFPROBE_PATH(), "-v", "quiet",
@@ -72,8 +95,17 @@ def probe_duration(file_path: Path) -> float:
              "-of", "csv=p=0", str(file_path)],
             capture_output=True, text=True, timeout=20,
         )
-        return float(r.stdout.strip())
-    except Exception:
+        dur = float(r.stdout.strip())
+        log.debug("Duration of %s → %.2f s", file_path.name, dur)
+        return dur
+    except subprocess.TimeoutExpired:
+        log.error("probe_duration: ffprobe timeout on %s", file_path)
+        return 0.0
+    except ValueError:
+        log.warning("probe_duration: could not parse output for %s", file_path)
+        return 0.0
+    except Exception as exc:
+        log.error("probe_duration: unexpected error for %s: %s", file_path, exc)
         return 0.0
 
 
@@ -84,8 +116,8 @@ def probe_metadata(file_path: Path) -> Dict[str, Any]:
     }
     try:
         meta["size"] = file_path.stat().st_size
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("probe_metadata: stat failed for %s: %s", file_path, exc)
     try:
         r = subprocess.run(
             [FFPROBE_PATH(), "-v", "quiet",
@@ -110,8 +142,8 @@ def probe_metadata(file_path: Path) -> Dict[str, Any]:
                     pass
             elif s.get("codec_type") == "audio" and not meta["audio_codec"]:
                 meta["audio_codec"] = s.get("codec_name", "")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("probe_metadata: error for %s: %s", file_path, exc)
     return meta
 
 
@@ -126,8 +158,8 @@ def grab_thumbnail(file_path: Path, seek_secs: float = 5.0) -> Optional[bytes]:
         )
         if r.returncode == 0 and r.stdout:
             return r.stdout
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("grab_thumbnail failed for %s: %s", file_path, exc)
     return None
 
 
@@ -148,22 +180,19 @@ class StreamWorker:
         self._seeking    = threading.Event()
         self._start_lock = threading.Lock()
 
-    # ── Logging ───────────────────────────────────────────────────────────────
+    # ── Internal logging ───────────────────────────────────────────────────────
     def _log(self, msg: str, level: str = "INFO") -> None:
         full = f"[{self.state.config.name}] {msg}"
         self.state.log_add(full)
         self.glog.add(full, level)
-        logging.log(
-            logging.WARNING if level == "WARN" else
-            (logging.ERROR if level == "ERROR" else logging.INFO), full
-        )
 
-    # ── Playlist helpers ──────────────────────────────────────────────────────
+    # ── Playlist helpers ───────────────────────────────────────────────────────
     def _build_order(self) -> List[int]:
         n     = len(self.state.config.playlist)
         order = list(range(n))
         if self.state.config.shuffle:
             random.shuffle(order)
+            self._log(f"Playlist shuffled: {order}")
         return order
 
     def _current_item(self) -> Optional[PlaylistItem]:
@@ -177,17 +206,27 @@ class StreamWorker:
         return pl[idx]
 
     def _advance_playlist(self) -> None:
+        old_idx = self.state.playlist_index
         self.state.playlist_index += 1
         if self.state.playlist_index >= len(self.state.playlist_order):
             self.state.playlist_index = 0
             self.state.loop_count    += 1
             if self.state.config.shuffle:
                 self.state.playlist_order = self._build_order()
+            self._log(
+                f"Playlist loop complete (loop #{self.state.loop_count}), "
+                f"wrapping back to start."
+            )
+        else:
+            self._log(
+                f"Playlist advanced: item {old_idx+1} → {self.state.playlist_index+1}"
+                f" of {len(self.state.playlist_order)}"
+            )
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    # ── Public API ─────────────────────────────────────────────────────────────
     def start(self, seek_override: Optional[float] = None) -> bool:
         if not self._start_lock.acquire(blocking=False):
-            self._log("start() already in progress — skipping duplicate call.", "WARN")
+            self._log("start() called while already in progress — skipped.", "WARN")
             return False
         try:
             return self._do_start(seek_override)
@@ -195,6 +234,7 @@ class StreamWorker:
             self._start_lock.release()
 
     def stop(self) -> None:
+        self._log("Stop requested.")
         self._stop.set()
         self._kill_ffmpeg()
         time.sleep(1.0)
@@ -205,21 +245,22 @@ class StreamWorker:
         self.state.fps         = 0.0
         self.state.bitrate     = "—"
         self.state.speed       = "—"
-        self._log("Stream stopped.")
+        self._log("Stream stopped cleanly.")
 
     def restart(self, seek: Optional[float] = None) -> None:
-        self._log("Restarting …")
+        self._log("Restart requested.")
         self.stop()
         time.sleep(0.8)
         self.start(seek_override=seek)
 
     def seek(self, seconds: float) -> None:
         self._seeking.set()
-        self._log(f"Seeking to {_fmt_duration(seconds)} …")
+        self._log(f"Seek requested → {_fmt_duration(seconds)}")
         self._kill_ffmpeg()
         time.sleep(0.4)
         item = self._current_item()
         if item is None:
+            self._log("Seek aborted: no current playlist item.", "WARN")
             self._seeking.clear()
             return
         self.state.duration = probe_duration(item.file_path)
@@ -230,12 +271,14 @@ class StreamWorker:
                          name=f"mon-{self.state.config.port}").start()
 
     def skip_to_next(self) -> None:
+        self._log("Skip-to-next requested.")
         self._seeking.set()
         self._advance_playlist()
         self._kill_ffmpeg()
         time.sleep(0.3)
         item = self._current_item()
         if item is None:
+            self._log("Skip aborted: no next item.", "WARN")
             self._seeking.clear()
             return
         self.state.duration = probe_duration(item.file_path)
@@ -244,6 +287,7 @@ class StreamWorker:
             spos = int(h) * 3600 + int(m) * 60 + float(s)
         except Exception:
             spos = 0.0
+        self._log(f"Skipping to: {item.file_path.name} @ {_fmt_duration(spos)}")
         self._start_ffmpeg(item, spos)
         self._seeking.clear()
         self.state.status = StreamStatus.LIVE
@@ -251,7 +295,7 @@ class StreamWorker:
                          name=f"mon-{self.state.config.port}").start()
 
     def play_oneshot(self, event: OneShotEvent) -> None:
-        self._log(f"One-shot event: {event.file_path.name}", "INFO")
+        self._log(f"One-shot event starting: {event.file_path.name}", "INFO")
         self.state.oneshot_active = True
         self._kill_ffmpeg()
         time.sleep(0.3)
@@ -272,6 +316,9 @@ class StreamWorker:
             self.state.oneshot_active = False
             if self._stop.is_set():
                 return
+            self._log(
+                f"One-shot finished. Post-action: {event.post_action}", "INFO"
+            )
             if event.post_action == "stop":
                 self.stop()
             elif event.post_action == "black":
@@ -279,6 +326,7 @@ class StreamWorker:
             else:
                 item2 = self._current_item()
                 if item2:
+                    self._log(f"Resuming playlist: {item2.file_path.name}")
                     self._start_ffmpeg(item2, 0.0)
                     threading.Thread(target=self._monitor, daemon=True,
                                      name=f"mon-{self.state.config.port}").start()
@@ -286,28 +334,43 @@ class StreamWorker:
         threading.Thread(target=_after, daemon=True,
                          name=f"oneshot-{self.state.config.port}").start()
 
-    # ── Internal helpers ──────────────────────────────────────────────────────
+    # ── Core startup ───────────────────────────────────────────────────────────
     def _do_start(self, seek_override: Optional[float] = None) -> bool:
         cfg = self.state.config
         self._stop.clear()
 
+        self._log(
+            f"Starting stream | port={cfg.port} | path={cfg.rtsp_path} | "
+            f"files={len(cfg.playlist)} | bitrate={cfg.video_bitrate}/{cfg.audio_bitrate}"
+        )
+
         if not cfg.playlist:
             self.state.status    = StreamStatus.ERROR
             self.state.error_msg = "No files in playlist"
-            return False
-
-        item = self._current_item()
-        if item is None or not item.file_path.exists():
-            self.state.status    = StreamStatus.ERROR
-            self.state.error_msg = (
-                f"File not found: {item.file_path if item else '?'}"
-            )
             self._log(self.state.error_msg, "ERROR")
             return False
 
+        item = self._current_item()
+        if item is None:
+            self.state.status    = StreamStatus.ERROR
+            self.state.error_msg = "Could not determine current playlist item"
+            self._log(self.state.error_msg, "ERROR")
+            return False
+
+        self._log(f"Current file: {item.file_path}")
+
+        if not item.file_path.exists():
+            self.state.status    = StreamStatus.ERROR
+            self.state.error_msg = f"File not found: {item.file_path}"
+            self._log(self.state.error_msg, "ERROR")
+            return False
+
+        self._log(f"File verified: {item.file_path.name} ({item.file_path.stat().st_size // 1024} KB)")
         self.state.status   = StreamStatus.STARTING
         self.state.duration = probe_duration(item.file_path)
+        self._log(f"File duration: {_fmt_duration(self.state.duration)}")
 
+        # Resolve seek position
         seek_pos = seek_override
         if seek_pos is None:
             pos_str = item.start_position
@@ -316,29 +379,56 @@ class StreamWorker:
                 seek_pos = int(h) * 3600 + int(m) * 60 + float(s)
             except Exception:
                 seek_pos = 0.0
+        self._log(f"Start seek position: {_fmt_duration(seek_pos)}")
 
+        # Port availability check
+        self._log(f"Checking port {cfg.port} availability …")
         if _port_in_use(cfg.port):
-            self._log(f"Port {cfg.port} occupied — killing orphan …", "WARN")
+            self._log(f"Port {cfg.port} is in use — attempting to kill orphan process.", "WARN")
             _kill_orphan_on_port(cfg.port)
             time.sleep(0.8)
             if _port_in_use(cfg.port):
                 self.state.status    = StreamStatus.ERROR
-                self.state.error_msg = f"Port {cfg.port} still in use"
+                self.state.error_msg = f"Port {cfg.port} still in use after kill attempt"
                 self._log(self.state.error_msg, "ERROR")
                 return False
+            self._log(f"Port {cfg.port} is now free.")
+        else:
+            self._log(f"Port {cfg.port} is free.")
 
-        mtx_cfg = MediaMTXConfig.write(self.state)
+        # Write MediaMTX config
+        self._log("Writing MediaMTX YAML config …")
+        try:
+            mtx_cfg = MediaMTXConfig.write(self.state)
+            self._log(f"MediaMTX config written: {mtx_cfg}")
+        except Exception as exc:
+            self.state.status    = StreamStatus.ERROR
+            self.state.error_msg = f"Failed to write MediaMTX config: {exc}"
+            self._log(self.state.error_msg, "ERROR")
+            return False
+
+        # Launch MediaMTX
         if not self._start_mediamtx(mtx_cfg):
             return False
 
-        self._log(f"Waiting for MediaMTX :{cfg.port} …")
+        # Wait for MediaMTX to bind the port
+        self._log(f"Waiting for MediaMTX to bind :{cfg.port} (timeout {self.MTX_READY_TIMEOUT:.0f}s) …")
         if not _wait_for_port(cfg.port, timeout=self.MTX_READY_TIMEOUT):
-            self._log(f"MediaMTX port-bind timeout :{cfg.port}", "ERROR")
+            # Read log file to surface the exact error
+            log_tail = _tail_log(LOGS_DIR() / f"mediamtx_{cfg.port}.log", 12)
+            detail = log_tail or "No output in MediaMTX log file"
+            self._log(
+                f"MediaMTX port-bind timeout :{cfg.port}. "
+                f"MediaMTX log tail:\n{detail}",
+                "ERROR",
+            )
             self._kill_mediamtx()
             self.state.status    = StreamStatus.ERROR
             self.state.error_msg = f"MediaMTX timeout (:{cfg.port})"
             return False
+        self._log(f"MediaMTX is live on :{cfg.port}")
 
+        # Launch FFmpeg
         if not self._start_ffmpeg(item, seek_pos):
             self._kill_mediamtx()
             return False
@@ -346,16 +436,21 @@ class StreamWorker:
         self.state.status        = StreamStatus.LIVE
         self.state.started_at    = __import__("datetime").datetime.now()
         self.state.restart_count = 0
-        self._log(f"Live → {cfg.rtsp_url}")
+        self._log(f"✓ LIVE → {cfg.rtsp_url}")
         if cfg.hls_enabled:
-            self._log(f"HLS  → {cfg.hls_url}")
+            self._log(f"  HLS  → {cfg.hls_url}")
 
         threading.Thread(target=self._monitor, daemon=True,
                          name=f"mon-{cfg.port}").start()
         return True
 
     def _start_mediamtx(self, cfg_file: Path) -> bool:
-        log_f = LOGS_DIR() / f"mediamtx_{self.state.config.port}.log"
+        log_f  = LOGS_DIR() / f"mediamtx_{self.state.config.port}.log"
+        name   = self.state.config.name
+        port   = self.state.config.port
+
+        self._log(f"Launching MediaMTX | config={cfg_file} | log={log_f}")
+
         try:
             with open(log_f, "a") as lf:
                 kw: Dict[str, Any] = dict(stdout=lf, stderr=subprocess.PIPE)
@@ -363,10 +458,11 @@ class StreamWorker:
                     kw["creationflags"] = subprocess.CREATE_NO_WINDOW
                 proc = subprocess.Popen(
                     [str(MEDIAMTX_BIN()), str(cfg_file)], **kw)
-            self.state.mtx_proc = proc
-            self._log(f"MediaMTX PID {proc.pid} on :{self.state.config.port}")
 
-            # Wait up to 1.5 s for stable startup
+            self.state.mtx_proc = proc
+            self._log(f"MediaMTX spawned PID={proc.pid} on :{port}")
+
+            # Give MediaMTX up to 1.5 s to fail fast (unknown field, port conflict, etc.)
             deadline = time.time() + 1.5
             while time.time() < deadline:
                 if proc.poll() is not None:
@@ -374,6 +470,7 @@ class StreamWorker:
                 time.sleep(0.1)
 
             if proc.poll() is not None:
+                # Process exited immediately — read stderr + log file for cause
                 stderr_out = b""
                 try:
                     stderr_out = proc.stderr.read() or b""
@@ -381,31 +478,43 @@ class StreamWorker:
                     pass
                 stderr_txt = stderr_out.decode(errors="replace").strip()
 
-                log_tail = ""
-                try:
-                    with open(log_f) as lf2:
-                        lines = lf2.readlines()
-                        log_tail = "".join(lines[-8:]).strip()
-                except Exception:
-                    pass
+                log_tail = _tail_log(log_f, 12)
+                detail = "\n".join(filter(None, [stderr_txt, log_tail])) or "(no output)"
 
-                detail = stderr_txt or log_tail or "(no output captured)"
-                # Helpful hint for the common RTP even-port requirement
-                if "rtp port must be even" in detail.lower():
-                    detail += (
-                        " → HydraCast v5 computes even RTP ports automatically. "
-                        "If you see this, your port may be oddly spaced — "
-                        "try using an even RTSP base port (e.g. 8554, 8564 …)."
+                # Common known errors and hints
+                hints = []
+                dl = detail.lower()
+                if "unknown field" in dl:
+                    # Extract the field name for the user
+                    match = re.search(r'unknown field "([^"]+)"', detail)
+                    bad_field = match.group(1) if match else "unknown"
+                    hints.append(
+                        f'MediaMTX config contains unsupported YAML field: "{bad_field}". '
+                        f"This is a HydraCast bug — please report it."
                     )
+                if "rtp port must be even" in dl:
+                    hints.append(
+                        "RTP port must be even (RFC 3550). "
+                        "Try an even RTSP base port (e.g. 8554, 8564 …)."
+                    )
+                if "address already in use" in dl or "bind" in dl:
+                    hints.append(
+                        f"Port {port} (or its RTP/RTCP companion) is already in use. "
+                        f"Check for another MediaMTX or RTSP service running on this port."
+                    )
+
+                hint_str = "  HINT: " + " | ".join(hints) if hints else ""
                 msg = (
                     f"MediaMTX exited immediately (code {proc.returncode}). "
-                    f"Hint: {detail[:500]}"
+                    f"Output:\n{detail[:800]}"
+                    f"\n{hint_str}"
                 )
                 self.state.status    = StreamStatus.ERROR
                 self.state.error_msg = msg
                 self._log(msg, "ERROR")
                 return False
 
+            # Drain stderr in background so the pipe doesn't fill
             def _drain(p: subprocess.Popen) -> None:
                 try:
                     for raw in p.stderr:
@@ -413,13 +522,25 @@ class StreamWorker:
                             raw.decode(errors="replace") if isinstance(raw, bytes) else raw
                         ).strip()
                         if line:
-                            logging.warning("MTX stderr [%d]: %s", p.pid, line)
+                            log.warning("MTX stderr [PID %d]: %s", p.pid, line)
                 except Exception:
                     pass
 
-            threading.Thread(target=_drain, args=(proc,), daemon=True).start()
+            threading.Thread(target=_drain, args=(proc,), daemon=True,
+                             name=f"mtx-drain-{port}").start()
+
+            self._log(f"MediaMTX running stably (PID={proc.pid})")
             return True
 
+        except FileNotFoundError:
+            msg = (
+                f"MediaMTX binary not found: {MEDIAMTX_BIN()}. "
+                f"Run HydraCast once normally so it can auto-download MediaMTX."
+            )
+            self.state.status    = StreamStatus.ERROR
+            self.state.error_msg = msg
+            self._log(msg, "ERROR")
+            return False
         except Exception as exc:
             self.state.status    = StreamStatus.ERROR
             self.state.error_msg = f"MediaMTX launch failed: {exc}"
@@ -442,6 +563,14 @@ class StreamWorker:
             "-f", "rtsp", "-rtsp_transport", "tcp",
             f"rtsp://127.0.0.1:{cfg.port}/{cfg.rtsp_path}",
         ]
+
+        self._log(
+            f"Launching FFmpeg | file={item.file_path.name} | "
+            f"seek={_fmt_duration(seek_pos)} | "
+            f"vbr={cfg.video_bitrate} abr={cfg.audio_bitrate}"
+        )
+        log.debug("[%s] FFmpeg command: %s", cfg.name, " ".join(cmd))
+
         try:
             kw: Dict[str, Any] = dict(
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -456,12 +585,22 @@ class StreamWorker:
                 try:
                     core = cfg.row_index % CPU_COUNT
                     psutil.Process(proc.pid).cpu_affinity([core])
-                    self._log(f"FFmpeg PID {proc.pid} → core {core}")
-                except Exception:
-                    self._log(f"FFmpeg PID {proc.pid}")
+                    self._log(f"FFmpeg PID={proc.pid} pinned to CPU core {core}")
+                except Exception as exc:
+                    self._log(f"FFmpeg PID={proc.pid} (CPU pin failed: {exc})")
             else:
-                self._log(f"FFmpeg PID {proc.pid}")
+                self._log(f"FFmpeg PID={proc.pid}")
             return True
+
+        except FileNotFoundError:
+            msg = (
+                f"FFmpeg binary not found: {FFMPEG_PATH()}. "
+                f"Install FFmpeg and ensure it is on your PATH."
+            )
+            self.state.status    = StreamStatus.ERROR
+            self.state.error_msg = msg
+            self._log(msg, "ERROR")
+            return False
         except Exception as exc:
             self.state.status    = StreamStatus.ERROR
             self.state.error_msg = f"FFmpeg launch failed: {exc}"
@@ -470,6 +609,7 @@ class StreamWorker:
 
     def _play_black(self) -> None:
         cfg = self.state.config
+        self._log("Starting black-screen feed …")
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error", "-re",
             "-f", "lavfi", "-i", "color=black:size=1280x720:rate=25",
@@ -486,20 +626,25 @@ class StreamWorker:
             if IS_WIN:
                 kw["creationflags"] = subprocess.CREATE_NO_WINDOW
             self.state.ffmpeg_proc = subprocess.Popen(cmd, **kw)
+            self._log(f"Black screen PID={self.state.ffmpeg_proc.pid}")
         except Exception as exc:
             self._log(f"Black screen launch failed: {exc}", "ERROR")
 
     def _monitor(self) -> None:
+        """Read FFmpeg -progress pipe:1 output and update stream state."""
         proc = self.state.ffmpeg_proc
         if proc is None:
+            self._log("Monitor: no FFmpeg process to monitor.", "WARN")
             return
         my_proc = proc
         buf: Dict[str, str] = {}
+        self._log("Monitor thread started.")
 
         while not self._stop.is_set():
             if my_proc.poll() is not None:
                 break
             if self.state.ffmpeg_proc is not my_proc:
+                self._log("Monitor: FFmpeg process was replaced, exiting monitor.")
                 return
             try:
                 line = my_proc.stdout.readline()
@@ -514,19 +659,39 @@ class StreamWorker:
                 if k == "progress":
                     self._apply_progress(buf)
                     buf = {}
-            except Exception:
+            except Exception as exc:
+                log.debug("[%s] Monitor readline error: %s", self.state.config.name, exc)
                 time.sleep(0.05)
 
-        if self._stop.is_set():                    return
-        if self._seeking.is_set():                 return
-        if self.state.ffmpeg_proc is not my_proc:  return
+        if self._stop.is_set():
+            self._log("Monitor exiting: stop flag set.")
+            return
+        if self._seeking.is_set():
+            self._log("Monitor exiting: seek in progress.")
+            return
+        if self.state.ffmpeg_proc is not my_proc:
+            self._log("Monitor exiting: process was replaced.")
+            return
 
-        # Advance to next playlist item
+        ret = my_proc.returncode if my_proc.returncode is not None else -1
+        stderr_txt = ""
+        try:
+            if my_proc.stderr:
+                stderr_txt = my_proc.stderr.read(800)
+        except Exception:
+            pass
+
+        self._log(f"FFmpeg process exited with code {ret}.")
+        if stderr_txt:
+            self._log(f"FFmpeg stderr: {stderr_txt[:400]}", "WARN" if ret == 0 else "ERROR")
+
+        # Advance to next playlist item (multi-file playlist)
         if (not self.state.oneshot_active
                 and len(self.state.config.playlist) > 1):
             self._advance_playlist()
             next_item = self._current_item()
             if next_item and next_item.file_path.exists():
+                self._log(f"Advancing to next file: {next_item.file_path.name}")
                 self.state.duration = probe_duration(next_item.file_path)
                 try:
                     h, m, s = next_item.start_position.split(":")
@@ -538,14 +703,11 @@ class StreamWorker:
                 threading.Thread(target=self._monitor, daemon=True,
                                  name=f"mon-{self.state.config.port}").start()
                 return
-
-        ret = my_proc.returncode if my_proc.returncode is not None else -1
-        stderr_txt = ""
-        try:
-            if my_proc.stderr:
-                stderr_txt = my_proc.stderr.read(400)
-        except Exception:
-            pass
+            else:
+                if next_item:
+                    self._log(
+                        f"Next playlist file missing: {next_item.file_path}", "ERROR"
+                    )
 
         if ret in (0, 255):
             self.state.status = StreamStatus.STOPPED
@@ -553,9 +715,11 @@ class StreamWorker:
         else:
             self.state.status    = StreamStatus.ERROR
             self.state.error_msg = (
-                stderr_txt[:200].strip() or f"FFmpeg exited code {ret}"
+                stderr_txt[:300].strip() or f"FFmpeg exited with code {ret}"
             )
-            self._log(self.state.error_msg, "ERROR")
+            self._log(
+                f"FFmpeg error (code {ret}): {self.state.error_msg}", "ERROR"
+            )
             self._auto_restart()
 
     def _apply_progress(self, data: Dict[str, str]) -> None:
@@ -573,29 +737,31 @@ class StreamWorker:
                 data.get("bitrate", "—").replace("kbits/s", "kb/s") or "—"
             )
             self.state.speed   = data.get("speed", "—").strip() or "—"
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("[%s] _apply_progress error: %s", self.state.config.name, exc)
 
     def _auto_restart(self) -> None:
         if self._seeking.is_set():
-            self._log("Skipping auto-restart: seek in progress.", "WARN")
+            self._log("Auto-restart skipped: seek in progress.", "WARN")
             return
         n = self.state.restart_count
         if n >= self.MAX_AUTO_RESTARTS:
             self._log(
                 f"Max auto-restarts ({self.MAX_AUTO_RESTARTS}) reached — "
-                "giving up. Check your file paths and stream config.",
+                "giving up. Check file paths, ports, and FFmpeg/MediaMTX logs.",
                 "ERROR",
             )
             return
         delay = self.BACKOFF[min(n, len(self.BACKOFF) - 1)]
-        self._log(f"Auto-restart #{n+1} in {delay}s …", "WARN")
+        self._log(f"Auto-restart #{n+1} scheduled in {delay}s …", "WARN")
         for _ in range(delay * 10):
             if self._stop.is_set() or self._seeking.is_set():
+                self._log("Auto-restart cancelled.")
                 return
             time.sleep(0.1)
         if not self._stop.is_set() and not self._seeking.is_set():
             self.state.restart_count += 1
+            self._log(f"Auto-restart #{self.state.restart_count} starting …", "WARN")
             self._kill_mediamtx()
             time.sleep(0.3)
             self.start()
@@ -603,23 +769,45 @@ class StreamWorker:
     def _kill_ffmpeg(self) -> None:
         proc = self.state.ffmpeg_proc
         if proc and proc.poll() is None:
+            self._log(f"Killing FFmpeg PID={proc.pid}")
             try:
                 proc.terminate()
                 proc.wait(timeout=6)
+                self._log(f"FFmpeg PID={proc.pid} terminated.")
             except subprocess.TimeoutExpired:
+                self._log(f"FFmpeg PID={proc.pid} did not terminate in 6s, killing.", "WARN")
                 proc.kill()
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log(f"FFmpeg kill error: {exc}", "WARN")
         self.state.ffmpeg_proc = None
 
     def _kill_mediamtx(self) -> None:
         proc = self.state.mtx_proc
         if proc and proc.poll() is None:
+            self._log(f"Killing MediaMTX PID={proc.pid}")
             try:
                 proc.terminate()
                 proc.wait(timeout=6)
+                self._log(f"MediaMTX PID={proc.pid} terminated.")
             except subprocess.TimeoutExpired:
+                self._log(f"MediaMTX PID={proc.pid} did not terminate in 6s, killing.", "WARN")
                 proc.kill()
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log(f"MediaMTX kill error: {exc}", "WARN")
         self.state.mtx_proc = None
+
+
+# =============================================================================
+# HELPER: read tail of a log file
+# =============================================================================
+def _tail_log(path: Path, n: int = 12) -> str:
+    """Return the last *n* lines of a file as a single string."""
+    try:
+        if not path.exists() or path.stat().st_size == 0:
+            return ""
+        with open(path, errors="replace") as f:
+            lines = f.readlines()
+        return "".join(lines[-n:]).strip()
+    except Exception as exc:
+        log.debug("_tail_log failed for %s: %s", path, exc)
+        return ""
