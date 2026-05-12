@@ -707,6 +707,30 @@ select option{background:var(--bg3)}
   margin-bottom:18px;opacity:0.5;
 }
 
+/* ─────────── APP FOOTER ─────────── */
+.app-footer{
+  background:var(--bg2);border-top:1px solid var(--border);
+  padding:7px 24px;display:flex;align-items:center;justify-content:center;
+  gap:10px;font-size:11px;color:var(--text3);flex-shrink:0;
+  font-family:var(--font-sans);
+  transition:background 0.35s,border-color 0.35s;
+  letter-spacing:0.02em;
+}
+.app-footer a{color:var(--accent-light);transition:color 0.2s}
+.app-footer a:hover{color:var(--accent)}
+.app-footer .footer-sep{opacity:0.35;margin:0 2px}
+
+/* ─────────── LOGO IMAGE SUPPORT ─────────── */
+.logo-icon{position:relative;overflow:hidden}
+.logo-icon img{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;border-radius:10px;
+}
+.logo-icon .logo-letter{
+  font-size:15px;font-weight:900;color:#fff;
+  position:relative;z-index:1;
+}
+
 </style>
 </head>
 <body>
@@ -716,7 +740,10 @@ select option{background:var(--bg3)}
 <!-- ══ TOP BAR ══ -->
 <header class="topbar">
   <div class="logo">
-    <div class="logo-icon">H</div>
+    <div class="logo-icon" id="logo-icon-wrap" title="Click to set custom logo" onclick="openLogoPanel()" style="cursor:pointer">
+      <img id="logo-img" src="" alt="" style="display:none">
+      <span class="logo-letter" id="logo-letter">H</span>
+    </div>
     HydraCast
     <sub id="ver-badge">v—</sub>
   </div>
@@ -1196,6 +1223,16 @@ select option{background:var(--bg3)}
 
 </div><!-- /app -->
 
+<!-- ══ FOOTER ══ -->
+<footer class="app-footer">
+  <span>©</span>
+  <a href="https://github.com/rhshourav/HydraCast" target="_blank" rel="noopener">rhshourav</a>
+  <span class="footer-sep">·</span>
+  <span>HydraCast</span>
+  <span class="footer-sep">·</span>
+  <a href="https://github.com/rhshourav/HydraCast" target="_blank" rel="noopener">github.com/rhshourav/HydraCast</a>
+</footer>
+
 <!-- ══ SEEK MODAL ══ -->
 <div class="modal-bg" id="seek-modal">
   <div class="modal">
@@ -1330,50 +1367,117 @@ async function loadStreams(){
   }catch(_){}
 }
 
+// ═══════════════════════════════════
+// STREAMS — flicker-free DOM diff
+// ═══════════════════════════════════
+let _streamSigs={};
+
+function _sigOf(s){
+  // A fingerprint of every visible field; if unchanged the row is untouched
+  return[s.status||'',
+         (+s.progress||0).toFixed(1),
+         s.time_remaining||'',
+         s.position||'',
+         s.fps>0?Math.round(s.fps):'',
+         s.loop_count||'',
+         s.bitrate||'',
+         s.error_msg||'',
+         s.playlist_count||0,
+         s.enabled?1:0,
+         s.shuffle?1:0].join('|');
+}
+
+function _rowCells(s,i,showRtsp){
+  const pct=Math.max(0,Math.min(100,+s.progress)).toFixed(1);
+  const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
+  const status=s.status||'STOPPED';
+  return `
+    <td class="td-muted">${i+1}</td>
+    <td>
+      <span class="td-name">${esc(s.name)}</span>
+      ${s.shuffle?`<span class="tag-shuf">SHUF</span>`:''}
+      ${!s.enabled?`<span class="tag-dis">OFF</span>`:''}
+      ${s.playlist_count>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(${s.playlist_count} files)</span>`:''}
+    </td>
+    <td style="color:var(--accent-light)">:${s.port}</td>
+    <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
+    <td style="min-width:140px">
+      <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
+      <div class="prog-label">${pct}%${s.time_remaining?' · '+esc(s.time_remaining)+' left':''}</div>
+    </td>
+    <td class="td-muted" style="white-space:nowrap">${esc(s.position||'--')}</td>
+    <td class="td-muted">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
+    <td class="td-muted">${s.loop_count>0?'×'+s.loop_count:'--'}</td>
+    <td class="td-muted">${(s.bitrate&&s.bitrate!=='—')?esc(s.bitrate):'--'}</td>
+    <td>
+      ${s.rtsp_url?`<span class="chip" onclick="copyText('${esc(s.rtsp_url)}')" title="${esc(s.rtsp_url)}">📋 ${esc(s.rtsp_url)}</span>`:'<span class="td-muted">—</span>'}
+    </td>
+    <td>
+      <div class="btn-group">
+        <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})">▶</button>
+        <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})">■</button>
+        <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>
+        ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})">⏭</button>`:''}
+        ${s.status==='LIVE'?`<button class="btn b" onclick="openSeek('${esc(s.name)}',${s.duration||0},${s.current_secs||0})">⏩</button>`:''}
+      </div>
+      ${s.error_msg?`<div style="font-size:10px;color:var(--red);margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.error_msg)}">⚠ ${esc(s.error_msg)}</div>`:''}
+    </td>`;
+}
+
 function renderStreams(data){
   const tb=document.getElementById('stbl');
+  const showRtsp=document.getElementById('st-showrtsp')?.classList.contains('on')!==false;
+
   if(!data.length){
-    tb.innerHTML=`<tr><td colspan="9"><div class="empty"><div class="empty-icon">📡</div>No streams configured.</div></td></tr>`;
+    tb.innerHTML=`<tr><td colspan="11"><div class="empty"><div class="empty-icon">📡</div>No streams configured.</div></td></tr>`;
+    _streamSigs={};
     return;
   }
-  const showRtsp=document.getElementById('st-showrtsp')?.classList.contains('on')!==false;
-  tb.innerHTML=data.map((s,i)=>{
-    const pct=Math.max(0,Math.min(100,+s.progress)).toFixed(1);
-    const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
-    const status=s.status||'STOPPED';
-    return `<tr>
-      <td class="td-muted">${i+1}</td>
-      <td>
-        <span class="td-name">${esc(s.name)}</span>
-        ${s.shuffle?`<span class="tag-shuf">SHUF</span>`:''}
-        ${!s.enabled?`<span class="tag-dis">OFF</span>`:''}
-        ${s.playlist_count>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(${s.playlist_count} files)</span>`:''}
-      </td>
-      <td style="color:var(--accent-light)">:${s.port}</td>
-      <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
-      <td style="min-width:140px">
-        <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
-        <div class="prog-label">${pct}% ${s.time_remaining?'· '+esc(s.time_remaining)+' left':''}</div>
-      </td>
-      <td class="td-muted" style="white-space:nowrap">${esc(s.position||'--')}</td>
-      <td class="td-muted">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
-      <td class="td-muted">${s.loop_count>0?'×'+s.loop_count:'--'}</td>
-      <td class="td-muted">${(s.bitrate&&s.bitrate!=='—')?esc(s.bitrate):'--'}</td>
-      <td>
-        ${s.rtsp_url?`<span class="chip" onclick="copyText('${esc(s.rtsp_url)}')" title="${esc(s.rtsp_url)}">📋 ${esc(s.rtsp_url)}</span>`:'<span class="td-muted">—</span>'}
-      </td>
-      <td>
-        <div class="btn-group">
-          <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})">▶</button>
-          <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})">■</button>
-          <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>
-          ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})">⏭</button>`:''}
-          ${s.status==='LIVE'?`<button class="btn b" onclick="openSeek('${esc(s.name)}',${s.duration||0},${s.current_secs||0})">⏩</button>`:''}
-        </div>
-        ${s.error_msg?`<div style="font-size:10px;color:var(--red);margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.error_msg)}">⚠ ${esc(s.error_msg)}</div>`:''}
-      </td>
-    </tr>`;
-  }).join('');
+
+  // Build lookup of existing keyed rows
+  const existing={};
+  tb.querySelectorAll('tr[data-sname]').forEach(r=>existing[r.dataset.sname]=r);
+
+  // If transitioning from placeholder state, wipe it cleanly
+  if(tb.querySelector('td[colspan]')){
+    tb.innerHTML='';
+    _streamSigs={};
+    Object.keys(existing).forEach(k=>delete existing[k]);
+  }
+
+  const newNames=new Set(data.map(s=>s.name));
+
+  // Remove rows for streams that disappeared
+  Object.entries(existing).forEach(([name,row])=>{
+    if(!newNames.has(name)){row.remove();delete _streamSigs[name];}
+  });
+
+  // Update / insert rows in data order
+  data.forEach((s,i)=>{
+    const sig=_sigOf(s);
+    let row=existing[s.name];
+    if(!row){
+      // Brand-new stream → create row without animation flash
+      row=document.createElement('tr');
+      row.dataset.sname=s.name;
+      row.innerHTML=_rowCells(s,i,showRtsp);
+      tb.appendChild(row);
+    } else if(_streamSigs[s.name]!==sig){
+      // Something changed → update cells in-place (no remove/re-add)
+      row.innerHTML=_rowCells(s,i,showRtsp);
+    }
+    // Unchanged → leave DOM completely untouched → zero flicker
+    _streamSigs[s.name]=sig;
+  });
+
+  // Re-order rows if stream list order changed (rare)
+  const rows=Array.from(tb.querySelectorAll('tr[data-sname]'));
+  data.forEach((s,i)=>{
+    if(rows[i]&&rows[i].dataset.sname!==s.name){
+      const t=tb.querySelector(`tr[data-sname="${CSS.escape(s.name)}"]`);
+      if(t)tb.insertBefore(t,rows[i]);
+    }
+  });
 }
 
 function copyText(url){
