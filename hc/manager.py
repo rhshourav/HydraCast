@@ -127,6 +127,12 @@ class StreamManager:
         with self._lock:
             return list(self._states)
 
+    @property
+    def events(self) -> List[OneShotEvent]:
+        """Read-only snapshot of all one-shot events (used by TUI / web)."""
+        with self._lock:
+            return list(self._events)
+
     def get_state(self, name: str) -> Optional[StreamState]:
         """Return the StreamState for *name*, or None."""
         with self._lock:
