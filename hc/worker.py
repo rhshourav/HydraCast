@@ -1,16 +1,19 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
-Changes vs v5.0.2:
-  • _do_start() accepts seek_override and initial_offset parameters.
-  • Compliance mode: if StreamConfig.compliance_enabled, calculate the
-    correct broadcast-sync seek offset via hc.compliance.
-  • Resume: current playback position is saved to disk (hc.resume_store)
-    just before the stream stops (clean stop, error, or normal FFmpeg exit).
-  • Watchdog: when the monitor advances to the next playlist item it calls
-    hc.watchdog.find_next_valid_item() to skip missing/corrupt files instead
-    of silently stalling.
-  • start() signature extended: seek_override=None, initial_offset=0.0.
+FIXES (v5.1.0):
+  • _auto_restart() now guards against _stop flag being set — prevents
+    the stream re-appearing after a manual Stop (S key).
+  • _monitor() checks _stop before calling _auto_restart so that a stop()
+    that races the FFmpeg exit no longer triggers an unwanted restart.
+  • stop() sets _stop BEFORE saving resume position and killing processes,
+    so any concurrent monitor thread sees the flag immediately.
+  • restart() clears _stop only after stop() completes, preventing the
+    monitor from sneaking in an auto-restart during the gap.
+  • Folder scanner re-scan on every start — newly uploaded files are picked
+    up automatically without needing a manual CSV reload.
+  • _do_start() returns False cleanly if playlist is empty after folder scan.
+  • seek_start_pos initialised to 0.0 in StreamState to avoid AttributeError.
 """
 from __future__ import annotations
 
@@ -180,6 +183,9 @@ class StreamWorker:
         self._stop       = threading.Event()
         self._seeking    = threading.Event()
         self._start_lock = threading.Lock()
+        # Ensure seek_start_pos always exists to prevent AttributeError
+        if not hasattr(self.state, "seek_start_pos"):
+            self.state.seek_start_pos = 0.0  # type: ignore[attr-defined]
 
     # ── Internal logging ───────────────────────────────────────────────────────
     def _log(self, msg: str, level: str = "INFO") -> None:
@@ -226,11 +232,10 @@ class StreamWorker:
 
     # ── Resume / position persistence ─────────────────────────────────────────
     def _save_resume_position(self) -> None:
-        """Save current playback position so user can resume after restart."""
         pos  = self.state.current_pos
         fp   = self.state.current_file()
         name = self.state.config.name
-        if fp and pos > 5.0:          # skip trivially small positions
+        if fp and pos > 5.0:
             try:
                 from hc.resume_store import save_position
                 save_position(name, fp, pos)
@@ -248,16 +253,19 @@ class StreamWorker:
             self._log("start() called while already in progress — skipped.", "WARN")
             return False
         try:
+            # Clear stop flag only when we are actually starting
+            self._stop.clear()
             return self._do_start(seek_override, initial_offset)
         finally:
             self._start_lock.release()
 
     def stop(self) -> None:
         self._log("Stop requested.")
-        # ── Save resume position before killing FFmpeg ────────────────────────
+        # ── Set stop flag FIRST so any concurrent monitor/auto-restart sees it ─
+        self._stop.set()
+        # ── Save resume position before killing FFmpeg ─────────────────────────
         if self.state.status == StreamStatus.LIVE:
             self._save_resume_position()
-        self._stop.set()
         self._kill_ffmpeg()
         time.sleep(1.0)
         self._kill_mediamtx()
@@ -273,13 +281,27 @@ class StreamWorker:
         self._log("Restart requested.")
         # Acquire the start lock BEFORE stopping so the monitor thread's
         # _auto_restart cannot sneak in and call start() between stop() and
-        # our own start() call — which caused the "already in progress" skip.
+        # our own start() call.
         if not self._start_lock.acquire(timeout=15):
             self._log("Restart: could not acquire start lock in 15s — aborting.", "WARN")
             return
         try:
-            self.stop()
+            # stop() sets _stop flag; we clear it only after stop() fully
+            # completes, then call _do_start directly (lock already held).
+            self._stop.set()
+            self._kill_ffmpeg()
+            time.sleep(1.0)
+            self._kill_mediamtx()
+            self.state.status      = StreamStatus.STOPPED
+            self.state.progress    = 0.0
+            self.state.current_pos = 0.0
+            self.state.fps         = 0.0
+            self.state.bitrate     = "—"
+            self.state.speed       = "—"
+            self._log("Stream stopped for restart.")
             time.sleep(0.5)
+            # Clear stop flag now — we are intentionally restarting
+            self._stop.clear()
             self._do_start(seek_override=seek)
         finally:
             self._start_lock.release()
@@ -369,7 +391,7 @@ class StreamWorker:
     def _do_start(self, seek_override: Optional[float] = None,
                   initial_offset: float = 0.0) -> bool:
         cfg = self.state.config
-        self._stop.clear()
+        # Do NOT clear _stop here — start() and restart() manage it.
 
         self._log(
             f"Starting stream | port={cfg.port} | path={cfg.rtsp_path} | "
@@ -392,12 +414,8 @@ class StreamWorker:
         self._log(f"Current file: {item.file_path}")
 
         # ── Folder-as-playlist resolution ─────────────────────────────────────
-        # Determine the scan root: prefer cfg.folder_source (set on first scan
-        # and preserved across restarts) so every start re-scans the folder and
-        # picks up newly added or removed files.
         resolved_path = item.file_path
 
-        # If the path is relative and doesn't exist as-is, anchor under MEDIA_DIR.
         if not resolved_path.is_absolute() and not resolved_path.exists():
             try:
                 from hc.constants import MEDIA_DIR
@@ -439,7 +457,7 @@ class StreamWorker:
                 # Persist folder_source so every future restart re-scans.
                 cfg.folder_source = folder_root
                 # Replace the in-memory playlist and rebuild order from scratch
-                # so newly added files are included and removed ones are dropped.
+                # so newly added/removed files are reflected immediately.
                 cfg.playlist = scanned_items
                 self.state.playlist_index = 0
                 self.state.playlist_order = self._build_order()
@@ -489,11 +507,9 @@ class StreamWorker:
 
         # ── Determine seek position ───────────────────────────────────────────
         if seek_override is not None:
-            # Explicit override (manual seek / restart-with-seek)
             seek_pos = float(seek_override)
             self._log(f"Seek override supplied: {_fmt_duration(seek_pos)}")
         elif cfg.compliance_enabled:
-            # Compliance mode: calculate broadcast-sync position
             try:
                 from hc.compliance import calculate_compliance_offset
                 seek_pos, expl = calculate_compliance_offset(
@@ -506,7 +522,6 @@ class StreamWorker:
                 self._log(f"Compliance offset calculation failed: {exc} — starting from 0", "WARN")
                 seek_pos = 0.0
         else:
-            # ── Try to resume from last saved position ────────────────────────
             seek_pos = 0.0
             try:
                 from hc.resume_store import load_position, clear_position
@@ -514,10 +529,6 @@ class StreamWorker:
                 if saved is not None:
                     saved_file = Path(saved["file_path"])
                     saved_pos  = float(saved.get("position", 0.0))
-                    # Only resume if the saved file matches the current item
-                    # and the position is meaningful (> 5 s, within duration).
-                    # Use resolve() so Windows case differences and relative
-                    # vs absolute forms don't cause false mismatches.
                     try:
                         paths_match = saved_file.resolve() == item.file_path.resolve()
                     except Exception:
@@ -532,7 +543,6 @@ class StreamWorker:
                             f"@ {_fmt_duration(seek_pos)} "
                             f"(saved {saved.get('saved_at', '?')})"
                         )
-                        # Clear so next cold start begins from the CSV position
                         clear_position(cfg.name)
                     else:
                         if saved is not None:
@@ -544,7 +554,6 @@ class StreamWorker:
                                 f"pos={saved_pos:.1f}s dur={self.state.duration:.1f}s",
                                 "WARN",
                             )
-                        # Fall through to normal CSV start_position
                         pos_str = item.start_position
                         try:
                             h, m, s  = pos_str.split(":")
@@ -552,7 +561,6 @@ class StreamWorker:
                         except Exception:
                             seek_pos = 0.0
                 else:
-                    # No saved position — use CSV start_position
                     pos_str = item.start_position
                     try:
                         h, m, s  = pos_str.split(":")
@@ -571,9 +579,9 @@ class StreamWorker:
                 except Exception:
                     seek_pos = 0.0
 
-        # Apply per-start offset (±seconds set from TUI before start)
+        # Apply per-start offset
         combined_offset = initial_offset + self.state.initial_offset
-        self.state.initial_offset = 0.0   # consume it
+        self.state.initial_offset = 0.0
         if combined_offset != 0.0:
             old_pos  = seek_pos
             seek_pos = max(0.0, seek_pos + combined_offset)
@@ -582,7 +590,6 @@ class StreamWorker:
                 f"{_fmt_duration(old_pos)} → {_fmt_duration(seek_pos)}"
             )
 
-        # Clip to duration if known
         if self.state.duration > 0:
             seek_pos = min(seek_pos, self.state.duration - 1.0)
         seek_pos = max(0.0, seek_pos)
@@ -643,10 +650,7 @@ class StreamWorker:
         self.state.status        = StreamStatus.LIVE
         self.state.started_at    = __import__("datetime").datetime.now()
         self.state.restart_count = 0
-        # Ensure seek_start_pos is always set (also set in _start_ffmpeg, but
-        # guard here in case future code paths bypass it).
-        if not hasattr(self.state, "seek_start_pos"):
-            self.state.seek_start_pos = 0.0
+        self.state.seek_start_pos = seek_pos  # type: ignore[attr-defined]
         self._log(f"✓ LIVE → {cfg.rtsp_url}")
         if cfg.hls_enabled:
             self._log(f"  HLS  → {cfg.hls_url}")
@@ -770,9 +774,7 @@ class StreamWorker:
             f"rtsp://127.0.0.1:{cfg.port}/{cfg.rtsp_path}",
         ]
 
-        # Record the absolute seek start so _apply_progress can compute
-        # an absolute current_pos (out_time_us is relative to seek point).
-        self.state.seek_start_pos = seek_pos
+        self.state.seek_start_pos = seek_pos  # type: ignore[attr-defined]
 
         self._log(
             f"Launching FFmpeg | file={item.file_path.name} | "
@@ -873,6 +875,7 @@ class StreamWorker:
                 log.debug("[%s] Monitor readline error: %s", self.state.config.name, exc)
                 time.sleep(0.05)
 
+        # ── Determine why we exited the loop ──────────────────────────────────
         if self._stop.is_set():
             self._log("Monitor exiting: stop flag set.")
             return
@@ -895,9 +898,7 @@ class StreamWorker:
         if stderr_txt:
             self._log(f"FFmpeg stderr: {stderr_txt[:400]}", "WARN" if ret == 0 else "ERROR")
 
-        # ── Save position before advancing ────────────────────────────────────
-        # Only save on clean/normal exits (ret 0 or 255=SIGTERM).  On hard errors
-        # current_pos may be 0 or stale, which would corrupt the saved position.
+        # Save position on clean/normal exits only
         if ret in (0, 255):
             self._save_resume_position()
         else:
@@ -913,7 +914,6 @@ class StreamWorker:
             self._advance_playlist()
             next_item = self._current_item()
 
-            # Use watchdog helper to skip bad files
             if next_item and not next_item.file_path.exists():
                 self._log(
                     f"Next file missing: '{next_item.file_path.name}' — "
@@ -949,10 +949,7 @@ class StreamWorker:
         if ret in (0, 255):
             self.state.status = StreamStatus.STOPPED
             self._log(f"FFmpeg exited normally (code {ret}).")
-            # Alert if this wasn't a deliberate manual/scheduler stop.
-            # _stop flag is set by stop()/restart() for intentional stops;
-            # if it is NOT set here the stream died on its own (e.g. file
-            # ended with no loop, playlist exhausted).
+            # Only alert if this was NOT a deliberate stop
             if not self._stop.is_set() and not self.state.oneshot_active:
                 try:
                     from hc.mailer import send_stop_alert
@@ -972,7 +969,6 @@ class StreamWorker:
             self._log(
                 f"FFmpeg error (code {ret}): {self.state.error_msg}", "ERROR"
             )
-            # ── Mail alert on error ───────────────────────────────────────────
             try:
                 from hc.mailer import send_error_alert
                 send_error_alert(
@@ -984,17 +980,17 @@ class StreamWorker:
                 )
             except Exception as _mail_exc:
                 log.debug("mailer hook error: %s", _mail_exc)
-            self._auto_restart()
+            # Only auto-restart if the stop flag is NOT set
+            if not self._stop.is_set():
+                self._auto_restart()
 
     def _apply_progress(self, data: Dict[str, str]) -> None:
         try:
             out_us = int(data.get("out_time_us", "0"))
             if out_us > 0 and self.state.duration > 0:
-                # out_time_us is relative to where FFmpeg started (i.e. the seek
-                # position).  Add the seek start so current_pos is absolute within
-                # the file, which is what resume_store needs to save correctly.
                 elapsed = out_us / 1_000_000.0
-                abs_pos = (self.state.seek_start_pos + elapsed) % self.state.duration
+                seek_start = getattr(self.state, "seek_start_pos", 0.0)
+                abs_pos = (seek_start + elapsed) % self.state.duration
                 self.state.current_pos = abs_pos
                 self.state.progress    = min(99.9, abs_pos / self.state.duration * 100.0)
             fps_raw = data.get("fps", "0")
@@ -1009,6 +1005,10 @@ class StreamWorker:
             log.debug("[%s] _apply_progress error: %s", self.state.config.name, exc)
 
     def _auto_restart(self) -> None:
+        # Guard: if stop was requested while we were preparing to restart, abort.
+        if self._stop.is_set():
+            self._log("Auto-restart skipped: stop flag is set.", "WARN")
+            return
         if self._seeking.is_set():
             self._log("Auto-restart skipped: seek in progress.", "WARN")
             return
@@ -1023,26 +1023,29 @@ class StreamWorker:
         delay = self.BACKOFF[min(n, len(self.BACKOFF) - 1)]
         self._log(f"Auto-restart #{n+1} scheduled in {delay}s …", "WARN")
         for _ in range(delay * 10):
+            # Abort countdown if stop is requested during the wait
             if self._stop.is_set() or self._seeking.is_set():
-                self._log("Auto-restart cancelled.")
+                self._log("Auto-restart cancelled during countdown.")
                 return
             time.sleep(0.1)
-        if not self._stop.is_set() and not self._seeking.is_set():
-            self.state.restart_count += 1
-            self._log(f"Auto-restart #{self.state.restart_count} starting …", "WARN")
-            self._kill_mediamtx()
-            time.sleep(0.3)
-            # Use start() normally here — _auto_restart runs in the monitor
-            # thread which never holds _start_lock, so this is safe.
-            # We use the blocking acquire (default) so if a manual restart
-            # just grabbed the lock we wait for it rather than silently skip.
-            if self._start_lock.acquire(timeout=20):
-                try:
+        # Final check before actually restarting
+        if self._stop.is_set() or self._seeking.is_set():
+            self._log("Auto-restart cancelled (stop/seek set after countdown).")
+            return
+        self.state.restart_count += 1
+        self._log(f"Auto-restart #{self.state.restart_count} starting …", "WARN")
+        self._kill_mediamtx()
+        time.sleep(0.3)
+        if self._start_lock.acquire(timeout=20):
+            try:
+                if not self._stop.is_set():
                     self._do_start()
-                finally:
-                    self._start_lock.release()
-            else:
-                self._log("Auto-restart: could not acquire start lock — skipping.", "WARN")
+                else:
+                    self._log("Auto-restart aborted: stop flag set before _do_start.", "WARN")
+            finally:
+                self._start_lock.release()
+        else:
+            self._log("Auto-restart: could not acquire start lock — skipping.", "WARN")
 
     def _kill_ffmpeg(self) -> None:
         proc = self.state.ffmpeg_proc
