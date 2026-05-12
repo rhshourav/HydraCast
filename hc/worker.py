@@ -495,7 +495,13 @@ class StreamWorker:
                     saved_pos  = float(saved.get("position", 0.0))
                     # Only resume if the saved file matches the current item
                     # and the position is meaningful (> 5 s, within duration).
-                    if (saved_file == item.file_path
+                    # Use resolve() so Windows case differences and relative
+                    # vs absolute forms don't cause false mismatches.
+                    try:
+                        paths_match = saved_file.resolve() == item.file_path.resolve()
+                    except Exception:
+                        paths_match = saved_file == item.file_path
+                    if (paths_match
                             and saved_pos > 5.0
                             and (self.state.duration <= 0
                                  or saved_pos < self.state.duration - 2.0)):
@@ -616,6 +622,10 @@ class StreamWorker:
         self.state.status        = StreamStatus.LIVE
         self.state.started_at    = __import__("datetime").datetime.now()
         self.state.restart_count = 0
+        # Ensure seek_start_pos is always set (also set in _start_ffmpeg, but
+        # guard here in case future code paths bypass it).
+        if not hasattr(self.state, "seek_start_pos"):
+            self.state.seek_start_pos = 0.0
         self._log(f"✓ LIVE → {cfg.rtsp_url}")
         if cfg.hls_enabled:
             self._log(f"  HLS  → {cfg.hls_url}")
@@ -739,6 +749,10 @@ class StreamWorker:
             f"rtsp://127.0.0.1:{cfg.port}/{cfg.rtsp_path}",
         ]
 
+        # Record the absolute seek start so _apply_progress can compute
+        # an absolute current_pos (out_time_us is relative to seek point).
+        self.state.seek_start_pos = seek_pos
+
         self._log(
             f"Launching FFmpeg | file={item.file_path.name} | "
             f"seek={_fmt_duration(seek_pos)} | "
@@ -861,7 +875,16 @@ class StreamWorker:
             self._log(f"FFmpeg stderr: {stderr_txt[:400]}", "WARN" if ret == 0 else "ERROR")
 
         # ── Save position before advancing ────────────────────────────────────
-        self._save_resume_position()
+        # Only save on clean/normal exits (ret 0 or 255=SIGTERM).  On hard errors
+        # current_pos may be 0 or stale, which would corrupt the saved position.
+        if ret in (0, 255):
+            self._save_resume_position()
+        else:
+            self._log(
+                f"Skipping resume save on error exit (code {ret}) "
+                "to avoid overwriting a valid saved position.",
+                "WARN",
+            )
 
         # ── Advance playlist (multi-file) — with watchdog skip ────────────────
         if (not self.state.oneshot_active
@@ -919,9 +942,13 @@ class StreamWorker:
         try:
             out_us = int(data.get("out_time_us", "0"))
             if out_us > 0 and self.state.duration > 0:
-                pos = (out_us / 1_000_000.0) % self.state.duration
-                self.state.current_pos = pos
-                self.state.progress    = min(99.9, pos / self.state.duration * 100.0)
+                # out_time_us is relative to where FFmpeg started (i.e. the seek
+                # position).  Add the seek start so current_pos is absolute within
+                # the file, which is what resume_store needs to save correctly.
+                elapsed = out_us / 1_000_000.0
+                abs_pos = (self.state.seek_start_pos + elapsed) % self.state.duration
+                self.state.current_pos = abs_pos
+                self.state.progress    = min(99.9, abs_pos / self.state.duration * 100.0)
             fps_raw = data.get("fps", "0")
             self.state.fps     = (
                 float(fps_raw) if fps_raw not in ("", "N/A") else 0.0
