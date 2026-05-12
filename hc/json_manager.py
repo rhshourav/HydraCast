@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hc.constants import CONFIG_DIR
+from hc.constants import CONFIGS_DIR
 from hc.folder_scanner import SortMode, scan_folder
 from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 
@@ -32,12 +32,11 @@ log = logging.getLogger(__name__)
 def _config_dir() -> Path:
     """
     Return (and create if absent) the /config sub-directory that lives next to
-    the hc package.  CONFIG_DIR() points to  <base>/config/  which stores all
-    user-facing configuration (streams.json, events.json).
-    Note: CONFIGS_DIR() is the separate <base>/configs/ folder used for
-    per-stream MediaMTX YAML fragments — do not mix these up.
+    the hc package.  CONFIGS_DIR() points to  <base>/config/  which already
+    stores the per-stream MediaMTX YAML fragments, so we reuse the same root
+    but keep our JSON files at the top level of that directory.
     """
-    d = CONFIG_DIR()
+    d = CONFIGS_DIR()
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -156,16 +155,13 @@ class JSONManager:
         """
         Load stream configurations from  config/streams.json.
 
-        Raises FileNotFoundError when the file does not exist yet (first run),
-        so the caller can show a friendly "no config" message.
+        Returns an empty list on first run (file absent) so the app starts
+        normally and streams can be added via the Web UI.
         """
         p = _streams_path()
         if not p.exists():
-            raise FileNotFoundError(
-                f"No streams configuration found at '{p}'.\n"
-                "Open the Web UI → Configure tab to create your first stream,\n"
-                "or copy an existing streams.json into the config/ directory."
-            )
+            log.info("json_manager: no streams.json yet — starting with empty config.")
+            return []
 
         try:
             raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
