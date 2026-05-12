@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hc.constants import CONFIGS_DIR
+from hc.constants import CONFIG_DIR
 from hc.folder_scanner import SortMode, scan_folder
 from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 
@@ -32,11 +32,12 @@ log = logging.getLogger(__name__)
 def _config_dir() -> Path:
     """
     Return (and create if absent) the /config sub-directory that lives next to
-    the hc package.  CONFIGS_DIR() points to  <base>/config/  which already
-    stores the per-stream MediaMTX YAML fragments, so we reuse the same root
-    but keep our JSON files at the top level of that directory.
+    the hc package.  CONFIG_DIR() points to  <base>/config/  which stores all
+    user-facing configuration (streams.json, events.json).
+    Note: CONFIGS_DIR() is the separate <base>/configs/ folder used for
+    per-stream MediaMTX YAML fragments — do not mix these up.
     """
-    d = CONFIGS_DIR()
+    d = CONFIG_DIR()
     d.mkdir(parents=True, exist_ok=True)
     return d
 
