@@ -1,56 +1,52 @@
 """
-hc/mailer.py  —  SMTP email alerts for stream errors and unexpected stops.
+hc/mailer.py  —  Email alerts for HydraCast.
 
-Configuration is read from  <BASE_DIR>/mail_config.json  on every send so
-the file can be edited without restarting HydraCast.
+Supports two sending modes, auto-detected from mail_config.json:
+  1. OAuth2 / Gmail  — no password; user clicks "Connect Gmail" in the Web UI.
+  2. SMTP            — works with Outlook, Office 365, Yahoo, custom servers.
 
 mail_config.json schema
 ────────────────────────
 {
     "enabled":       true,
-    "smtp_host":     "smtp.gmail.com",
-    "smtp_port":     587,
-    "use_tls":       true,
-    "username":      "you@gmail.com",
-    "password":      "your-app-password",
-    "from_addr":     "you@gmail.com",
-    "to_addrs":      ["ops@example.com", "backup@example.com"],
+    "mode":          "gmail_oauth2",   ← "gmail_oauth2"  OR  "smtp"
+    "to_addrs":      ["ops@example.com"],
     "on_error":      true,
     "on_stop":       true,
-    "cooldown_secs": 300
+    "cooldown_secs": 300,
+
+    // ── Gmail OAuth2 only ──────────────────────────────────────────────────
+    "oauth2_token_file": "gmail_token.json",   ← written by the auth flow
+
+    // ── SMTP only ──────────────────────────────────────────────────────────
+    "smtp_host":  "smtp.office365.com",
+    "smtp_port":  587,
+    "use_tls":    true,
+    "username":   "you@outlook.com",
+    "password":   "your-app-password",
+    "from_addr":  "you@outlook.com"
 }
 
-Fields
-──────
-enabled        Master switch.  Set false to silence all alerts without
-               removing the config file.
-smtp_host      SMTP server hostname.
-smtp_port      Usually 587 (STARTTLS) or 465 (SSL).
-use_tls        true  → STARTTLS on port 587 (recommended)
-               false → plain SMTP or implicit SSL on port 465
-               For port 465 set use_tls: false and the module will use
-               smtplib.SMTP_SSL automatically.
-username       Login username (often the same as from_addr).
-password       App password or SMTP password.  For Gmail create an
-               App Password at myaccount.google.com/apppasswords.
-from_addr      Envelope / display From address.
-to_addrs       List of recipient addresses.
-on_error       Send alert when a stream enters ERROR status.
-on_stop        Send alert when a stream stops unexpectedly (non-zero exit).
-cooldown_secs  Minimum seconds between two alerts for the same stream.
-               Prevents alert floods during repeated auto-restart cycles.
-               Default 300 s (5 min).  Set 0 to disable cooldown.
+Gmail quick-start (OAuth2)
+──────────────────────────
+1. Put client_secret_*.json (downloaded from Google Cloud Console) in the
+   HydraCast base directory — rename it to  gmail_client_secret.json.
+2. Open the Web UI → Settings → Mail Alerts → click  "Connect Gmail".
+   A browser tab opens; sign in and approve access.
+3. The token is saved automatically; no passwords needed ever again.
 
-Gmail quick-start
-─────────────────
-1. Enable 2-Step Verification on your Google account.
-2. Go to myaccount.google.com/apppasswords → create a password for
-   "HydraCast".
-3. Set smtp_host: "smtp.gmail.com", smtp_port: 587, use_tls: true,
-   username/from_addr to your Gmail address, password to the app password.
+SMTP quick-start (Outlook / Yahoo / custom)
+────────────────────────────────────────────
+Set mode="smtp" and fill in smtp_host, smtp_port, username, password,
+from_addr.  For Outlook.com: host=smtp-mail.outlook.com port=587 use_tls=true.
+For Office 365:              host=smtp.office365.com    port=587 use_tls=true.
+For Yahoo:                   host=smtp.mail.yahoo.com   port=587 use_tls=true.
+For Gmail SMTP (fallback):   host=smtp.gmail.com        port=587 use_tls=true
+                             password = 16-char App Password (not account pw).
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import smtplib
@@ -65,13 +61,17 @@ from typing import Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
-# Module-level cooldown tracker: stream_name → last_sent_timestamp
+# ── Cooldown tracker ──────────────────────────────────────────────────────────
 _cooldown: Dict[str, float] = {}
 _cooldown_lock = threading.Lock()
 
-# ── Config template written on first run ──────────────────────────────────────
+# ── OAuth2 scopes needed ──────────────────────────────────────────────────────
+_GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+
+# ── Default config template (SMTP mode) ──────────────────────────────────────
 _CONFIG_TEMPLATE = {
     "enabled":       False,
+    "mode":          "smtp",
     "smtp_host":     "smtp.gmail.com",
     "smtp_port":     587,
     "use_tls":       True,
@@ -85,17 +85,40 @@ _CONFIG_TEMPLATE = {
 }
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# PATH HELPERS
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _base() -> Path:
+    from hc.constants import BASE_DIR
+    return BASE_DIR()
 
 def _config_path() -> Path:
-    from hc.constants import BASE_DIR
-    return BASE_DIR() / "mail_config.json"
+    return _base() / "mail_config.json"
 
+def _client_secret_path() -> Optional[Path]:
+    """Find any gmail_client_secret.json or client_secret_*.json in BASE_DIR."""
+    base = _base()
+    for name in ["gmail_client_secret.json"]:
+        p = base / name
+        if p.exists():
+            return p
+    matches = sorted(base.glob("client_secret_*.json"))
+    return matches[0] if matches else None
+
+def _token_path(cfg: dict) -> Path:
+    return _base() / cfg.get("oauth2_token_file", "gmail_token.json")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CONFIG LOADING
+# ═════════════════════════════════════════════════════════════════════════════
 
 def _load_config() -> Optional[dict]:
     """
-    Load and return the mail config dict, or None if disabled / missing.
-    Creates a template file on first call so the operator knows what to fill in.
+    Load and validate mail_config.json.
+    Returns None if disabled or invalid (already logged).
+    Creates a template on first run.
     """
     path = _config_path()
 
@@ -123,22 +146,37 @@ def _load_config() -> Optional[dict]:
     if not cfg.get("enabled", False):
         return None
 
-    required = ("smtp_host", "smtp_port", "username", "password",
-                "from_addr", "to_addrs")
-    for key in required:
-        if not cfg.get(key):
-            log.warning("mailer: mail_config.json missing required field '%s'", key)
-            return None
-
-    if not isinstance(cfg["to_addrs"], list) or not cfg["to_addrs"]:
+    if not isinstance(cfg.get("to_addrs"), list) or not cfg["to_addrs"]:
         log.warning("mailer: to_addrs must be a non-empty list")
         return None
 
+    mode = cfg.get("mode", "smtp")
+
+    if mode == "gmail_oauth2":
+        token_p = _token_path(cfg)
+        if not token_p.exists():
+            log.warning(
+                "mailer: Gmail OAuth2 mode selected but token file not found at %s. "
+                "Open the Web UI → Settings → Mail Alerts → Connect Gmail.",
+                token_p,
+            )
+            return None
+        return cfg
+
+    # SMTP mode — validate required fields
+    required = ("smtp_host", "smtp_port", "username", "password", "from_addr")
+    for key in required:
+        if not cfg.get(key):
+            log.warning("mailer: mail_config.json missing required SMTP field '%s'", key)
+            return None
     return cfg
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# COOLDOWN
+# ═════════════════════════════════════════════════════════════════════════════
+
 def _in_cooldown(stream_name: str, cooldown_secs: float) -> bool:
-    """Return True and log if the stream is still in its cooldown window."""
     if cooldown_secs <= 0:
         return False
     now = time.monotonic()
@@ -155,19 +193,22 @@ def _in_cooldown(stream_name: str, cooldown_secs: float) -> bool:
     return False
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# MESSAGE BUILDER
+# ═════════════════════════════════════════════════════════════════════════════
+
 def _build_message(
-    cfg: dict,
+    from_addr: str,
+    to_addrs: List[str],
     subject: str,
     body_lines: List[str],
 ) -> MIMEMultipart:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = cfg["from_addr"]
-    msg["To"]      = ", ".join(cfg["to_addrs"])
+    msg["From"]    = from_addr
+    msg["To"]      = ", ".join(to_addrs)
 
-    # Plain-text part
     plain = "\n".join(body_lines)
-    # HTML part — simple but readable
     html_rows = "".join(
         f"<tr><td style='padding:4px 8px;color:#888'>{ln}</td></tr>"
         if ln.startswith("  ") else
@@ -192,24 +233,77 @@ def _build_message(
     return msg
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# GMAIL OAUTH2 SENDER
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _send_gmail_oauth2(cfg: dict, msg: MIMEMultipart) -> None:
+    """Send via Gmail API using a stored OAuth2 token. Raises on failure."""
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+        from googleapiclient.errors import HttpError
+    except ImportError:
+        raise RuntimeError(
+            "Google API libraries not installed. "
+            "Run: pip install google-auth google-auth-oauthlib google-api-python-client"
+        )
+
+    token_p = _token_path(cfg)
+    creds = Credentials.from_authorized_user_file(str(token_p), _GMAIL_SCOPES)
+
+    # Refresh if expired
+    if creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            token_p.write_text(creds.to_json(), encoding="utf-8")
+            log.info("mailer: Gmail OAuth2 token refreshed.")
+        except Exception as exc:
+            raise RuntimeError(f"Token refresh failed — re-authenticate via Web UI: {exc}") from exc
+
+    if not creds.valid:
+        raise RuntimeError(
+            "Gmail OAuth2 token is invalid. "
+            "Re-authenticate via Web UI → Settings → Mail Alerts → Connect Gmail."
+        )
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+    try:
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+        service.users().messages().send(
+            userId="me", body={"raw": raw}
+        ).execute()
+        log.info(
+            "mailer: Gmail OAuth2 alert sent to %s",
+            ", ".join(cfg["to_addrs"]),
+        )
+    except HttpError as exc:
+        raise RuntimeError(f"Gmail API error: {exc}") from exc
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SMTP SENDER  (Outlook, Yahoo, Office365, Gmail-SMTP, custom)
+# ═════════════════════════════════════════════════════════════════════════════
+
 def _send_smtp(cfg: dict, msg: MIMEMultipart) -> None:
-    """Open an SMTP connection, authenticate, and send *msg*."""
-    host      = cfg["smtp_host"]
-    port      = int(cfg["smtp_port"])
-    use_tls   = cfg.get("use_tls", True)
-    username  = cfg["username"]
-    password  = cfg["password"]
-    to_addrs  = cfg["to_addrs"]
-    timeout   = 15  # seconds
+    """Send via SMTP. Raises on any failure so callers know what happened."""
+    host     = cfg["smtp_host"]
+    port     = int(cfg["smtp_port"])
+    use_tls  = cfg.get("use_tls", True)
+    username = cfg["username"]
+    password = cfg["password"]
+    to_addrs = cfg["to_addrs"]
+    timeout  = 20  # seconds
 
     try:
         if not use_tls and port == 465:
-            # Implicit SSL (port 465)
+            # Implicit SSL
             with smtplib.SMTP_SSL(host, port, timeout=timeout) as server:
                 server.login(username, password)
                 server.sendmail(cfg["from_addr"], to_addrs, msg.as_string())
         else:
-            # STARTTLS (port 587) or plain (rare)
+            # STARTTLS (587) or plain fallback
             with smtplib.SMTP(host, port, timeout=timeout) as server:
                 server.ehlo()
                 if use_tls:
@@ -219,16 +313,45 @@ def _send_smtp(cfg: dict, msg: MIMEMultipart) -> None:
                 server.sendmail(cfg["from_addr"], to_addrs, msg.as_string())
 
         log.info(
-            "mailer: alert sent to %s via %s:%d",
+            "mailer: SMTP alert sent to %s via %s:%d",
             ", ".join(to_addrs), host, port,
         )
+
     except smtplib.SMTPAuthenticationError as exc:
-        log.error("mailer: SMTP authentication failed — check username/password: %s", exc)
-    except (smtplib.SMTPException, socket.error, OSError) as exc:
-        log.error("mailer: SMTP send failed (%s:%d): %s", host, port, exc)
+        raise RuntimeError(
+            f"SMTP authentication failed ({host}:{port}). "
+            "For Gmail use an App Password, not your account password. "
+            f"Detail: {exc}"
+        ) from exc
+    except smtplib.SMTPException as exc:
+        raise RuntimeError(f"SMTP error ({host}:{port}): {exc}") from exc
+    except (socket.timeout, OSError) as exc:
+        raise RuntimeError(f"Network error reaching {host}:{port}: {exc}") from exc
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# UNIFIED SEND DISPATCHER
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _dispatch(cfg: dict, subject: str, body_lines: List[str]) -> None:
+    """Build the message and send via the configured mode. Raises on failure."""
+    mode = cfg.get("mode", "smtp")
+    from_addr = (
+        "HydraCast <me>"
+        if mode == "gmail_oauth2"
+        else cfg.get("from_addr", cfg.get("username", ""))
+    )
+    msg = _build_message(from_addr, cfg["to_addrs"], subject, body_lines)
+
+    if mode == "gmail_oauth2":
+        _send_gmail_oauth2(cfg, msg)
+    else:
+        _send_smtp(cfg, msg)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PUBLIC API  (fire-and-forget threads)
+# ═════════════════════════════════════════════════════════════════════════════
 
 def send_error_alert(
     stream_name: str,
@@ -237,10 +360,7 @@ def send_error_alert(
     exit_code: int,
     stderr_snippet: str = "",
 ) -> None:
-    """
-    Send an alert email when a stream enters ERROR state.
-    Runs in a background thread so it never blocks the worker.
-    """
+    """Send an alert when a stream enters ERROR state (background thread)."""
     threading.Thread(
         target=_send_error_alert,
         args=(stream_name, port, error_msg, exit_code, stderr_snippet),
@@ -254,10 +374,7 @@ def send_stop_alert(
     port: int,
     reason: str = "Unexpected stop",
 ) -> None:
-    """
-    Send an alert email when a stream stops unexpectedly.
-    Runs in a background thread so it never blocks the worker.
-    """
+    """Send an alert when a stream stops unexpectedly (background thread)."""
     threading.Thread(
         target=_send_stop_alert,
         args=(stream_name, port, reason),
@@ -266,7 +383,9 @@ def send_stop_alert(
     ).start()
 
 
-# ── Internal implementations (run in daemon threads) ─────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# INTERNAL IMPLEMENTATIONS  (run in daemon threads)
+# ═════════════════════════════════════════════════════════════════════════════
 
 def _send_error_alert(
     stream_name: str,
@@ -309,15 +428,13 @@ def _send_error_alert(
         "Check the TUI event log or hydracast.log for details.",
     ]
 
-    msg = _build_message(cfg, subject, body_lines)
-    _send_smtp(cfg, msg)
+    try:
+        _dispatch(cfg, subject, body_lines)
+    except Exception as exc:
+        log.error("mailer: failed to send error alert for '%s': %s", stream_name, exc)
 
 
-def _send_stop_alert(
-    stream_name: str,
-    port: int,
-    reason: str,
-) -> None:
+def _send_stop_alert(stream_name: str, port: int, reason: str) -> None:
     cfg = _load_config()
     if cfg is None:
         return
@@ -343,23 +460,29 @@ def _send_stop_alert(
         "Use the TUI (key R) or Web UI to restart it immediately.",
     ]
 
-    msg = _build_message(cfg, subject, body_lines)
-    _send_smtp(cfg, msg)
+    try:
+        _dispatch(cfg, subject, body_lines)
+    except Exception as exc:
+        log.error("mailer: failed to send stop alert for '%s': %s", stream_name, exc)
 
 
-def test_alert(to_addr: Optional[str] = None) -> bool:
+# ═════════════════════════════════════════════════════════════════════════════
+# TEST ALERT  (called from Web UI — returns True/False + error string)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_alert(to_addr: Optional[str] = None) -> tuple[bool, str]:
     """
-    Send a test email using the current config.  Returns True on success.
-    Useful from the web UI or CLI for verifying SMTP settings.
+    Send a test email. Returns (True, "") on success or (False, error_message).
+    Called synchronously from the Web UI handler.
     """
     cfg = _load_config()
     if cfg is None:
-        log.warning("mailer: test_alert — no valid config (enabled=false or missing)")
-        return False
+        msg = "Mail alerts are disabled or mail_config.json is missing/invalid."
+        log.warning("mailer: test_alert — %s", msg)
+        return False, msg
 
-    override_to = [to_addr] if to_addr else None
-    if override_to:
-        cfg = dict(cfg, to_addrs=override_to)
+    if to_addr:
+        cfg = dict(cfg, to_addrs=[to_addr])
 
     subject = "✅ HydraCast — mail alert test"
     now     = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -368,13 +491,110 @@ def test_alert(to_addr: Optional[str] = None) -> bool:
         "",
         f"  Time : {now}",
         f"  Host : {socket.gethostname()}",
+        f"  Mode : {cfg.get('mode', 'smtp').upper()}",
         "",
-        "If you received this, your SMTP configuration is working correctly.",
+        "If you received this, your mail configuration is working correctly.",
     ]
-    msg = _build_message(cfg, subject, body_lines)
+
     try:
-        _send_smtp(cfg, msg)
-        return True
+        _dispatch(cfg, subject, body_lines)
+        return True, ""
     except Exception as exc:
         log.error("mailer: test_alert failed: %s", exc)
-        return False
+        return False, str(exc)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GMAIL OAUTH2 FLOW  (called from Web UI to kick off browser auth)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def start_gmail_oauth2_flow() -> tuple[bool, str]:
+    """
+    Starts the OAuth2 authorization flow.
+
+    - Looks for gmail_client_secret.json (or any client_secret_*.json) in BASE_DIR.
+    - Opens a local server on a random port to catch the redirect.
+    - Saves the token to gmail_token.json.
+    - Returns (True, auth_url) so the Web UI can open the browser, OR
+      (False, error_message) if something went wrong before we get a URL.
+
+    The flow runs in a background thread; poll get_oauth2_flow_status() for result.
+    """
+    try:
+        from google_auth_oauthlib.flow import InstalledAppFlow
+    except ImportError:
+        return False, (
+            "google-auth-oauthlib not installed. "
+            "Run: pip install google-auth google-auth-oauthlib google-api-python-client"
+        )
+
+    secret = _client_secret_path()
+    if secret is None:
+        return False, (
+            "Client secret file not found in the HydraCast base directory. "
+            "Download it from Google Cloud Console and save it as gmail_client_secret.json."
+        )
+
+    # Determine token output path from config (or default)
+    try:
+        cfg = json.loads(_config_path().read_text(encoding="utf-8"))
+    except Exception:
+        cfg = {}
+    token_p = _base() / cfg.get("oauth2_token_file", "gmail_token.json")
+
+    def _run_flow() -> None:
+        global _oauth2_flow_status, _oauth2_flow_error
+        try:
+            flow = InstalledAppFlow.from_client_secrets_file(str(secret), _GMAIL_SCOPES)
+            creds = flow.run_local_server(port=0, open_browser=True)
+            token_p.write_text(creds.to_json(), encoding="utf-8")
+            log.info("mailer: Gmail OAuth2 token saved to %s", token_p)
+            _oauth2_flow_status = "done"
+            _oauth2_flow_error  = ""
+        except Exception as exc:
+            log.error("mailer: OAuth2 flow failed: %s", exc)
+            _oauth2_flow_status = "error"
+            _oauth2_flow_error  = str(exc)
+
+    _oauth2_flow_status = "running"
+    _oauth2_flow_error  = ""
+    threading.Thread(target=_run_flow, daemon=True, name="gmail-oauth2-flow").start()
+    return True, (
+        "Browser window opened for Google sign-in. "
+        "Complete the sign-in then return here and click 'Check Status'."
+    )
+
+
+# Shared state for the OAuth2 flow thread
+_oauth2_flow_status: str = "idle"   # "idle" | "running" | "done" | "error"
+_oauth2_flow_error:  str = ""
+
+
+def get_oauth2_flow_status() -> dict:
+    """Return current OAuth2 flow status for the Web UI to poll."""
+    token_exists = False
+    try:
+        cfg = json.loads(_config_path().read_text(encoding="utf-8"))
+        token_exists = _token_path(cfg).exists()
+    except Exception:
+        pass
+    return {
+        "status":       _oauth2_flow_status,
+        "error":        _oauth2_flow_error,
+        "token_exists": token_exists,
+    }
+
+
+def revoke_gmail_token() -> tuple[bool, str]:
+    """Delete the stored Gmail OAuth2 token."""
+    try:
+        cfg = json.loads(_config_path().read_text(encoding="utf-8"))
+        p   = _token_path(cfg)
+    except Exception:
+        p = _base() / "gmail_token.json"
+
+    if p.exists():
+        p.unlink()
+        log.info("mailer: Gmail token revoked (%s deleted).", p)
+        return True, "Gmail account disconnected."
+    return False, "No token file found."
