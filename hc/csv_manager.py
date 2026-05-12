@@ -301,7 +301,11 @@ class CSVManager:
                 )
 
         if not configs:
-            raise ValueError("No valid streams in streams.csv.")
+            logging.warning(
+                "CSV: No valid streams in streams.csv — "
+                "starting in web-only mode. "
+                "Use the Web UI → Configure tab to add streams."
+            )
         return configs
 
     @classmethod
