@@ -383,14 +383,12 @@ class StreamWorker:
         self._log(f"Current file: {item.file_path}")
 
         # ── Folder-as-playlist resolution ─────────────────────────────────────
-        # If the path is a directory (or doesn't exist as a file), scan it and
-        # replace the playlist with whatever the scanner finds.  This makes the
-        # folder-scan feature robust: the CSV can point to a folder and the
-        # worker will expand it on every start.
+        # Determine the scan root: prefer cfg.folder_source (set on first scan
+        # and preserved across restarts) so every start re-scans the folder and
+        # picks up newly added or removed files.
         resolved_path = item.file_path
 
-        # If the path is relative (e.g. bare "media" from the CSV) and doesn't
-        # resolve as-is, try anchoring it under MEDIA_DIR.
+        # If the path is relative and doesn't exist as-is, anchor under MEDIA_DIR.
         if not resolved_path.is_absolute() and not resolved_path.exists():
             try:
                 from hc.constants import MEDIA_DIR
@@ -403,31 +401,45 @@ class StreamWorker:
                         "INFO",
                     )
             except Exception as exc:
-                self._log(f"Could not resolve relative path against MEDIA_DIR: {exc}", "WARN")
+                self._log(
+                    f"Could not resolve relative path against MEDIA_DIR: {exc}", "WARN"
+                )
 
-        if resolved_path.is_dir():
+        # Use the remembered folder_source if present (ensures re-scan on restart).
+        folder_root: Optional[Path] = cfg.folder_source
+        if folder_root is None and resolved_path.is_dir():
+            folder_root = resolved_path
+
+        if folder_root is not None:
             self._log(
-                f"Path is a directory — scanning for media files: {resolved_path}",
+                f"Folder source detected — re-scanning for media files: {folder_root}",
                 "INFO",
             )
             try:
                 from hc.folder_scanner import scan_folder
-                scanned_items, warnings = scan_folder(resolved_path)
+                scanned_items, warnings = scan_folder(folder_root)
                 for w in warnings:
                     self._log(f"Folder scanner: {w}", "WARN")
                 if not scanned_items:
                     self.state.status    = StreamStatus.ERROR
-                    self.state.error_msg = f"No supported media files in folder: {resolved_path}"
+                    self.state.error_msg = (
+                        f"No supported media files in folder: {folder_root}"
+                    )
                     self._log(self.state.error_msg, "ERROR")
                     return False
-                # Replace the in-memory playlist with discovered files and rebuild order
+                # Persist folder_source so every future restart re-scans.
+                cfg.folder_source = folder_root
+                # Replace the in-memory playlist and rebuild order from scratch
+                # so newly added files are included and removed ones are dropped.
                 cfg.playlist = scanned_items
                 self.state.playlist_index = 0
                 self.state.playlist_order = self._build_order()
                 item = self._current_item()
                 if item is None:
                     self.state.status    = StreamStatus.ERROR
-                    self.state.error_msg = "Folder scan succeeded but could not pick first item"
+                    self.state.error_msg = (
+                        "Folder scan succeeded but could not pick first item"
+                    )
                     self._log(self.state.error_msg, "ERROR")
                     return False
                 resolved_path = item.file_path
@@ -453,7 +465,7 @@ class StreamWorker:
             self._log(self.state.error_msg, "ERROR")
             return False
 
-        # Re-point item to the resolved path so the rest of _do_start uses it
+        # Re-point item to the resolved path so the rest of _do_start uses it.
         item = PlaylistItem(
             file_path=resolved_path,
             start_position=item.start_position,
