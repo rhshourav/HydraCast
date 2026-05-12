@@ -803,9 +803,13 @@ select option{background:var(--bg3)}
           style="padding:8px 18px;font-size:12px">
           <span class="tab-dot"></span>Gmail (OAuth2)
         </button>
+        <button id="ml-tab-ms" class="nav-tab" onclick="switchMailMode('microsoft_oauth2')"
+          style="padding:8px 18px;font-size:12px">
+          <span class="tab-dot"></span>Microsoft (OAuth2)
+        </button>
         <button id="ml-tab-smtp" class="nav-tab" onclick="switchMailMode('smtp')"
           style="padding:8px 18px;font-size:12px">
-          <span class="tab-dot"></span>SMTP (Outlook / Other)
+          <span class="tab-dot"></span>SMTP (Yahoo / Custom)
         </button>
       </div>
       <input type="hidden" id="ml-mode" value="gmail_oauth2">
@@ -829,24 +833,58 @@ select option{background:var(--bg3)}
         </div>
       </div>
 
+      <!-- ── Microsoft OAuth2 panel ── -->
+      <div id="ml-panel-ms" style="display:none">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.8">
+          <b style="color:var(--yellow)">⚡ Recommended for Outlook.com / Office 365</b> — fixes the<br>
+          <code style="color:var(--red)">"5.7.139 basic authentication is disabled"</code> SMTP error.<br>
+          Requires <code style="color:var(--cyan)">pip install msal</code> and a free Azure App Registration.<br>
+          <a href="https://portal.azure.com" target="_blank" style="color:var(--blue)">portal.azure.com</a>
+          → App registrations → New → API permissions → Microsoft Graph → Delegated → Mail.Send
+        </div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+          <div class="fg">
+            <label>Application (Client) ID</label>
+            <input id="ml-ms-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+          </div>
+          <div class="fg">
+            <label>Your Mailbox Address</label>
+            <input id="ml-ms-username" placeholder="you@outlook.com">
+          </div>
+        </div>
+        <div id="ml-ms-status-box" style="padding:10px 14px;border-radius:8px;background:var(--bg3);
+            border:1px solid var(--border);font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+          <span id="ml-ms-dot" style="width:9px;height:9px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
+          <span id="ml-ms-label">Not connected</span>
+          <button class="btn b" style="margin-left:auto" onclick="connectMicrosoft()">🔗 Connect Microsoft</button>
+          <button class="btn r" id="ml-ms-revoke" style="display:none" onclick="revokeMicrosoft()">✕ Disconnect</button>
+        </div>
+        <div id="ml-ms-device-box" style="display:none;background:var(--bg3);border:1px solid rgba(251,191,36,0.5);
+            border-radius:8px;padding:14px;margin-bottom:14px;font-size:12px">
+          <div style="color:var(--yellow);font-weight:600;margin-bottom:8px">🔐 Device Sign-in Required</div>
+          <div>1. Open <a id="ml-ms-uri" href="https://microsoft.com/devicelogin" target="_blank" style="color:var(--blue)">https://microsoft.com/devicelogin</a></div>
+          <div style="margin:6px 0">2. Enter code: <code id="ml-ms-code" style="color:var(--cyan);font-size:15px;font-weight:700;letter-spacing:3px">——————</code></div>
+          <div style="color:var(--text3)">3. Sign in, then click Check Status below.</div>
+          <button class="btn" style="margin-top:10px" onclick="checkMsOAuthStatus()">↻ Check Status</button>
+        </div>
+      </div>
+
       <!-- ── SMTP panel ── -->
       <div id="ml-panel-smtp" style="display:none">
         <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.8">
-          Works with Outlook, Office 365, Yahoo, or any SMTP server.<br>
-          For Gmail SMTP use an <b>App Password</b> (not your account password).
+          Works with Yahoo, custom SMTP servers, or Gmail App Password.<br>
+          <b style="color:var(--red)">⚠ Outlook.com / Office 365</b> — use the <b>Microsoft (OAuth2)</b> tab instead; basic SMTP auth is permanently disabled.
         </div>
         <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;
             font-size:11px;color:var(--text3);margin-bottom:14px">
           <b style="color:var(--text2)">Quick presets:</b>&nbsp;
-          <button class="btn" onclick="smtpPreset('outlook')" style="font-size:10px">Outlook.com</button>
-          <button class="btn" onclick="smtpPreset('office365')" style="font-size:10px">Office 365</button>
           <button class="btn" onclick="smtpPreset('yahoo')" style="font-size:10px">Yahoo</button>
           <button class="btn" onclick="smtpPreset('gmail')" style="font-size:10px">Gmail SMTP</button>
         </div>
         <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:12px">
           <div class="fg">
             <label>SMTP Host</label>
-            <input id="ml-host" placeholder="smtp.office365.com">
+            <input id="ml-host" placeholder="smtp.mail.yahoo.com">
           </div>
           <div class="fg">
             <label>SMTP Port</label>
@@ -854,7 +892,7 @@ select option{background:var(--bg3)}
           </div>
           <div class="fg">
             <label>Username</label>
-            <input id="ml-user" placeholder="you@outlook.com" autocomplete="username">
+            <input id="ml-user" placeholder="you@yahoo.com" autocomplete="username">
           </div>
           <div class="fg">
             <label>Password / App Password</label>
@@ -862,7 +900,7 @@ select option{background:var(--bg3)}
           </div>
           <div class="fg">
             <label>From Address</label>
-            <input id="ml-from" placeholder="you@outlook.com">
+            <input id="ml-from" placeholder="you@yahoo.com">
           </div>
         </div>
         <div style="display:flex;gap:16px;margin-bottom:12px">
@@ -872,7 +910,7 @@ select option{background:var(--bg3)}
         </div>
       </div>
 
-      <!-- ── Shared settings (both modes) ── -->
+            <!-- ── Shared settings (both modes) ── -->
       <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
         <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-bottom:12px">
           <div class="fg">
@@ -1590,10 +1628,14 @@ function smtpPreset(key){
 function switchMailMode(mode){
   document.getElementById('ml-mode').value=mode;
   const isGmail=(mode==='gmail_oauth2');
+  const isMs=(mode==='microsoft_oauth2');
+  const isSmtp=(mode==='smtp');
   document.getElementById('ml-panel-gmail').style.display=isGmail?'':'none';
-  document.getElementById('ml-panel-smtp').style.display=isGmail?'none':'';
+  document.getElementById('ml-panel-ms').style.display=isMs?'':'none';
+  document.getElementById('ml-panel-smtp').style.display=isSmtp?'':'none';
   document.getElementById('ml-tab-gmail').classList.toggle('active',isGmail);
-  document.getElementById('ml-tab-smtp').classList.toggle('active',!isGmail);
+  document.getElementById('ml-tab-ms').classList.toggle('active',isMs);
+  document.getElementById('ml-tab-smtp').classList.toggle('active',isSmtp);
 }
 
 function _setGmailUI(tokenExists){
@@ -1627,6 +1669,11 @@ async function loadMailConfig(){
     document.getElementById('ml-from').value=d.from_addr||'';
     document.getElementById('ml-tls').checked=d.use_tls!==false;
 
+    // Microsoft OAuth2 fields
+    document.getElementById('ml-ms-client-id').value=d.ms_client_id||'';
+    document.getElementById('ml-ms-username').value=d.ms_username||'';
+    _setMsUI(!!d.ms_token_exists);
+
     // Shared fields
     document.getElementById('ml-to').value=(d.to_addrs||[]).join(', ');
     document.getElementById('ml-cooldown').value=d.cooldown_secs??300;
@@ -1634,7 +1681,7 @@ async function loadMailConfig(){
     document.getElementById('ml-on-error').checked=d.on_error!==false;
     document.getElementById('ml-on-stop').checked=d.on_stop!==false;
 
-    // OAuth2 status
+    // Gmail OAuth2 status
     _setGmailUI(!!d.oauth2_token_exists);
 
     document.getElementById('ml-status').textContent='✓ Config loaded from mail_config.json';
@@ -1644,7 +1691,6 @@ async function loadMailConfig(){
     document.getElementById('ml-status').style.color='var(--red)';
   }
 }
-
 async function saveMailConfig(){
   const toRaw=document.getElementById('ml-to').value;
   const toList=toRaw.split(',').map(s=>s.trim()).filter(Boolean);
@@ -1657,13 +1703,16 @@ async function saveMailConfig(){
     on_error:document.getElementById('ml-on-error').checked,
     on_stop:document.getElementById('ml-on-stop').checked,
     cooldown_secs:parseInt(document.getElementById('ml-cooldown').value)||300,
-    // SMTP fields (ignored by server when mode=gmail_oauth2)
+    // SMTP fields (kept in file for easy switching)
     smtp_host:document.getElementById('ml-host').value.trim(),
     smtp_port:parseInt(document.getElementById('ml-port').value)||587,
     use_tls:document.getElementById('ml-tls').checked,
     username:document.getElementById('ml-user').value.trim(),
     password:document.getElementById('ml-pass').value,
     from_addr:document.getElementById('ml-from').value.trim(),
+    // Microsoft OAuth2 fields
+    ms_client_id:document.getElementById('ml-ms-client-id').value.trim(),
+    ms_username:document.getElementById('ml-ms-username').value.trim(),
   };
   try{
     const r=await fetch('/api/save_mail_config',{
@@ -1738,6 +1787,87 @@ async function revokeGmail(){
     const j=await r.json();
     toast(j.msg||(j.ok?'Disconnected':'Error'),j.ok?'ok':'err');
     if(j.ok) _setGmailUI(false);
+    document.getElementById('ml-status').textContent=j.msg;
+    document.getElementById('ml-status').style.color=j.ok?'var(--green)':'var(--red)';
+  }catch(e){toast('Revoke failed','err');}
+}
+
+
+function _setMsUI(tokenExists){
+  const dot=document.getElementById('ml-ms-dot');
+  const lbl=document.getElementById('ml-ms-label');
+  const rev=document.getElementById('ml-ms-revoke');
+  if(!dot)return;
+  if(tokenExists){
+    dot.style.background='var(--green)';
+    lbl.textContent='Connected — Microsoft account authorised';
+    rev.style.display='';
+  } else {
+    dot.style.background='var(--text3)';
+    lbl.textContent='Not connected';
+    rev.style.display='none';
+  }
+}
+
+async function connectMicrosoft(){
+  const clientId=document.getElementById('ml-ms-client-id').value.trim();
+  const username=document.getElementById('ml-ms-username').value.trim();
+  if(!clientId){toast('Enter Application (Client) ID first','err');return;}
+  if(!username){toast('Enter your mailbox address first','err');return;}
+  // Save config first so the server has client_id
+  await saveMailConfig();
+  const st=document.getElementById('ml-status');
+  st.textContent='Starting Microsoft device-code flow…';st.style.color='var(--yellow)';
+  try{
+    const r=await fetch('/api/microsoft_oauth2_start',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ms_client_id:clientId,ms_username:username})
+    });
+    const j=await r.json();
+    if(j.ok){
+      const box=document.getElementById('ml-ms-device-box');
+      box.style.display='';
+      if(j.user_code) document.getElementById('ml-ms-code').textContent=j.user_code;
+      if(j.verification_uri){
+        const a=document.getElementById('ml-ms-uri');
+        a.href=j.verification_uri; a.textContent=j.verification_uri;
+      }
+      st.textContent='Enter the code at the URL shown above, then click Check Status.';
+      st.style.color='var(--yellow)';
+    } else {
+      st.textContent='✕ '+j.msg;st.style.color='var(--red)';
+      toast(j.msg,'err');
+    }
+  }catch(e){toast('Connect failed','err');}
+}
+
+async function checkMsOAuthStatus(){
+  try{
+    const r=await fetch('/api/microsoft_oauth2_status').then(res=>res.json());
+    const st=document.getElementById('ml-status');
+    const box=document.getElementById('ml-ms-device-box');
+    if(r.status==='done'||r.token_exists){
+      box.style.display='none';
+      _setMsUI(true);
+      st.textContent='✓ Microsoft connected successfully!';st.style.color='var(--green)';
+      toast('Microsoft connected!','ok');
+    } else if(r.status==='error'){
+      box.style.display='none';
+      st.textContent='✕ Auth failed: '+r.error;st.style.color='var(--red)';
+      toast('Microsoft OAuth2 failed','err');
+    } else {
+      st.textContent='Still waiting for sign-in…';st.style.color='var(--yellow)';
+    }
+  }catch(e){toast('Status check failed','err');}
+}
+
+async function revokeMicrosoft(){
+  if(!confirm('Disconnect Microsoft? You will need to re-authorise to send alerts.'))return;
+  try{
+    const r=await fetch('/api/microsoft_oauth2_revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const j=await r.json();
+    toast(j.msg||(j.ok?'Disconnected':'Error'),j.ok?'ok':'err');
+    if(j.ok){_setMsUI(false);document.getElementById('ml-ms-device-box').style.display='none';}
     document.getElementById('ml-status').textContent=j.msg;
     document.getElementById('ml-status').style.color=j.ok?'var(--green)':'var(--red)';
   }catch(e){toast('Revoke failed','err');}
@@ -1949,8 +2079,9 @@ class WebHandler(BaseHTTPRequestHandler):
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
             "/api/stream_view":    lambda: self._get_stream_view(qs),
-            "/api/mail_config":         self._get_mail_config,
-            "/api/gmail_oauth2_status": self._get_gmail_oauth2_status,
+            "/api/mail_config":              self._get_mail_config,
+            "/api/gmail_oauth2_status":      self._get_gmail_oauth2_status,
+            "/api/microsoft_oauth2_status":  self._get_ms_oauth2_status,
         }
 
         handler = routes.get(path)
@@ -2214,15 +2345,25 @@ class WebHandler(BaseHTTPRequestHandler):
                 from hc.mailer import get_oauth2_flow_status
                 status = get_oauth2_flow_status()
                 cfg["oauth2_token_exists"] = status["token_exists"]
+                # Add Microsoft OAuth2 token status
+                try:
+                    from hc.mailer import get_microsoft_oauth2_status
+                    ms_status = get_microsoft_oauth2_status(cfg)
+                    cfg["ms_token_exists"] = ms_status.get("token_exists", False)
+                except Exception:
+                    cfg["ms_token_exists"] = False
                 self._json(cfg)
             else:
                 # Return template defaults so the form is pre-filled sensibly.
                 self._json({
-                    "enabled": False, "smtp_host": "smtp.gmail.com",
+                    "enabled": False, "mode": "smtp",
+                    "smtp_host": "smtp.gmail.com",
                     "smtp_port": 587, "use_tls": True,
                     "username": "", "password": "",
                     "from_addr": "", "to_addrs": [],
                     "on_error": True, "on_stop": True, "cooldown_secs": 300,
+                    "ms_client_id": "", "ms_username": "",
+                    "oauth2_token_exists": False, "ms_token_exists": False,
                 })
         except Exception as exc:
             self._json({"error": str(exc)}, 500)
@@ -2232,6 +2373,20 @@ class WebHandler(BaseHTTPRequestHandler):
         try:
             from hc.mailer import get_oauth2_flow_status
             self._json(get_oauth2_flow_status())
+        except Exception as exc:
+            self._json({"status": "error", "error": str(exc), "token_exists": False})
+
+    def _get_ms_oauth2_status(self) -> None:
+        """Return Microsoft OAuth2 device-code flow status and token presence."""        try:
+            from hc.constants import BASE_DIR
+            import json as _json
+            cfg: dict = {}
+            try:
+                cfg = _json.loads((BASE_DIR() / "mail_config.json").read_text(encoding="utf-8"))
+            except Exception:
+                pass
+            from hc.mailer import get_microsoft_oauth2_status
+            self._json(get_microsoft_oauth2_status(cfg))
         except Exception as exc:
             self._json({"status": "error", "error": str(exc), "token_exists": False})
 
@@ -2521,6 +2676,9 @@ class WebHandler(BaseHTTPRequestHandler):
                     "username":      str(data.get("username", "")).strip(),
                     "password":      password,
                     "from_addr":     str(data.get("from_addr", "")).strip(),
+                    # Microsoft OAuth2 fields
+                    "ms_client_id":  str(data.get("ms_client_id", "")).strip(),
+                    "ms_username":   str(data.get("ms_username", "")).strip(),
                 }
                 path.write_text(_json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
                 log.info("mail_config.json updated via Web UI (mode=%s enabled=%s)", mode, cfg["enabled"])
@@ -2552,6 +2710,51 @@ class WebHandler(BaseHTTPRequestHandler):
             try:
                 from hc.mailer import revoke_gmail_token
                 ok, msg = revoke_gmail_token()
+                self._json({"ok": ok, "msg": msg})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "microsoft_oauth2_start":
+            try:
+                client_id = str(data.get("ms_client_id", "")).strip()
+                if not client_id:
+                    # Fall back to value already saved in mail_config.json
+                    from hc.constants import BASE_DIR
+                    import json as _json
+                    try:
+                        saved = _json.loads((BASE_DIR() / "mail_config.json").read_text("utf-8"))
+                        client_id = saved.get("ms_client_id", "").strip()
+                    except Exception:
+                        pass
+                if not client_id:
+                    self._json({"ok": False, "msg": "Enter Application (Client) ID and save config first."})
+                    return
+                from hc.mailer import start_microsoft_oauth2_flow
+                ok, instructions = start_microsoft_oauth2_flow(client_id)
+                if ok:
+                    from hc.mailer import _ms_flow_state  # type: ignore[attr-defined]
+                    self._json({
+                        "ok":              True,
+                        "msg":             instructions,
+                        "user_code":       _ms_flow_state.get("user_code", ""),
+                        "verification_uri": _ms_flow_state.get("verification_uri", "https://microsoft.com/devicelogin"),
+                    })
+                else:
+                    self._json({"ok": False, "msg": instructions})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "microsoft_oauth2_revoke":
+            try:
+                from hc.constants import BASE_DIR
+                import json as _json
+                cfg: dict = {}
+                try:
+                    cfg = _json.loads((BASE_DIR() / "mail_config.json").read_text("utf-8"))
+                except Exception:
+                    pass
+                from hc.mailer import revoke_microsoft_token
+                ok, msg = revoke_microsoft_token(cfg)
                 self._json({"ok": ok, "msg": msg})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
