@@ -1,14 +1,16 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
-Changes (v5.0.2):
-  • Comprehensive step-by-step logging throughout _do_start(), _start_mediamtx(),
-    _start_ffmpeg(), _monitor(), and _auto_restart() so every failure is visible.
-  • MediaMTX log file is tailed immediately on crash for context in the error msg.
-  • FFmpeg stderr is captured and logged on non-zero exit.
-  • Port-check results are logged explicitly.
-  • Probe duration/metadata results logged.
-  • All exception paths log the full exception string.
+Changes vs v5.0.2:
+  • _do_start() accepts seek_override and initial_offset parameters.
+  • Compliance mode: if StreamConfig.compliance_enabled, calculate the
+    correct broadcast-sync seek offset via hc.compliance.
+  • Resume: current playback position is saved to disk (hc.resume_store)
+    just before the stream stops (clean stop, error, or normal FFmpeg exit).
+  • Watchdog: when the monitor advances to the next playlist item it calls
+    hc.watchdog.find_next_valid_item() to skip missing/corrupt files instead
+    of silently stalling.
+  • start() signature extended: seek_override=None, initial_offset=0.0.
 """
 from __future__ import annotations
 
@@ -51,7 +53,6 @@ class LogBuffer:
             self._entries.append(entry)
             if len(self._entries) > self._cap:
                 self._entries.pop(0)
-        # Mirror to Python root logger so it goes to hydracast.log
         py_level = (
             logging.ERROR   if level == "ERROR" else
             logging.WARNING if level == "WARN"  else
@@ -223,18 +224,39 @@ class StreamWorker:
                 f" of {len(self.state.playlist_order)}"
             )
 
+    # ── Resume / position persistence ─────────────────────────────────────────
+    def _save_resume_position(self) -> None:
+        """Save current playback position so user can resume after restart."""
+        pos  = self.state.current_pos
+        fp   = self.state.current_file()
+        name = self.state.config.name
+        if fp and pos > 5.0:          # skip trivially small positions
+            try:
+                from hc.resume_store import save_position
+                save_position(name, fp, pos)
+                self._log(
+                    f"Resume position saved: {fp.name} @ "
+                    f"{int(pos)//3600:02d}:{(int(pos)%3600)//60:02d}:{int(pos)%60:02d}"
+                )
+            except Exception as exc:
+                self._log(f"Could not save resume position: {exc}", "WARN")
+
     # ── Public API ─────────────────────────────────────────────────────────────
-    def start(self, seek_override: Optional[float] = None) -> bool:
+    def start(self, seek_override: Optional[float] = None,
+              initial_offset: float = 0.0) -> bool:
         if not self._start_lock.acquire(blocking=False):
             self._log("start() called while already in progress — skipped.", "WARN")
             return False
         try:
-            return self._do_start(seek_override)
+            return self._do_start(seek_override, initial_offset)
         finally:
             self._start_lock.release()
 
     def stop(self) -> None:
         self._log("Stop requested.")
+        # ── Save resume position before killing FFmpeg ────────────────────────
+        if self.state.status == StreamStatus.LIVE:
+            self._save_resume_position()
         self._stop.set()
         self._kill_ffmpeg()
         time.sleep(1.0)
@@ -335,7 +357,8 @@ class StreamWorker:
                          name=f"oneshot-{self.state.config.port}").start()
 
     # ── Core startup ───────────────────────────────────────────────────────────
-    def _do_start(self, seek_override: Optional[float] = None) -> bool:
+    def _do_start(self, seek_override: Optional[float] = None,
+                  initial_offset: float = 0.0) -> bool:
         cfg = self.state.config
         self._stop.clear()
 
@@ -370,18 +393,52 @@ class StreamWorker:
         self.state.duration = probe_duration(item.file_path)
         self._log(f"File duration: {_fmt_duration(self.state.duration)}")
 
-        # Resolve seek position
-        seek_pos = seek_override
-        if seek_pos is None:
+        # ── Determine seek position ───────────────────────────────────────────
+        if seek_override is not None:
+            # Explicit override (resume or manual seek)
+            seek_pos = float(seek_override)
+            self._log(f"Seek override supplied: {_fmt_duration(seek_pos)}")
+        elif cfg.compliance_enabled:
+            # Compliance mode: calculate broadcast-sync position
+            try:
+                from hc.compliance import calculate_compliance_offset
+                seek_pos, expl = calculate_compliance_offset(
+                    video_duration=self.state.duration,
+                    broadcast_start=cfg.compliance_start,
+                    loop_calculation=cfg.compliance_loop,
+                )
+                self._log(expl)
+            except Exception as exc:
+                self._log(f"Compliance offset calculation failed: {exc} — starting from 0", "WARN")
+                seek_pos = 0.0
+        else:
+            # Normal: use playlist item's start_position
             pos_str = item.start_position
             try:
                 h, m, s  = pos_str.split(":")
                 seek_pos = int(h) * 3600 + int(m) * 60 + float(s)
             except Exception:
                 seek_pos = 0.0
+
+        # Apply per-start offset (±seconds set from TUI before start)
+        combined_offset = initial_offset + self.state.initial_offset
+        self.state.initial_offset = 0.0   # consume it
+        if combined_offset != 0.0:
+            old_pos  = seek_pos
+            seek_pos = max(0.0, seek_pos + combined_offset)
+            self._log(
+                f"Initial offset {combined_offset:+.0f}s applied: "
+                f"{_fmt_duration(old_pos)} → {_fmt_duration(seek_pos)}"
+            )
+
+        # Clip to duration if known
+        if self.state.duration > 0:
+            seek_pos = min(seek_pos, self.state.duration - 1.0)
+        seek_pos = max(0.0, seek_pos)
+
         self._log(f"Start seek position: {_fmt_duration(seek_pos)}")
 
-        # Port availability check
+        # ── Port availability check ───────────────────────────────────────────
         self._log(f"Checking port {cfg.port} availability …")
         if _port_in_use(cfg.port):
             self._log(f"Port {cfg.port} is in use — attempting to kill orphan process.", "WARN")
@@ -396,7 +453,7 @@ class StreamWorker:
         else:
             self._log(f"Port {cfg.port} is free.")
 
-        # Write MediaMTX config
+        # ── Write MediaMTX config ─────────────────────────────────────────────
         self._log("Writing MediaMTX YAML config …")
         try:
             mtx_cfg = MediaMTXConfig.write(self.state)
@@ -407,14 +464,13 @@ class StreamWorker:
             self._log(self.state.error_msg, "ERROR")
             return False
 
-        # Launch MediaMTX
+        # ── Launch MediaMTX ───────────────────────────────────────────────────
         if not self._start_mediamtx(mtx_cfg):
             return False
 
-        # Wait for MediaMTX to bind the port
+        # ── Wait for MediaMTX to bind ─────────────────────────────────────────
         self._log(f"Waiting for MediaMTX to bind :{cfg.port} (timeout {self.MTX_READY_TIMEOUT:.0f}s) …")
         if not _wait_for_port(cfg.port, timeout=self.MTX_READY_TIMEOUT):
-            # Read log file to surface the exact error
             log_tail = _tail_log(LOGS_DIR() / f"mediamtx_{cfg.port}.log", 12)
             detail = log_tail or "No output in MediaMTX log file"
             self._log(
@@ -428,7 +484,7 @@ class StreamWorker:
             return False
         self._log(f"MediaMTX is live on :{cfg.port}")
 
-        # Launch FFmpeg
+        # ── Launch FFmpeg ─────────────────────────────────────────────────────
         if not self._start_ffmpeg(item, seek_pos):
             self._kill_mediamtx()
             return False
@@ -452,7 +508,7 @@ class StreamWorker:
         self._log(f"Launching MediaMTX | config={cfg_file} | log={log_f}")
 
         try:
-            with open(log_f, "w") as lf:  # "w" clears stale errors from previous runs
+            with open(log_f, "w") as lf:
                 kw: Dict[str, Any] = dict(stdout=lf, stderr=subprocess.PIPE)
                 if IS_WIN:
                     kw["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -462,7 +518,6 @@ class StreamWorker:
             self.state.mtx_proc = proc
             self._log(f"MediaMTX spawned PID={proc.pid} on :{port}")
 
-            # Give MediaMTX up to 1.5 s to fail fast (unknown field, port conflict, etc.)
             deadline = time.time() + 1.5
             while time.time() < deadline:
                 if proc.poll() is not None:
@@ -470,7 +525,6 @@ class StreamWorker:
                 time.sleep(0.1)
 
             if proc.poll() is not None:
-                # Process exited immediately — read stderr + log file for cause
                 stderr_out = b""
                 try:
                     stderr_out = proc.stderr.read() or b""
@@ -481,11 +535,9 @@ class StreamWorker:
                 log_tail = _tail_log(log_f, 12)
                 detail = "\n".join(filter(None, [stderr_txt, log_tail])) or "(no output)"
 
-                # Common known errors and hints
                 hints = []
                 dl = detail.lower()
                 if "unknown field" in dl:
-                    # Extract the field name for the user
                     match = re.search(r'unknown field "([^"]+)"', detail)
                     bad_field = match.group(1) if match else "unknown"
                     hints.append(
@@ -514,7 +566,6 @@ class StreamWorker:
                 self._log(msg, "ERROR")
                 return False
 
-            # Drain stderr in background so the pipe doesn't fill
             def _drain(p: subprocess.Popen) -> None:
                 try:
                     for raw in p.stderr:
@@ -685,11 +736,29 @@ class StreamWorker:
         if stderr_txt:
             self._log(f"FFmpeg stderr: {stderr_txt[:400]}", "WARN" if ret == 0 else "ERROR")
 
-        # Advance to next playlist item (multi-file playlist)
+        # ── Save position before advancing ────────────────────────────────────
+        self._save_resume_position()
+
+        # ── Advance playlist (multi-file) — with watchdog skip ────────────────
         if (not self.state.oneshot_active
                 and len(self.state.config.playlist) > 1):
             self._advance_playlist()
             next_item = self._current_item()
+
+            # Use watchdog helper to skip bad files
+            if next_item and not next_item.file_path.exists():
+                self._log(
+                    f"Next file missing: '{next_item.file_path.name}' — "
+                    "invoking watchdog skip …",
+                    "ERROR",
+                )
+                try:
+                    from hc.watchdog import find_next_valid_item
+                    next_item = find_next_valid_item(self.state, self._log)
+                except Exception as exc:
+                    self._log(f"Watchdog skip error: {exc}", "ERROR")
+                    next_item = None
+
             if next_item and next_item.file_path.exists():
                 self._log(f"Advancing to next file: {next_item.file_path.name}")
                 self.state.duration = probe_duration(next_item.file_path)
@@ -706,7 +775,7 @@ class StreamWorker:
             else:
                 if next_item:
                     self._log(
-                        f"Next playlist file missing: {next_item.file_path}", "ERROR"
+                        f"All next playlist files are missing or unreadable.", "ERROR"
                     )
 
         if ret in (0, 255):
