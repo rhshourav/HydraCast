@@ -552,12 +552,14 @@ select option{background:var(--bg3)}
             <th style="min-width:140px">Progress</th>
             <th>Position</th>
             <th>FPS</th>
+            <th>Loop</th>
+            <th>Bitrate</th>
             <th>RTSP URL</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody id="stbl">
-          <tr><td colspan="9" class="empty"><div class="empty"><div class="empty-icon">📡</div>Loading streams…</div></td></tr>
+          <tr><td colspan="11" class="empty"><div class="empty"><div class="empty-icon">📡</div>Loading streams…</div></td></tr>
         </tbody>
       </table>
     </div>
@@ -964,6 +966,8 @@ function renderStreams(data){
       </td>
       <td class="td-muted" style="white-space:nowrap">${esc(s.position||'--')}</td>
       <td class="td-muted">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
+      <td class="td-muted">${s.loop_count>0?'×'+s.loop_count:'--'}</td>
+      <td class="td-muted">${(s.bitrate&&s.bitrate!=='—')?esc(s.bitrate):'--'}</td>
       <td>
         ${s.rtsp_url?`<span class="chip" onclick="copyText('${esc(s.rtsp_url)}')" title="${esc(s.rtsp_url)}">📋 ${esc(s.rtsp_url)}</span>`:'<span class="td-muted">—</span>'}
       </td>
@@ -1335,7 +1339,36 @@ function renderConfigEditor(s){
     </div>
     <div class="config-section">
       <div class="config-section-title">Schedule (Weekdays)</div>
-      <div style="font-size:12px;color:var(--text2)">${esc(s.weekdays||'All days')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
+        ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=>{
+          const checked=s.weekdays&&s.weekdays.includes(d.toLowerCase().slice(0,3))||s.weekdays==='All days'||s.weekdays==='ALL';
+          return `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+            <input type="checkbox" class="cfg-wd" value="${i}" ${(s.weekdays==='ALL'||s.weekdays==='All days'||(s.weekdays&&s.weekdays.toLowerCase().includes(d.toLowerCase())))?'checked':''} style="width:auto;accent-color:var(--accent)">${d}
+          </label>`;
+        }).join('')}
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Compliance (Broadcast Sync)</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="cfg-comp-en" ${s.compliance_enabled?'checked':''} style="width:auto;accent-color:var(--accent)">
+          Enable compliance mode (broadcast-sync seek on start)
+        </label>
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+          <div class="fg">
+            <label>Broadcast start time (HH:MM:SS)</label>
+            <input id="cfg-comp-start" value="${esc(s.compliance_start||'06:00:00')}" placeholder="06:00:00" pattern="\\d{1,2}:\\d{2}:\\d{2}">
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="cfg-comp-loop" ${s.compliance_loop?'checked':''} style="width:auto;accent-color:var(--accent)">
+          Loop calculation (seek within loops for videos shorter than 24 h)
+        </label>
+        <div style="font-size:10px;color:var(--text3)">
+          When enabled, HydraCast calculates the correct playback seek offset so the stream matches a continuous linear broadcast that started at the configured time today.
+        </div>
+      </div>
     </div>
     <div class="config-section">
       <div class="config-section-title">Playlist Files</div>
@@ -1365,6 +1398,10 @@ function cancelConfig(){
 
 async function saveConfig(){
   if(!_configSelected){toast('No stream selected','err');return;}
+  // Collect weekday checkboxes
+  const wdChecked=Array.from(document.querySelectorAll('.cfg-wd:checked')).map(el=>+el.value);
+  const wdMap=['mon','tue','wed','thu','fri','sat','sun'];
+  const weekdaysStr=wdChecked.length===7?'all':wdChecked.map(i=>wdMap[i]).join('|')||'all';
   const payload={
     name:_configSelected,
     port:parseInt(document.getElementById('cfg-port')?.value||0),
@@ -1375,6 +1412,10 @@ async function saveConfig(){
     enabled:document.getElementById('cfg-enabled')?.checked!==false,
     hls_enabled:document.getElementById('cfg-hls')?.checked||false,
     files:document.getElementById('cfg-files')?.value||'',
+    weekdays:weekdaysStr,
+    compliance_enabled:document.getElementById('cfg-comp-en')?.checked||false,
+    compliance_start:document.getElementById('cfg-comp-start')?.value||'06:00:00',
+    compliance_loop:document.getElementById('cfg-comp-loop')?.checked||false,
   };
   const r=await api('update_config',payload);
   if(r?.ok)loadConfig();
@@ -1638,6 +1679,10 @@ class WebHandler(BaseHTTPRequestHandler):
                 "playlist_count": len(cfg.playlist),
                 "enabled":        cfg.enabled,
                 "error_msg":      st.error_msg,
+                "loop_count":     st.loop_count,
+                "restart_count":  st.restart_count,
+                "bitrate":        st.bitrate,
+                "speed":          st.speed,
                 "app_ver":        APP_VER,
             })
         self._json(result)
@@ -1662,7 +1707,11 @@ class WebHandler(BaseHTTPRequestHandler):
                 "stream_path":   cfg.stream_path,
                 "video_bitrate": cfg.video_bitrate,
                 "audio_bitrate": cfg.audio_bitrate,
-                "hls_enabled":   cfg.hls_enabled,
+                "hls_enabled":          cfg.hls_enabled,
+                # Compliance fields (v5.0.6+)
+                "compliance_enabled":   cfg.compliance_enabled,
+                "compliance_start":     cfg.compliance_start,
+                "compliance_loop":      cfg.compliance_loop,
             })
         self._json(result)
 
@@ -1900,6 +1949,17 @@ class WebHandler(BaseHTTPRequestHandler):
                 cfg.shuffle     = bool(data.get("shuffle",     cfg.shuffle))
                 cfg.enabled     = bool(data.get("enabled",     cfg.enabled))
                 cfg.hls_enabled = bool(data.get("hls_enabled", cfg.hls_enabled))
+                # Compliance fields
+                if "compliance_enabled" in data:
+                    cfg.compliance_enabled = bool(data["compliance_enabled"])
+                if "compliance_start" in data:
+                    raw_cs = str(data["compliance_start"]).strip()
+                    cfg.compliance_start = CSVManager._sanitize_hms(raw_cs)
+                if "compliance_loop" in data:
+                    cfg.compliance_loop = bool(data["compliance_loop"])
+                # Weekdays
+                if "weekdays" in data:
+                    cfg.weekdays = CSVManager.parse_weekdays(str(data["weekdays"]))
                 # Playlist files (semicolon or newline separated)
                 raw_files = str(data.get("files", "")).strip()
                 if raw_files:
@@ -1938,6 +1998,9 @@ class WebHandler(BaseHTTPRequestHandler):
                         video_bitrate=CSVManager._sanitize_bitrate(str(row.get("video_bitrate", "2500k")), "2500k"),
                         audio_bitrate=CSVManager._sanitize_bitrate(str(row.get("audio_bitrate", "128k")), "128k"),
                         hls_enabled=bool(row.get("hls_enabled", False)),
+                        compliance_enabled=bool(row.get("compliance_enabled", False)),
+                        compliance_start=CSVManager._sanitize_hms(str(row.get("compliance_start", "06:00:00"))),
+                        compliance_loop=bool(row.get("compliance_loop", False)),
                     ))
                 ports = [c.port for c in configs]
                 if len(set(ports)) != len(ports):
