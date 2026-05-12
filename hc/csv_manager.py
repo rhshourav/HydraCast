@@ -1,21 +1,33 @@
 """
-hc/csv_manager.py  —  Load / save streams.csv and events.csv.
+hc/csv_manager.py  —  Load / save streams (JSON) and events (CSV).
 
-Changes vs v5.0.0:
-  • CSV_COLUMNS extended with compliance_enabled, compliance_start,
-    compliance_loop (backward-compatible: old CSVs without these columns
-    silently default to False / "06:00:00" / False).
-  • StreamConfig.compliance_* fields are persisted in save().
+Migration note
+──────────────
+streams.csv is replaced by streams.json.  On first run, if streams.json
+does not exist but streams.csv does, the old file is automatically
+migrated (read → written as JSON) and renamed to streams.csv.bak so the
+original is preserved.
 
-v5.1 changes:
-  • load() auto-detects folder sources: if a playlist item's path is a
-    directory, cfg.folder_source is set and scan_folder() builds the
-    initial playlist.  This means you can put a plain folder path in
-    streams.csv (no @position/#priority decorators needed).
+Why JSON?
+─────────
+CSV row parsing breaks when the *files* column contains semicolons,
+commas, or Windows-style paths — all of which appear in realistic
+playlists.  JSON carries the files list as a plain string value inside
+a quoted field, so no delimiter collisions are possible.  The JSON is
+also easier to generate / modify programmatically from the Web UI's
+create_stream / delete_stream endpoints.
+
+Changes vs v5.0.0 / v5.1
+──────────────────────────
+  • StreamConfig is now persisted in streams.json (not streams.csv).
+  • Backward-compatible: existing streams.csv files are auto-migrated.
+  • compliance_enabled / compliance_start / compliance_loop preserved.
+  • load() auto-detects folder sources (unchanged from v5.1).
 """
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import re
 from datetime import datetime
@@ -25,35 +37,49 @@ from typing import Dict, List
 from hc.constants import CSV_FILE, EVENTS_FILE, WEEKDAY_MAP
 from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 
-# ── Column headers ─────────────────────────────────────────────────────────────
-CSV_COLUMNS = [
-    "stream_name", "port", "files", "weekdays", "enabled",
-    "shuffle", "stream_path", "video_bitrate", "audio_bitrate", "hls_enabled",
-    # Compliance fields (optional – old CSVs without these columns are fine)
-    "compliance_enabled", "compliance_start", "compliance_loop",
-]
+# ── Path helpers ───────────────────────────────────────────────────────────────
 
-# NOTE: template ports spaced ≥ 10 apart so RTP/RTCP companion ports never collide.
-CSV_TEMPLATE_ROWS = [
-    ["Stream_1", "8554", "/path/to/video.mp4@00:00:00#1",
-     "ALL", "true", "false", "stream", "2500k", "128k", "false",
-     "false", "06:00:00", "false"],
-    ["Stream_2", "8564", "/path/to/a.mp4@00:05:00#1;/path/to/b.mkv@00:00:00#2",
-     "Mon|Wed|Fri", "true", "false", "ch2", "4000k", "192k", "false",
-     "false", "06:00:00", "false"],
-    ["Stream_3", "8574", "/media/demo.mp4@00:00:00#1",
-     "Sat|Sun", "false", "true", "ch3", "1500k", "128k", "false",
-     "false", "06:00:00", "false"],
-    ["Stream_4", "8584", "/media/show.mp4@00:00:00#1",
-     "Weekdays", "true", "false", "ch4", "2500k", "128k", "true",
-     "false", "06:00:00", "false"],
-    # Folder-source example — put a directory path in the files column:
-    # ["Stream_5", "8594", "/media/my_shows_folder",
-    #  "ALL", "true", "false", "ch5", "2500k", "128k", "false",
-    #  "false", "06:00:00", "false"],
-]
+def _STREAMS_JSON() -> Path:
+    """Return the path to streams.json (sibling of streams.csv)."""
+    return CSV_FILE().with_name("streams.json")
 
+
+# ── Column headers (kept for the events CSV) ───────────────────────────────────
 EVENTS_COLUMNS = ["event_id", "stream_name", "file_path", "play_at", "post_action", "start_pos"]
+
+# ── JSON template written when no config file exists ──────────────────────────
+_JSON_TEMPLATE: List[dict] = [
+    {
+        "stream_name": "Stream_1",
+        "port": 8554,
+        "files": "/path/to/video.mp4@00:00:00#1",
+        "weekdays": "ALL",
+        "enabled": True,
+        "shuffle": False,
+        "stream_path": "stream",
+        "video_bitrate": "2500k",
+        "audio_bitrate": "128k",
+        "hls_enabled": False,
+        "compliance_enabled": False,
+        "compliance_start": "06:00:00",
+        "compliance_loop": False,
+    },
+    {
+        "stream_name": "Stream_2",
+        "port": 8564,
+        "files": "/path/to/a.mp4@00:05:00#1;/path/to/b.mkv@00:00:00#2",
+        "weekdays": "Mon|Wed|Fri",
+        "enabled": True,
+        "shuffle": False,
+        "stream_path": "ch2",
+        "video_bitrate": "4000k",
+        "audio_bitrate": "192k",
+        "hls_enabled": False,
+        "compliance_enabled": False,
+        "compliance_start": "06:00:00",
+        "compliance_loop": False,
+    },
+]
 
 
 class CSVManager:
@@ -61,10 +87,11 @@ class CSVManager:
     # ── Template ──────────────────────────────────────────────────────────────
     @staticmethod
     def create_template() -> None:
-        with open(CSV_FILE(), "w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(CSV_COLUMNS)
-            w.writerows(CSV_TEMPLATE_ROWS)
+        dst = _STREAMS_JSON()
+        dst.write_text(
+            json.dumps(_JSON_TEMPLATE, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     # ── Parsers ───────────────────────────────────────────────────────────────
     @staticmethod
@@ -82,8 +109,10 @@ class CSVManager:
         return sorted(result) if result else list(range(7))
 
     @staticmethod
-    def parse_bool(raw: str) -> bool:
-        return raw.strip().lower() in ("true", "1", "yes", "on", "enabled")
+    def parse_bool(raw) -> bool:
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in ("true", "1", "yes", "on", "enabled")
 
     @staticmethod
     def normalize_position(pos: str) -> str:
@@ -98,13 +127,13 @@ class CSVManager:
 
     @staticmethod
     def _sanitize_bitrate(raw: str, default: str) -> str:
-        raw = raw.strip()
+        raw = str(raw).strip()
         return raw.lower() if re.fullmatch(r"\d+[kKmM]?", raw) else default
 
     @staticmethod
     def _sanitize_hms(raw: str) -> str:
         """Validate HH:MM:SS string; return '06:00:00' if invalid."""
-        raw = raw.strip()
+        raw = str(raw).strip()
         if re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", raw):
             parts = raw.split(":")
             if len(parts) == 2:
@@ -150,7 +179,6 @@ class CSVManager:
                 pos = f"{int(h):02d}:{int(m):02d}:{int(float(s)):02d}"
             except Exception:
                 pos = "00:00:00"
-            # Resolve relative paths against MEDIA_DIR.
             raw_p = Path(path_str)
             if not raw_p.is_absolute():
                 try:
@@ -170,16 +198,6 @@ class CSVManager:
     # ── Folder-source detection ───────────────────────────────────────────────
     @staticmethod
     def _resolve_folder_source(config: StreamConfig) -> None:
-        """
-        If *any* playlist item points to a directory, treat the config as a
-        folder-source stream:
-          1. Set cfg.folder_source to that directory.
-          2. Replace cfg.playlist with the result of scan_folder().
-          3. Log a warning for any issues found.
-
-        This is called once per config during load() so the worker and TUI
-        see a fully populated playlist immediately at startup.
-        """
         folder: Path | None = None
         for item in config.playlist:
             if item.file_path.is_dir():
@@ -187,7 +205,7 @@ class CSVManager:
                 break
 
         if folder is None:
-            return  # regular file-list stream — nothing to do
+            return
 
         config.folder_source = folder
         try:
@@ -196,87 +214,141 @@ class CSVManager:
             if items:
                 config.playlist = items
                 logging.info(
-                    "CSV [%s]: folder-source '%s' → %d file(s)",
+                    "JSON [%s]: folder-source '%s' → %d file(s)",
                     config.name, folder.name, len(items),
                 )
             else:
                 logging.warning(
-                    "CSV [%s]: folder-source '%s' is empty or has no supported files.",
+                    "JSON [%s]: folder-source '%s' is empty or has no supported files.",
                     config.name, folder,
                 )
             for w in warnings:
-                logging.warning("CSV [%s]: %s", config.name, w)
+                logging.warning("JSON [%s]: %s", config.name, w)
         except Exception as exc:
             logging.error(
-                "CSV [%s]: folder scan failed for '%s': %s",
+                "JSON [%s]: folder scan failed for '%s': %s",
                 config.name, folder, exc,
             )
+
+    # ── Migration: streams.csv → streams.json ─────────────────────────────────
+    @classmethod
+    def _migrate_csv_to_json(cls) -> bool:
+        """
+        If streams.csv exists and streams.json does not, read the CSV and
+        write it out as JSON.  Returns True on success.
+        """
+        old = CSV_FILE()
+        new = _STREAMS_JSON()
+        if not old.exists() or new.exists():
+            return False
+        try:
+            rows: List[dict] = []
+            with open(old, newline="", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    name = row.get("stream_name", "").strip()
+                    if not name:
+                        continue
+                    rows.append({
+                        "stream_name":       name,
+                        "port":              int(row.get("port", "8554").strip()),
+                        "files":             row.get("files", "").strip(),
+                        "weekdays":          row.get("weekdays", "ALL").strip(),
+                        "enabled":           row.get("enabled", "true").strip().lower(),
+                        "shuffle":           row.get("shuffle", "false").strip().lower(),
+                        "stream_path":       row.get("stream_path", "stream").strip() or "stream",
+                        "video_bitrate":     row.get("video_bitrate", "2500k").strip(),
+                        "audio_bitrate":     row.get("audio_bitrate", "128k").strip(),
+                        "hls_enabled":       row.get("hls_enabled", "false").strip().lower(),
+                        "compliance_enabled": row.get("compliance_enabled", "false").strip().lower(),
+                        "compliance_start":  row.get("compliance_start", "06:00:00").strip(),
+                        "compliance_loop":   row.get("compliance_loop", "false").strip().lower(),
+                    })
+            new.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+            bak = old.with_suffix(".csv.bak")
+            old.rename(bak)
+            logging.info(
+                "Migrated streams.csv → streams.json (%d stream(s)). "
+                "Old file renamed to %s",
+                len(rows), bak.name,
+            )
+            return True
+        except Exception as exc:
+            logging.error("CSV→JSON migration failed: %s", exc)
+            return False
 
     # ── Load / save streams ───────────────────────────────────────────────────
     @classmethod
     def load(cls) -> List[StreamConfig]:
-        if not CSV_FILE().exists():
+        dst = _STREAMS_JSON()
+
+        # Auto-migrate old streams.csv if present
+        if not dst.exists():
+            cls._migrate_csv_to_json()
+
+        if not dst.exists():
             cls.create_template()
             raise FileNotFoundError(
-                f"streams.csv not found → template created at:\n  {CSV_FILE()}\n"
+                f"streams.json not found → template created at:\n  {dst}\n"
                 "Edit it with your stream details, then restart HydraCast."
             )
+
+        try:
+            raw_rows = json.loads(dst.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ValueError(f"streams.json is not valid JSON: {exc}") from exc
+
+        if not isinstance(raw_rows, list):
+            raise ValueError("streams.json must contain a JSON array at the top level.")
+
         configs: List[StreamConfig] = []
         errors:  List[str]          = []
-        with open(CSV_FILE(), newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            if not reader.fieldnames:
-                raise ValueError("streams.csv appears to be empty.")
-            for i, row in enumerate(reader, start=2):
-                name = row.get("stream_name", "").strip()
-                if not name:
-                    errors.append(f"Row {i}: empty name — skipped.")
-                    continue
-                try:
-                    port = int(row.get("port", "0").strip())
-                    if not (1024 <= port <= 65535):
-                        raise ValueError("out of range")
-                except Exception:
-                    errors.append(f"Row {i} ({name}): invalid port — skipped.")
-                    continue
-                playlist = cls.parse_files(row.get("files", "").strip())
-                if not playlist:
-                    errors.append(f"Row {i} ({name}): no files — skipped.")
-                    continue
-                weekdays = cls.parse_weekdays(row.get("weekdays", "ALL"))
-                enabled  = cls.parse_bool(row.get("enabled", "true"))
-                shuffle  = cls.parse_bool(row.get("shuffle", "false"))
-                spath    = row.get("stream_path", "stream").strip() or "stream"
-                vid_br   = cls._sanitize_bitrate(row.get("video_bitrate", "2500k"), "2500k")
-                aud_br   = cls._sanitize_bitrate(row.get("audio_bitrate", "128k"), "128k")
-                hls_en   = cls.parse_bool(row.get("hls_enabled", "false"))
 
-                # Compliance fields — optional, default to disabled
-                comp_en    = cls.parse_bool(row.get("compliance_enabled", "false"))
-                comp_start = cls._sanitize_hms(row.get("compliance_start", "06:00:00"))
-                comp_loop  = cls.parse_bool(row.get("compliance_loop", "false"))
+        for i, row in enumerate(raw_rows, start=1):
+            name = str(row.get("stream_name", "")).strip()
+            if not name:
+                errors.append(f"Entry {i}: empty stream_name — skipped.")
+                continue
+            try:
+                port = int(row.get("port", 0))
+                if not (1024 <= port <= 65535):
+                    raise ValueError("out of range")
+            except Exception:
+                errors.append(f"Entry {i} ({name}): invalid port — skipped.")
+                continue
 
-                sorted_pl = sorted(playlist, key=lambda x: x.priority)
-                cfg = StreamConfig(
-                    name=name, port=port, playlist=sorted_pl,
-                    weekdays=weekdays, enabled=enabled, shuffle=shuffle,
-                    stream_path=spath, video_bitrate=vid_br,
-                    audio_bitrate=aud_br, hls_enabled=hls_en,
-                    row_index=i - 2,
-                    compliance_enabled=comp_en,
-                    compliance_start=comp_start,
-                    compliance_loop=comp_loop,
-                )
+            playlist = cls.parse_files(str(row.get("files", "")).strip())
+            if not playlist:
+                errors.append(f"Entry {i} ({name}): no files — skipped.")
+                continue
 
-                # ── Folder-source auto-detection ──────────────────────────────
-                # If the path in the files column is a directory, replace the
-                # playlist with the scanned contents and set folder_source.
-                cls._resolve_folder_source(cfg)
+            weekdays = cls.parse_weekdays(str(row.get("weekdays", "ALL")))
+            enabled  = cls.parse_bool(row.get("enabled", True))
+            shuffle  = cls.parse_bool(row.get("shuffle", False))
+            spath    = str(row.get("stream_path", "stream")).strip() or "stream"
+            vid_br   = cls._sanitize_bitrate(str(row.get("video_bitrate",  "2500k")), "2500k")
+            aud_br   = cls._sanitize_bitrate(str(row.get("audio_bitrate",  "128k")),  "128k")
+            hls_en   = cls.parse_bool(row.get("hls_enabled", False))
 
-                configs.append(cfg)
+            comp_en    = cls.parse_bool(row.get("compliance_enabled", False))
+            comp_start = cls._sanitize_hms(str(row.get("compliance_start", "06:00:00")))
+            comp_loop  = cls.parse_bool(row.get("compliance_loop", False))
+
+            sorted_pl = sorted(playlist, key=lambda x: x.priority)
+            cfg = StreamConfig(
+                name=name, port=port, playlist=sorted_pl,
+                weekdays=weekdays, enabled=enabled, shuffle=shuffle,
+                stream_path=spath, video_bitrate=vid_br,
+                audio_bitrate=aud_br, hls_enabled=hls_en,
+                row_index=i - 1,
+                compliance_enabled=comp_en,
+                compliance_start=comp_start,
+                compliance_loop=comp_loop,
+            )
+            cls._resolve_folder_source(cfg)
+            configs.append(cfg)
 
         for e in errors:
-            logging.warning("CSV: %s", e)
+            logging.warning("JSON: %s", e)
 
         # ── Duplicate port check ──────────────────────────────────────────────
         seen: Dict[int, str] = {}
@@ -294,7 +366,7 @@ class CSVManager:
             p2, n2 = sorted_ports[j + 1]
             if p2 - p1 < 10:
                 logging.warning(
-                    "CSV: Ports %d (%s) and %d (%s) are only %d apart — "
+                    "JSON: Ports %d (%s) and %d (%s) are only %d apart — "
                     "RTP/RTCP companion ports may collide. "
                     "Recommended gap is ≥10 (e.g. 8554, 8564, 8574 …).",
                     p1, n1, p2, n2, p2 - p1,
@@ -302,7 +374,7 @@ class CSVManager:
 
         if not configs:
             logging.warning(
-                "CSV: No valid streams in streams.csv — "
+                "JSON: No valid streams in streams.json — "
                 "starting in web-only mode. "
                 "Use the Web UI → Configure tab to add streams."
             )
@@ -310,30 +382,36 @@ class CSVManager:
 
     @classmethod
     def save(cls, configs: List[StreamConfig]) -> None:
-        with open(CSV_FILE(), "w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(CSV_COLUMNS)
-            for c in configs:
-                # For folder-source streams, save the folder path directly.
-                if c.folder_source and c.folder_source.is_dir():
-                    files_str = str(c.folder_source)
-                else:
-                    files_str = ";".join(
-                        f"{item.file_path}@{item.start_position}#{item.priority}"
-                        for item in c.playlist
-                    )
-                w.writerow([
-                    c.name, c.port, files_str,
-                    c.weekdays_display().replace("ALL", "all"),
-                    str(c.enabled).lower(), str(c.shuffle).lower(),
-                    c.stream_path, c.video_bitrate, c.audio_bitrate,
-                    str(c.hls_enabled).lower(),
-                    str(c.compliance_enabled).lower(),
-                    c.compliance_start,
-                    str(c.compliance_loop).lower(),
-                ])
+        rows: List[dict] = []
+        for c in configs:
+            if c.folder_source and c.folder_source.is_dir():
+                files_str = str(c.folder_source)
+            else:
+                files_str = ";".join(
+                    f"{item.file_path}@{item.start_position}#{item.priority}"
+                    for item in c.playlist
+                )
+            rows.append({
+                "stream_name":        c.name,
+                "port":               c.port,
+                "files":              files_str,
+                "weekdays":           c.weekdays_display().replace("ALL", "all"),
+                "enabled":            c.enabled,
+                "shuffle":            c.shuffle,
+                "stream_path":        c.stream_path,
+                "video_bitrate":      c.video_bitrate,
+                "audio_bitrate":      c.audio_bitrate,
+                "hls_enabled":        c.hls_enabled,
+                "compliance_enabled": c.compliance_enabled,
+                "compliance_start":   c.compliance_start,
+                "compliance_loop":    c.compliance_loop,
+            })
+        _STREAMS_JSON().write_text(
+            json.dumps(rows, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
-    # ── Load / save events ────────────────────────────────────────────────────
+    # ── Load / save events (still CSV — simple flat rows, no delimiter risk) ───
     @classmethod
     def load_events(cls) -> List[OneShotEvent]:
         if not EVENTS_FILE().exists():
