@@ -15,6 +15,7 @@ from rich import box
 from rich.align import Align
 from rich.console import Console
 from rich.layout import Layout
+from rich.live import Live
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
@@ -241,9 +242,10 @@ class KeyboardHandler:
                 if ch in (b"\x00", b"\xe0"):
                     ch2 = msvcrt.getch()
                     mapping = {
-                        b"H": "UP", b"P": "DOWN",
+                        b"H": "UP",   b"P": "DOWN",
                         b"K": "LEFT", b"M": "RIGHT",
                         b"s": "SHIFTLEFT", b"t": "SHIFTRIGHT",
+                        b"I": "PAGEUP", b"Q": "PAGEDOWN",
                     }
                     self._q.put(mapping.get(ch2, ""))
                 else:
@@ -278,8 +280,9 @@ class KeyboardHandler:
                                 elif "C" in more: self._q.put("SHIFTRIGHT")
                                 continue
                         mapping = {
-                            "[A": "UP", "[B": "DOWN",
+                            "[A": "UP",   "[B": "DOWN",
                             "[C": "RIGHT", "[D": "LEFT",
+                            "[5": "PAGEUP", "[6": "PAGEDOWN",
                         }
                         self._q.put(mapping.get(seq, "ESC"))
                     else:
@@ -318,3 +321,287 @@ def do_seek_prompt(
         manager.seek_stream(state, max(0.0, secs))
     except Exception:
         pass
+
+
+# =============================================================================
+# MAIN TUI LOOP
+# =============================================================================
+def run_tui_loop(
+    *,
+    manager: StreamManager,
+    glog: LogBuffer,
+    console: Console,
+    shutdown_event: threading.Event,
+    export_urls_fn,
+) -> None:
+    """
+    Blocking TUI main loop.
+
+    Renders the Rich dashboard at ~4 fps and dispatches every keystroke to
+    the appropriate StreamManager action.  Returns when shutdown_event is set
+    (Q key, Ctrl-C, or external SIGTERM).
+
+    Parameters
+    ----------
+    manager         : StreamManager instance controlling all streams.
+    glog            : Global LogBuffer for status messages.
+    console         : Rich Console (force_terminal=True).
+    shutdown_event  : threading.Event — loop exits when this is set.
+    export_urls_fn  : Callable that writes stream_urls.txt and returns the path.
+    """
+    tui = TUI(manager, glog)
+    kb  = KeyboardHandler()
+    kb.start()
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+    def _selected_state():
+        states = manager.states
+        if not states:
+            return None
+        return states[min(tui.selected, len(states) - 1)]
+
+    def _clamp():
+        n = len(manager.states)
+        if n:
+            tui.selected = max(0, min(tui.selected, n - 1))
+
+    def _wait_key() -> None:
+        """Drain queue then block until the next keypress."""
+        while kb.get():
+            pass
+        while not shutdown_event.is_set():
+            if kb.get() is not None:
+                return
+            time.sleep(0.05)
+
+    # ── overlay: help ─────────────────────────────────────────────────────────
+    def _show_help(live: Live) -> None:
+        live.stop()
+        console.clear()
+        rows = [
+            ("↑ / ↓",       "Move selection up / down"),
+            ("1 – 9",        "Jump directly to stream #N"),
+            ("PgUp / PgDn",  "Scroll 5 streams at a time"),
+            ("R",            "Restart selected stream"),
+            ("S",            "Stop selected stream"),
+            ("T",            "Start selected stream"),
+            ("A",            "Start ALL streams"),
+            ("X",            "Stop ALL streams"),
+            ("N",            "Skip to next scheduled event"),
+            ("← / →",       "Seek ±10 seconds"),
+            ("Shift ← / →", "Seek ±60 seconds"),
+            ("G",            "Go-to-time prompt (seek)"),
+            ("F",            "Force folder rescan"),
+            ("C",            "Clear error state / reset restart count"),
+            ("D",            "Stream detail overlay"),
+            ("V",            "Per-stream log viewer"),
+            ("L",            "Reload streams.csv"),
+            ("U",            "Export stream URLs to file"),
+            ("H / ?",        "This help screen"),
+            ("Q / Ctrl-C",   "Quit HydraCast"),
+        ]
+        t = Table(box=box.ROUNDED, border_style="bright_black",
+                  header_style=f"bold {CW}", show_header=True)
+        t.add_column("Key",    style=f"bold {CC}", width=18)
+        t.add_column("Action", style=CW)
+        for k, v in rows:
+            t.add_row(k, v)
+        console.print(Panel(
+            Align.center(t, vertical="middle"),
+            title=f"[bold {CW}]KEYBOARD HELP[/]",
+            border_style=CC, box=box.ROUNDED,
+        ))
+        console.print(f"\n[{CD}]  Press any key to return …[/]")
+        _wait_key()
+        console.clear()
+        live.start()
+
+    # ── overlay: stream detail ────────────────────────────────────────────────
+    def _show_detail(live: Live, state) -> None:
+        if state is None:
+            return
+        live.stop()
+        console.clear()
+        cfg = state.config
+        t = Text()
+        t.append(f"Name      : {cfg.name}\n",    style=CW)
+        t.append(f"Port      : {cfg.port}\n",    style=CC)
+        t.append(f"RTSP URL  : {cfg.rtsp_url}\n", style="dim cyan")
+        if cfg.hls_enabled:
+            t.append(f"HLS port  : {cfg.hls_port}\n", style=CC)
+        t.append(f"Schedule  : {cfg.weekdays_display()}\n", style=CW)
+        t.append(f"Shuffle   : {'yes' if cfg.shuffle else 'no'}\n", style=CW)
+        t.append(f"Loop      : {'yes' if cfg.loop else 'no'}\n",    style=CW)
+        t.append(f"Files ({len(cfg.playlist)}):\n", style=CD)
+        for p in cfg.playlist:
+            t.append(f"  {p}\n", style="dim white")
+        console.print(Panel(
+            t,
+            title=f"[bold {CW}]DETAIL — {cfg.name}[/]",
+            border_style=CC, box=box.ROUNDED, padding=(1, 2),
+        ))
+        console.print(f"\n[{CD}]  Press any key to return …[/]")
+        _wait_key()
+        console.clear()
+        live.start()
+
+    # ── overlay: per-stream log viewer ────────────────────────────────────────
+    def _show_log_viewer(live: Live, state) -> None:
+        if state is None:
+            return
+        live.stop()
+        console.clear()
+        scroll = 0
+        page   = 30
+
+        while not shutdown_event.is_set():
+            console.clear()
+            # StreamState exposes its own LogBuffer as .log_buffer
+            entries = list(state.log_buffer.last(200))
+            visible = entries[scroll: scroll + page]
+            colors  = {"INFO": CW, "WARN": CY, "ERROR": CR}
+            t = Text()
+            for msg, lvl in visible:
+                t.append(msg + "\n", style=colors.get(lvl, CW))
+            console.print(Panel(
+                t,
+                title=(
+                    f"[bold {CW}]LOG — {state.config.name}[/]  "
+                    f"[{CD}](lines {scroll+1}–"
+                    f"{min(scroll+page, len(entries))} of {len(entries)})[/]"
+                ),
+                border_style=CC, box=box.ROUNDED, padding=(0, 1),
+            ))
+            console.print(f"[{CD}]  ↑↓ scroll  ·  any other key returns[/]")
+
+            key = None
+            for _ in range(20):          # poll ~1 s
+                key = kb.get()
+                if key:
+                    break
+                time.sleep(0.05)
+
+            if key == "UP":
+                scroll = max(0, scroll - 1)
+            elif key == "DOWN":
+                scroll = min(max(0, len(entries) - page), scroll + 1)
+            elif key is not None:
+                break
+
+        console.clear()
+        live.start()
+
+    # ── seek helper ───────────────────────────────────────────────────────────
+    def _seek(state, delta: float) -> None:
+        # seek_start_pos tracks current playback position (set by worker)
+        current = getattr(state, "seek_start_pos", 0.0) or 0.0
+        manager.seek_stream(state, max(0.0, current + delta))
+
+    # ── main render loop ──────────────────────────────────────────────────────
+    with Live(
+        console=console,
+        refresh_per_second=4,
+        screen=True,
+        transient=False,
+    ) as live:
+        while not shutdown_event.is_set():
+            _clamp()
+            live.update(tui.render())
+
+            key = kb.get()
+            if key is None:
+                time.sleep(0.05)
+                continue
+
+            state = _selected_state()
+            n     = len(manager.states)
+
+            # navigation
+            if key == "UP":
+                tui.selected = (tui.selected - 1) % max(1, n)
+            elif key == "DOWN":
+                tui.selected = (tui.selected + 1) % max(1, n)
+            elif key == "PAGEUP":
+                tui.selected = max(0, tui.selected - 5)
+            elif key == "PAGEDOWN":
+                tui.selected = min(max(0, n - 1), tui.selected + 5)
+            elif key.isdigit() and key != "0":
+                idx = int(key) - 1
+                if 0 <= idx < n:
+                    tui.selected = idx
+
+            # stream control
+            elif key == "R" and state:
+                manager.restart_stream(state)
+                glog.add(f"Restart → {state.config.name}")
+            elif key == "S" and state:
+                manager.stop_stream(state)
+                glog.add(f"Stop → {state.config.name}")
+            elif key == "T" and state:
+                manager.start_stream(state)
+                glog.add(f"Start → {state.config.name}")
+            elif key == "A":
+                manager.start_all()
+                glog.add("Start ALL streams")
+            elif key == "X":
+                manager.stop_all()
+                glog.add("Stop ALL streams")
+            elif key == "N" and state:
+                manager.skip_next(state)
+                glog.add(f"Skip next → {state.config.name}")
+
+            # seeking
+            elif key == "LEFT"  and state:
+                _seek(state, -10.0)
+            elif key == "RIGHT" and state:
+                _seek(state, +10.0)
+            elif key == "SHIFTLEFT"  and state:
+                _seek(state, -60.0)
+            elif key == "SHIFTRIGHT" and state:
+                _seek(state, +60.0)
+            elif key == "G" and state:
+                live.stop()
+                do_seek_prompt(manager, state, console)
+                live.start()
+
+            # folder / error management
+            elif key == "F" and state:
+                try:
+                    manager.rescan_folder(state)
+                    glog.add(f"Folder rescan → {state.config.name}")
+                except AttributeError:
+                    glog.add("rescan_folder not available on this manager", "WARN")
+            elif key == "C" and state:
+                try:
+                    manager.clear_error(state)
+                    glog.add(f"Error cleared → {state.config.name}")
+                except AttributeError:
+                    glog.add("clear_error not available on this manager", "WARN")
+
+            # overlays
+            elif key in ("H", "?"):
+                _show_help(live)
+            elif key == "D":
+                _show_detail(live, state)
+            elif key == "V":
+                _show_log_viewer(live, state)
+
+            # misc
+            elif key == "L":
+                try:
+                    manager.reload_csv()
+                    glog.add("streams.csv reloaded")
+                except AttributeError:
+                    glog.add("reload_csv not available on this manager", "WARN")
+            elif key == "U":
+                try:
+                    url_file = export_urls_fn()
+                    glog.add(f"URLs exported → {url_file.name}")
+                except Exception as exc:
+                    glog.add(f"URL export error: {exc}", "ERROR")
+
+            # quit
+            elif key in ("Q", "\x03", "\x1c"):   # Q, Ctrl-C, Ctrl-backslash
+                shutdown_event.set()
+
+    kb.stop()
