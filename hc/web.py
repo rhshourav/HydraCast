@@ -2377,7 +2377,8 @@ class WebHandler(BaseHTTPRequestHandler):
             self._json({"status": "error", "error": str(exc), "token_exists": False})
 
     def _get_ms_oauth2_status(self) -> None:
-        """Return Microsoft OAuth2 device-code flow status and token presence."""        try:
+        """Return Microsoft OAuth2 device-code flow status and token presence."""
+        try:
             from hc.constants import BASE_DIR
             import json as _json
             cfg: dict = {}
