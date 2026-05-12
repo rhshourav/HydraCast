@@ -949,6 +949,21 @@ class StreamWorker:
         if ret in (0, 255):
             self.state.status = StreamStatus.STOPPED
             self._log(f"FFmpeg exited normally (code {ret}).")
+            # Alert if this wasn't a deliberate manual/scheduler stop.
+            # _stop flag is set by stop()/restart() for intentional stops;
+            # if it is NOT set here the stream died on its own (e.g. file
+            # ended with no loop, playlist exhausted).
+            if not self._stop.is_set() and not self.state.oneshot_active:
+                try:
+                    from hc.mailer import send_stop_alert
+                    send_stop_alert(
+                        stream_name = self.state.config.name,
+                        port        = self.state.config.port,
+                        reason      = f"FFmpeg exited cleanly (code {ret}) — "
+                                      "playlist finished or stream ended.",
+                    )
+                except Exception as _mail_exc:
+                    log.debug("mailer hook error: %s", _mail_exc)
         else:
             self.state.status    = StreamStatus.ERROR
             self.state.error_msg = (
@@ -957,6 +972,18 @@ class StreamWorker:
             self._log(
                 f"FFmpeg error (code {ret}): {self.state.error_msg}", "ERROR"
             )
+            # ── Mail alert on error ───────────────────────────────────────────
+            try:
+                from hc.mailer import send_error_alert
+                send_error_alert(
+                    stream_name   = self.state.config.name,
+                    port          = self.state.config.port,
+                    error_msg     = self.state.error_msg,
+                    exit_code     = ret,
+                    stderr_snippet= stderr_txt[:300] if stderr_txt else "",
+                )
+            except Exception as _mail_exc:
+                log.debug("mailer hook error: %s", _mail_exc)
             self._auto_restart()
 
     def _apply_progress(self, data: Dict[str, str]) -> None:
