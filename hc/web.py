@@ -675,7 +675,10 @@ select option{background:var(--bg3)}
   </div>
   <div class="config-layout">
     <div class="config-sidebar">
-      <div class="config-sidebar-hdr">Streams</div>
+      <div class="config-sidebar-hdr" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Streams</span>
+        <button class="btn g" style="padding:2px 8px;font-size:10px;border-radius:5px" onclick="showNewStreamForm()">＋ New</button>
+      </div>
       <div id="config-stream-list"></div>
     </div>
     <div class="config-main">
@@ -1443,8 +1446,11 @@ function renderConfigSidebar(){
     <div class="config-stream-item ${s.name===_configSelected?'active':''}" onclick="selectConfigStream('${esc(s.name)}')">
       <div class="dot ${s._status==='LIVE'?'live':s._status==='ERROR'?'error':''}"></div>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}</span>
-      <span style="font-size:10px;color:var(--text3)">:${s.port}</span>
-    </div>`).join('')||`<div class="empty" style="padding:20px"><div class="empty-icon">⚙</div>No streams.</div>`;
+      <span style="font-size:10px;color:var(--text3);margin-right:4px">:${s.port}</span>
+      <button class="btn r" style="padding:1px 6px;font-size:10px;flex-shrink:0"
+        title="Delete stream"
+        onclick="event.stopPropagation();deleteStream('${esc(s.name)}')">&#x2715;</button>
+    </div>`).join('')||`<div class="empty" style="padding:20px"><div class="empty-icon">&#x2699;</div>No streams.</div>`;
 }
 
 function selectConfigStream(name){
@@ -1544,11 +1550,19 @@ function renderConfigEditor(s){
   document.getElementById('config-main-footer').style.display='flex';
 }
 
+function _restoreFooter(){
+  document.getElementById('config-main-footer').innerHTML=`
+    <button class="btn" onclick="cancelConfig()">Cancel</button>
+    <button class="btn g" onclick="saveConfig()">Save Changes</button>`;
+}
+
 function cancelConfig(){
   _configSelected=null;
+  _configMode='edit';
   renderConfigSidebar();
   document.getElementById('config-main-hdr').innerHTML=`<h2 style="color:var(--text3);font-size:14px">Select a stream</h2>`;
-  document.getElementById('config-main-body').innerHTML=`<div class="empty"><div class="empty-icon">⚙</div>Select a stream from the sidebar to configure it.</div>`;
+  document.getElementById('config-main-body').innerHTML=`<div class="empty"><div class="empty-icon">&#x2699;</div>Select a stream from the sidebar to configure it.</div>`;
+  _restoreFooter();
   document.getElementById('config-main-footer').style.display='none';
 }
 
@@ -1575,6 +1589,107 @@ async function saveConfig(){
   };
   const r=await api('update_config',payload);
   if(r?.ok)loadConfig();
+}
+
+// ═══════════════════════════════════
+// NEW STREAM / DELETE STREAM
+// ═══════════════════════════════════
+let _configMode='edit'; // 'edit' | 'create'
+
+function showNewStreamForm(){
+  _configSelected=null;
+  _configMode='create';
+  renderConfigSidebar();
+  document.getElementById('config-main-hdr').innerHTML=`
+    <h2 style="font-family:var(--font-display);font-size:16px;font-weight:700">New Stream</h2>`;
+  document.getElementById('config-main-body').innerHTML=`
+    <div class="config-section">
+      <div class="config-section-title">Identity</div>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        <div class="fg"><label>Stream Name *</label><input id="new-name" placeholder="My_Stream" autocomplete="off"></div>
+        <div class="fg"><label>Port * (≥10 apart)</label><input id="new-port" type="number" value="8554" min="1024" max="65535"></div>
+        <div class="fg"><label>Stream Path</label><input id="new-spath" value="stream"></div>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Playlist Files *</div>
+      <textarea id="new-files" rows="6" style="font-size:11px;font-family:var(--font-mono)"
+        placeholder="/path/to/video.mp4\n/path/to/video2.mkv\n\nOptional format:  /path@HH:MM:SS#priority"></textarea>
+      <div style="font-size:10px;color:var(--text3);margin-top:6px">One path per line (or semicolon-separated). Omit @position and #priority for defaults.</div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Encoding</div>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
+        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="128k"></div>
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Schedule (Weekdays)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
+        ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=>`
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+            <input type="checkbox" class="new-wd" value="${i}" checked style="width:auto;accent-color:var(--accent)">${d}
+          </label>`).join('')}
+      </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Options</div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="new-shuffle" style="width:auto;accent-color:var(--accent)">Shuffle playlist
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="new-enabled" checked style="width:auto;accent-color:var(--accent)">Enabled
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="new-hls" style="width:auto;accent-color:var(--accent)">HLS enabled
+        </label>
+      </div>
+    </div>`;
+  // Swap footer buttons for Create mode
+  document.getElementById('config-main-footer').innerHTML=`
+    <button class="btn" onclick="cancelConfig()">Cancel</button>
+    <button class="btn g" onclick="submitNewStream()">&#x2713; Create Stream</button>`;
+  document.getElementById('config-main-footer').style.display='flex';
+}
+
+async function submitNewStream(){
+  const name=(document.getElementById('new-name')?.value||'').trim();
+  const port=parseInt(document.getElementById('new-port')?.value||0);
+  const files=(document.getElementById('new-files')?.value||'').trim();
+  if(!name){toast('Stream name is required','err');return;}
+  if(!/^[\w\-. ]+$/.test(name)){toast('Name: letters, numbers, spaces, hyphens, dots, underscores only','err');return;}
+  if(!port||port<1024||port>65535){toast('Port must be 1024-65535','err');return;}
+  if(!files){toast('At least one file path is required','err');return;}
+  const wdChecked=Array.from(document.querySelectorAll('.new-wd:checked')).map(el=>+el.value);
+  const wdMap=['mon','tue','wed','thu','fri','sat','sun'];
+  const weekdays=wdChecked.length===7?'all':(wdChecked.map(i=>wdMap[i]).join('|')||'all');
+  const r=await api('create_stream',{
+    name,port,files,weekdays,
+    stream_path:(document.getElementById('new-spath')?.value||'stream').trim()||'stream',
+    video_bitrate:(document.getElementById('new-vbr')?.value||'2500k').trim()||'2500k',
+    audio_bitrate:(document.getElementById('new-abr')?.value||'128k').trim()||'128k',
+    shuffle:document.getElementById('new-shuffle')?.checked||false,
+    enabled:document.getElementById('new-enabled')?.checked!==false,
+    hls_enabled:document.getElementById('new-hls')?.checked||false,
+  });
+  if(r?.ok){
+    cancelConfig();
+    await loadConfig();
+    // Auto-select the newly created stream
+    selectConfigStream(name);
+    toast(r.msg||'Stream created','ok');
+  }
+}
+
+async function deleteStream(name){
+  if(!confirm(`Delete stream "${name}"?\n\nThis will remove it from streams.json immediately. The stream will be stopped if it is currently running.`))return;
+  const r=await api('delete_stream',{name});
+  if(r?.ok){
+    if(_configSelected===name) cancelConfig();
+    loadConfig();
+  }
 }
 
 // ═══════════════════════════════════
@@ -2598,6 +2713,59 @@ class WebHandler(BaseHTTPRequestHandler):
             mgr.events = [e for e in mgr.events if e.event_id != ev_id]
             CSVManager.save_events(mgr.events)
             self._json({"ok": True, "msg": "Event deleted"})
+
+        elif action == "create_stream":
+            try:
+                name_s = str(data.get("name", "")).strip()
+                if not name_s or len(name_s) > 64:
+                    raise ValueError(f"Invalid stream name: '{name_s}'")
+                if not re.fullmatch(r"[\w\-. ]+", name_s):
+                    raise ValueError(
+                        "Stream name may only contain letters, numbers, "
+                        "spaces, hyphens, dots and underscores."
+                    )
+                port = int(data.get("port", 0))
+                if not (1024 <= port <= 65535):
+                    raise ValueError(f"Port {port} out of range (1024-65535).")
+                raw_files = str(data.get("files", "")).strip().replace("\n", ";")
+                playlist  = CSVManager.parse_files(raw_files)
+                if not playlist:
+                    raise ValueError("At least one valid file path is required.")
+                cfg = StreamConfig(
+                    name=name_s,
+                    port=port,
+                    playlist=playlist,
+                    weekdays=CSVManager.parse_weekdays(str(data.get("weekdays", "all"))),
+                    enabled=bool(data.get("enabled", True)),
+                    shuffle=bool(data.get("shuffle", False)),
+                    stream_path=str(data.get("stream_path", "stream")).strip() or "stream",
+                    video_bitrate=CSVManager._sanitize_bitrate(
+                        str(data.get("video_bitrate", "2500k")), "2500k"),
+                    audio_bitrate=CSVManager._sanitize_bitrate(
+                        str(data.get("audio_bitrate", "128k")), "128k"),
+                    hls_enabled=bool(data.get("hls_enabled", False)),
+                    compliance_enabled=False,
+                    compliance_start="06:00:00",
+                    compliance_loop=False,
+                )
+                mgr.add_stream(cfg)
+                self._json({
+                    "ok":  True,
+                    "msg": f"Stream '{name_s}' created on port {port}. "
+                           "You can start it now from the Configure tab.",
+                })
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "delete_stream":
+            try:
+                name_s = str(data.get("name", "")).strip()
+                if not name_s:
+                    raise ValueError("Missing stream name.")
+                mgr.remove_stream(name_s)
+                self._json({"ok": True, "msg": f"Stream '{name_s}' deleted."})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
         elif action == "delete_played_events":
             ids = data.get("event_ids", [])
