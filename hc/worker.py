@@ -382,11 +382,67 @@ class StreamWorker:
 
         self._log(f"Current file: {item.file_path}")
 
-        if not item.file_path.exists():
+        # ── Folder-as-playlist resolution ─────────────────────────────────────
+        # If the path is a directory (or doesn't exist as a file), scan it and
+        # replace the playlist with whatever the scanner finds.  This makes the
+        # folder-scan feature robust: the CSV can point to a folder and the
+        # worker will expand it on every start.
+        resolved_path = item.file_path
+        if resolved_path.is_dir():
+            self._log(
+                f"Path is a directory — scanning for media files: {resolved_path}",
+                "INFO",
+            )
+            try:
+                from hc.folder_scanner import scan_folder
+                scanned_items, warnings = scan_folder(resolved_path)
+                for w in warnings:
+                    self._log(f"Folder scanner: {w}", "WARN")
+                if not scanned_items:
+                    self.state.status    = StreamStatus.ERROR
+                    self.state.error_msg = f"No supported media files in folder: {resolved_path}"
+                    self._log(self.state.error_msg, "ERROR")
+                    return False
+                # Replace the in-memory playlist with discovered files and rebuild order
+                cfg.playlist = scanned_items
+                self.state.playlist_index = 0
+                self.state.playlist_order = self._build_order()
+                item = self._current_item()
+                if item is None:
+                    self.state.status    = StreamStatus.ERROR
+                    self.state.error_msg = "Folder scan succeeded but could not pick first item"
+                    self._log(self.state.error_msg, "ERROR")
+                    return False
+                resolved_path = item.file_path
+                self._log(
+                    f"Folder scan complete: {len(scanned_items)} file(s) found. "
+                    f"Starting with: {resolved_path.name}"
+                )
+            except Exception as exc:
+                self.state.status    = StreamStatus.ERROR
+                self.state.error_msg = f"Folder scan failed: {exc}"
+                self._log(self.state.error_msg, "ERROR")
+                return False
+
+        if not resolved_path.exists():
             self.state.status    = StreamStatus.ERROR
-            self.state.error_msg = f"File not found: {item.file_path}"
+            self.state.error_msg = f"File not found: {resolved_path}"
             self._log(self.state.error_msg, "ERROR")
             return False
+
+        if not resolved_path.is_file():
+            self.state.status    = StreamStatus.ERROR
+            self.state.error_msg = f"Path is not a file: {resolved_path}"
+            self._log(self.state.error_msg, "ERROR")
+            return False
+
+        # Re-point item to the resolved path so the rest of _do_start uses it
+        item = PlaylistItem(
+            file_path=resolved_path,
+            start_position=item.start_position,
+            weight=item.weight,
+            priority=item.priority,
+        )
 
         self._log(f"File verified: {item.file_path.name} ({item.file_path.stat().st_size // 1024} KB)")
         self.state.status   = StreamStatus.STARTING
@@ -395,7 +451,7 @@ class StreamWorker:
 
         # ── Determine seek position ───────────────────────────────────────────
         if seek_override is not None:
-            # Explicit override (resume or manual seek)
+            # Explicit override (manual seek / restart-with-seek)
             seek_pos = float(seek_override)
             self._log(f"Seek override supplied: {_fmt_duration(seek_pos)}")
         elif cfg.compliance_enabled:
@@ -412,13 +468,64 @@ class StreamWorker:
                 self._log(f"Compliance offset calculation failed: {exc} — starting from 0", "WARN")
                 seek_pos = 0.0
         else:
-            # Normal: use playlist item's start_position
-            pos_str = item.start_position
+            # ── Try to resume from last saved position ────────────────────────
+            seek_pos = 0.0
             try:
-                h, m, s  = pos_str.split(":")
-                seek_pos = int(h) * 3600 + int(m) * 60 + float(s)
-            except Exception:
-                seek_pos = 0.0
+                from hc.resume_store import load_position, clear_position
+                saved = load_position(cfg.name)
+                if saved is not None:
+                    saved_file = Path(saved["file_path"])
+                    saved_pos  = float(saved.get("position", 0.0))
+                    # Only resume if the saved file matches the current item
+                    # and the position is meaningful (> 5 s, within duration).
+                    if (saved_file == item.file_path
+                            and saved_pos > 5.0
+                            and (self.state.duration <= 0
+                                 or saved_pos < self.state.duration - 2.0)):
+                        seek_pos = saved_pos
+                        self._log(
+                            f"Resuming from saved position: {item.file_path.name} "
+                            f"@ {_fmt_duration(seek_pos)} "
+                            f"(saved {saved.get('saved_at', '?')})"
+                        )
+                        # Clear so next cold start begins from the CSV position
+                        clear_position(cfg.name)
+                    else:
+                        if saved is not None:
+                            self._log(
+                                f"Saved resume position discarded "
+                                f"(file mismatch or out-of-range): "
+                                f"saved={saved_file.name} "
+                                f"current={item.file_path.name} "
+                                f"pos={saved_pos:.1f}s dur={self.state.duration:.1f}s",
+                                "WARN",
+                            )
+                        # Fall through to normal CSV start_position
+                        pos_str = item.start_position
+                        try:
+                            h, m, s  = pos_str.split(":")
+                            seek_pos = int(h) * 3600 + int(m) * 60 + float(s)
+                        except Exception:
+                            seek_pos = 0.0
+                else:
+                    # No saved position — use CSV start_position
+                    pos_str = item.start_position
+                    try:
+                        h, m, s  = pos_str.split(":")
+                        seek_pos = int(h) * 3600 + int(m) * 60 + float(s)
+                    except Exception:
+                        seek_pos = 0.0
+            except Exception as exc:
+                self._log(
+                    f"Resume store lookup failed: {exc} — starting from CSV position",
+                    "WARN",
+                )
+                pos_str = item.start_position
+                try:
+                    h, m, s  = pos_str.split(":")
+                    seek_pos = int(h) * 3600 + int(m) * 60 + float(s)
+                except Exception:
+                    seek_pos = 0.0
 
         # Apply per-start offset (±seconds set from TUI before start)
         combined_offset = initial_offset + self.state.initial_offset
