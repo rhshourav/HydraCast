@@ -49,7 +49,7 @@ def CSV_FILE()    -> Path: return _dirs["CSV"]
 def EVENTS_FILE() -> Path: return _dirs["EVENTS"]
 
 # ── Web / upload ──────────────────────────────────────────────────────────────
-WEB_PORT         = 8080
+WEB_PORT         = 80
 UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
 
 # ── MediaMTX ──────────────────────────────────────────────────────────────────
