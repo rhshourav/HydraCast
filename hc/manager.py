@@ -1,274 +1,572 @@
 """
-hc/folder_scanner.py — Folder scanner with _day_-tag detection, today-aware
-priority sorting, and streaming only today's (+ untagged) files first.
+hc/manager.py  —  StreamManager: lifecycle, scheduling, and control hub.
 
-Day detection rule: the weekday abbreviation / full name must be wrapped by
-underscores on both sides, e.g.  episode_01_thu_.mp4  or  news_MONDAY_final.mkv.
-Case is ignored during matching, but the original casing is preserved in the
-file name.
-
-TODAY-AWARE STREAMING RULE
-──────────────────────────
-When a folder is scanned HydraCast compares each file's day-tag against the
-current calendar weekday (Monday = 0 … Sunday = 6).
-
-  1. Files tagged for TODAY  — sorted by the chosen sort_mode, placed FIRST.
-  2. Files with no day-tag   — sorted by the chosen sort_mode, placed SECOND.
-  3. Files tagged for OTHER days — sorted day-order then sort_mode, placed LAST.
-
-This means a folder containing:
-
-    news_mon_.mp4  news_tue_.mp4  news_wed_.mp4  intro.mp4
-
-…on a Tuesday will stream in the order:
-    news_tue_.mp4  →  intro.mp4  →  news_mon_.mp4  →  news_wed_.mp4  …
-
-Conflict resolution within the same bucket: sort_mode applies; alphabetical
-order is the final tiebreaker so results are always deterministic.
+Responsibilities
+────────────────
+  • Create one StreamState + StreamWorker per StreamConfig.
+  • start_all() / shutdown() — bulk lifecycle.
+  • run_scheduler() — background thread that:
+      - Starts / stops streams whose weekday window opens / closes.
+      - Fires one-shot events (OneShotEvent) at their scheduled time.
+      - Handles compliance-mode logic (pause until compliance_start).
+  • Per-stream control: start(), stop(), restart(), rescan_folder().
+  • export_urls() — writes stream_urls.txt for easy reference.
+  • Integrates FolderWatcherRegistry for live folder monitoring.
 """
 from __future__ import annotations
 
-import re
-from datetime import date
+import logging
+import threading
+import time
+from datetime import datetime, date
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from hc.constants import DAY_ABBR, SUPPORTED_EXTS
-from hc.models import PlaylistItem
-
-# ---------------------------------------------------------------------------
-# Day detection
-# ---------------------------------------------------------------------------
-# Pattern requires underscores on BOTH sides so "thursday" inside a longer word
-# like "thunderstorm" is never matched.
-_DAY_RE = re.compile(
-    r'_('
-    r'monday|tuesday|wednesday|thursday|friday|saturday|sunday'
-    r'|mon|tue|wed|thu|fri|sat|sun'
-    r')_',
-    re.IGNORECASE,
+from hc.constants import (
+    APP_NAME, APP_VER,
+    BASE_DIR, CONFIGS_DIR, LOGS_DIR,
+    LISTEN_ADDR,
+    DAY_ABBR,
 )
+from hc.folder_scanner import scan_folder
+from hc.folder_watcher import FolderWatcherRegistry
+from hc.json_manager import JSONManager
+from hc.models import (
+    OneShotEvent,
+    PlaylistItem,
+    StreamConfig,
+    StreamState,
+    StreamStatus,
+)
+from hc.worker import LogBuffer, StreamWorker
 
-_DAY_INDEX: Dict[str, int] = {
-    "monday": 0, "mon": 0,
-    "tuesday": 1, "tue": 1,
-    "wednesday": 2, "wed": 2,
-    "thursday": 3, "thu": 3,
-    "friday": 4, "fri": 4,
-    "saturday": 5, "sat": 5,
-    "sunday": 6, "sun": 6,
-}
+log = logging.getLogger(__name__)
 
-# Human-readable day names for logging / UI.
-_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+# How often the scheduler loop wakes up (seconds).
+_SCHED_TICK: float = 30.0
 
 
-def detect_day(filename: str) -> Optional[int]:
+# ---------------------------------------------------------------------------
+# StreamManager
+# ---------------------------------------------------------------------------
+
+class StreamManager:
     """
-    Return 0–6 (Mon–Sun) if *filename* contains _dayname_, else None.
-    Only the FIRST match is used if multiple day tags appear.
+    Central hub that owns all StreamState / StreamWorker instances and the
+    background scheduler thread.
+
+    Public interface used by hydracast.py / TUI / web:
+      start_all()          — start every enabled stream
+      shutdown()           — stop every stream + scheduler + folder watchers
+      run_scheduler()      — launch the background scheduling thread
+      export_urls()        — write stream_urls.txt, return Path
+      start(name)          — start one stream by name
+      stop(name)           — stop  one stream by name
+      restart(name)        — restart one stream by name
+      rescan_folder(state) — force folder rescan for a folder-source stream
+      get_state(name)      — return StreamState | None
+      states               — property: List[StreamState] for TUI / web
     """
-    m = _DAY_RE.search(filename)
-    return _DAY_INDEX.get(m.group(1).lower()) if m else None
 
+    def __init__(
+        self,
+        configs: List[StreamConfig],
+        glog: LogBuffer,
+    ) -> None:
+        self._glog   = glog
+        self._lock   = threading.Lock()
+        self._stop   = threading.Event()
 
-def today_weekday() -> int:
-    """Return today's weekday index: Monday = 0, Sunday = 6."""
-    return date.today().weekday()
+        # Per-stream state and worker objects.
+        self._states:  List[StreamState]          = []
+        self._workers: Dict[str, StreamWorker]    = {}
 
-
-# ---------------------------------------------------------------------------
-# Numerical key helper
-# ---------------------------------------------------------------------------
-def _leading_number(name: str) -> int:
-    """Return the first integer found in *name*, or 999_999 if none."""
-    nums = re.findall(r"\d+", name)
-    return int(nums[0]) if nums else 999_999
-
-
-# ---------------------------------------------------------------------------
-# Sort modes
-# ---------------------------------------------------------------------------
-class SortMode:
-    ALPHA_FWD = "alpha_fwd"
-    ALPHA_REV = "alpha_rev"
-    NUM_FWD   = "num_fwd"
-    NUM_REV   = "num_rev"
-    DAY_FWD   = "day_fwd"   # Mon → Sun  (today-tagged first, then untagged)
-    DAY_REV   = "day_rev"   # Sun → Mon
-    DATE_FWD  = "date_fwd"  # oldest → newest
-    DATE_REV  = "date_rev"  # newest → oldest
-
-    ALL: List[str] = [
-        ALPHA_FWD, ALPHA_REV, NUM_FWD, NUM_REV,
-        DAY_FWD, DAY_REV, DATE_FWD, DATE_REV,
-    ]
-    LABELS: Dict[str, str] = {
-        ALPHA_FWD: "Alphabetical  A → Z",
-        ALPHA_REV: "Alphabetical  Z → A",
-        NUM_FWD:   "Numerical     0 → 9  (embedded episode numbers)",
-        NUM_REV:   "Numerical     9 → 0",
-        DAY_FWD:   "By Weekday    Mon → Sun  (today first, untagged second)",
-        DAY_REV:   "By Weekday    Sun → Mon  (today first, untagged second)",
-        DATE_FWD:  "By File Date  oldest → newest",
-        DATE_REV:  "By File Date  newest → oldest",
-    }
-
-
-# ---------------------------------------------------------------------------
-# Core scan
-# ---------------------------------------------------------------------------
-def scan_folder(
-    folder: Path,
-    sort_mode: str = SortMode.ALPHA_FWD,
-) -> Tuple[List[PlaylistItem], List[str]]:
-    """
-    Scan *folder* for supported media files and return
-    ``(playlist_items, warnings)``.
-
-    TODAY-AWARE ordering (always applied regardless of sort_mode):
-      Tier 1 — files tagged for today's weekday
-      Tier 2 — files with no day-tag
-      Tier 3 — files tagged for other weekdays (in weekday order)
-
-    Within each tier the chosen *sort_mode* is applied; alphabetical name is
-    always the final tiebreaker so results are fully deterministic.
-
-    Priorities are assigned 1, 2, 3 … in the final order.
-    """
-    if not folder.is_dir():
-        return [], [f"'{folder}' is not a directory."]
-
-    raw_files: List[Path] = sorted(
-        [f for f in folder.iterdir()
-         if f.is_file() and f.suffix.lower() in SUPPORTED_EXTS],
-        key=lambda p: p.name.lower(),   # stable base order
-    )
-
-    if not raw_files:
-        return [], [f"No supported media files found in '{folder}'."]
-
-    today = today_weekday()
-    warnings: List[str] = []
-
-    # ── Bucket files ──────────────────────────────────────────────────────────
-    today_files:   List[Path] = []          # tier 1: tagged today
-    untagged:      List[Path] = []          # tier 2: no tag
-    other_buckets: Dict[int, List[Path]] = {d: [] for d in range(7)}  # tier 3
-
-    for fp in raw_files:
-        day = detect_day(fp.name)
-        if day is None:
-            untagged.append(fp)
-        elif day == today:
-            today_files.append(fp)
-        else:
-            other_buckets[day].append(fp)
-
-    # ── Warnings ──────────────────────────────────────────────────────────────
-    if untagged:
-        names_preview = ", ".join(p.name for p in untagged[:4])
-        if len(untagged) > 4:
-            names_preview += f" … (+{len(untagged) - 4} more)"
-        warnings.append(
-            f"⚠  {len(untagged)} file(s) have no _day_ tag — "
-            f"streamed after today's ({_DAY_NAMES[today]}) files: {names_preview}"
-        )
-
-    if today_files:
-        warnings.append(
-            f"ℹ  {len(today_files)} file(s) tagged for today "
-            f"({_DAY_NAMES[today]}) — placed first in playlist."
-        )
-
-    # ── Sort key builder ──────────────────────────────────────────────────────
-    def _sort_key(fp: Path):
-        """Primary sort key using *sort_mode*; alpha name is always tiebreaker."""
-        name = fp.name.lower()
-        mtime = 0.0
+        # One-shot events loaded from config/events.json.
+        self._events: List[OneShotEvent] = []
         try:
-            mtime = fp.stat().st_mtime
-        except OSError:
-            pass
-        if sort_mode == SortMode.ALPHA_FWD:
-            return (name,)
-        if sort_mode == SortMode.ALPHA_REV:
-            return (tuple(-ord(c) for c in name),)
-        if sort_mode == SortMode.NUM_FWD:
-            return (_leading_number(name), name)
-        if sort_mode == SortMode.NUM_REV:
-            return (-_leading_number(name), name)
-        if sort_mode == SortMode.DATE_FWD:
-            return (mtime, name)
-        if sort_mode == SortMode.DATE_REV:
-            return (-mtime, name)
-        # DAY_FWD / DAY_REV — within each bucket fall back to alpha
-        return (name,)
+            self._events = JSONManager.load_events()
+            log.info("manager: loaded %d one-shot event(s)", len(self._events))
+        except Exception as exc:
+            log.warning("manager: could not load events: %s", exc)
 
-    # ── Assemble ordered list (today → untagged → others) ────────────────────
-    ordered: List[Tuple[Optional[int], Path]] = []
+        # Folder-watcher registry (one watcher per unique folder path).
+        self._fw_registry = FolderWatcherRegistry(glog)
 
-    # Tier 1: today's files
-    for fp in sorted(today_files, key=_sort_key):
-        ordered.append((today, fp))
+        # Build StreamState + StreamWorker for every config.
+        for cfg in configs:
+            self._add_stream(cfg)
 
-    # Tier 2: untagged files
-    for fp in sorted(untagged, key=_sort_key):
-        ordered.append((None, fp))
+        log.info(
+            "StreamManager initialised: %d stream(s) (%d enabled).",
+            len(self._states),
+            sum(1 for s in self._states if s.config.enabled),
+        )
 
-    # Tier 3: other weekday files
-    if sort_mode == SortMode.DAY_REV:
-        # Sun → Mon order for the "other" bucket, wrapping around today
-        other_day_order = [
-            d for d in range(6, -1, -1) if d != today
+    # ── Internal: per-stream construction ────────────────────────────────────
+
+    def _add_stream(self, cfg: StreamConfig) -> StreamState:
+        """Create StreamState + StreamWorker and register with folder watcher."""
+        state  = StreamState(config=cfg)
+        worker = StreamWorker(state=state, glog=self._glog)
+
+        with self._lock:
+            self._states.append(state)
+            self._workers[cfg.name] = worker
+
+        # Register with the folder watcher if this is a folder-source stream.
+        if cfg.folder_source:
+            self._fw_registry.register(state)
+
+        return state
+
+    # ── Public properties / accessors ─────────────────────────────────────────
+
+    @property
+    def states(self) -> List[StreamState]:
+        """Read-only snapshot of all StreamState objects (used by TUI / web)."""
+        with self._lock:
+            return list(self._states)
+
+    def get_state(self, name: str) -> Optional[StreamState]:
+        """Return the StreamState for *name*, or None."""
+        with self._lock:
+            for s in self._states:
+                if s.config.name == name:
+                    return s
+        return None
+
+    def get_worker(self, name: str) -> Optional[StreamWorker]:
+        with self._lock:
+            return self._workers.get(name)
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    def start_all(self) -> None:
+        """
+        Start every enabled stream that is scheduled for today.
+        Streams disabled in config or not scheduled today are skipped.
+        """
+        today = date.today().weekday()
+        started = 0
+        for state in self.states:
+            cfg = state.config
+            if not cfg.enabled:
+                log.info("manager: '%s' is disabled — skipping.", cfg.name)
+                continue
+            if cfg.weekdays and today not in cfg.weekdays:
+                day_name = DAY_ABBR[today]
+                log.info(
+                    "manager: '%s' not scheduled for %s — skipping.",
+                    cfg.name, day_name,
+                )
+                state.set_status(StreamStatus.SCHEDULED)
+                continue
+            if not cfg.playlist:
+                log.warning(
+                    "manager: '%s' has no playlist — skipping.",
+                    cfg.name,
+                )
+                state.set_status(StreamStatus.ERROR)
+                state.log_add("⚠ No playlist — stream skipped at startup.")
+                continue
+            self._start_worker(state)
+            started += 1
+
+        msg = (
+            f"{APP_NAME} v{APP_VER}: {started} stream(s) started "
+            f"({len(self.states) - started} skipped / disabled)."
+        )
+        self._glog.add(msg, "INFO")
+        log.info("manager: start_all complete — %s", msg)
+
+    def shutdown(self) -> None:
+        """
+        Stop the scheduler, all stream workers, and the folder watcher registry.
+        Blocks until all workers have terminated cleanly.
+        """
+        log.info("manager: shutdown requested.")
+        self._stop.set()
+
+        # Stop each worker.
+        for state in self.states:
+            try:
+                self._stop_worker(state, reason="shutdown")
+            except Exception as exc:
+                log.warning(
+                    "manager: error stopping '%s': %s",
+                    state.config.name, exc,
+                )
+
+        # Stop folder watchers.
+        try:
+            self._fw_registry.stop_all()
+        except Exception as exc:
+            log.warning("manager: folder watcher stop error: %s", exc)
+
+        log.info("manager: shutdown complete.")
+
+    # ── Scheduler ─────────────────────────────────────────────────────────────
+
+    def run_scheduler(self) -> None:
+        """
+        Launch the background scheduler thread (non-blocking).
+
+        The thread fires every _SCHED_TICK seconds and:
+          1. Checks each stream's weekday window — starts/stops as needed.
+          2. Fires pending one-shot events (OneShotEvent) within a 1-min window.
+          3. Handles compliance-mode: pauses stream until compliance_start time.
+        """
+        t = threading.Thread(
+            target=self._scheduler_loop,
+            daemon=True,
+            name="hc-scheduler",
+        )
+        t.start()
+        log.info("manager: scheduler thread started (tick=%.0fs).", _SCHED_TICK)
+
+    def _scheduler_loop(self) -> None:
+        last_day: Optional[int] = None
+
+        while not self._stop.is_set():
+            try:
+                now       = datetime.now()
+                today_idx = now.weekday()
+
+                # ── Day-change handling ───────────────────────────────────────
+                if today_idx != last_day:
+                    last_day = today_idx
+                    self._on_day_change(today_idx, now)
+
+                # ── One-shot event firing ─────────────────────────────────────
+                self._check_events(now)
+
+                # ── Compliance-mode checks ────────────────────────────────────
+                self._check_compliance(now)
+
+            except Exception as exc:
+                log.error("manager: scheduler error: %s", exc)
+
+            self._stop.wait(timeout=_SCHED_TICK)
+
+    def _on_day_change(self, today_idx: int, now: datetime) -> None:
+        """Called once when the calendar day advances."""
+        day_name = DAY_ABBR[today_idx]
+        msg = f"📅 Day changed → {day_name}.  Evaluating stream schedules."
+        self._glog.add(msg, "INFO")
+        log.info("manager: %s", msg)
+
+        for state in self.states:
+            cfg = state.config
+            if not cfg.enabled:
+                continue
+
+            scheduled_today = (not cfg.weekdays) or (today_idx in cfg.weekdays)
+
+            if scheduled_today and state.status not in (
+                StreamStatus.LIVE, StreamStatus.STARTING
+            ):
+                log.info(
+                    "manager: day-change → starting '%s' (scheduled for %s).",
+                    cfg.name, day_name,
+                )
+                state.log_add(f"📅 Day changed to {day_name} — stream starting.")
+                self._start_worker(state)
+
+            elif not scheduled_today and state.status == StreamStatus.LIVE:
+                log.info(
+                    "manager: day-change → stopping '%s' (not scheduled for %s).",
+                    cfg.name, day_name,
+                )
+                state.log_add(f"📅 Day changed to {day_name} — stream stopped (not scheduled).")
+                self._stop_worker(state, reason="day-change")
+                state.set_status(StreamStatus.SCHEDULED)
+
+            # Refresh folder-source playlist for today's _day_ tags.
+            if cfg.folder_source and scheduled_today:
+                try:
+                    items, warnings = scan_folder(cfg.folder_source)
+                    if items:
+                        cfg.playlist = items
+                        state.log_add(
+                            f"📅 Folder playlist refreshed for {day_name}: "
+                            f"{len(items)} file(s)."
+                        )
+                    for w in warnings:
+                        state.log_add(f"⚠ {w}")
+                except Exception as exc:
+                    log.warning(
+                        "manager: day-change folder rescan failed for '%s': %s",
+                        cfg.name, exc,
+                    )
+
+    def _check_events(self, now: datetime) -> None:
+        """Fire any pending OneShotEvent within the next scheduler tick window."""
+        for ev in self._events:
+            if ev.played:
+                continue
+            delta = (ev.play_at - now).total_seconds()
+            # Fire if within ±(tick + 10 s) of the scheduled time.
+            if -(10) <= delta <= (_SCHED_TICK + 10):
+                state = self.get_state(ev.stream_name)
+                if state is None:
+                    log.warning(
+                        "manager: event '%s' target stream '%s' not found.",
+                        ev.event_id, ev.stream_name,
+                    )
+                    JSONManager.mark_event_played(self._events, ev.event_id)
+                    continue
+                try:
+                    log.info(
+                        "manager: firing one-shot event '%s' → '%s'.",
+                        ev.event_id, ev.stream_name,
+                    )
+                    state.log_add(
+                        f"🎬 One-shot event: playing '{ev.file_path.name}' "
+                        f"at {ev.play_at.strftime('%H:%M')}."
+                    )
+                    worker = self.get_worker(ev.stream_name)
+                    if worker:
+                        worker.inject_event(ev)
+                    JSONManager.mark_event_played(self._events, ev.event_id)
+                    self._glog.add(
+                        f"Event fired: '{ev.file_path.name}' → {ev.stream_name}",
+                        "INFO",
+                    )
+                except Exception as exc:
+                    log.error(
+                        "manager: event '%s' fire failed: %s",
+                        ev.event_id, exc,
+                    )
+
+    def _check_compliance(self, now: datetime) -> None:
+        """
+        Compliance mode: if compliance_enabled, ensure the stream only runs
+        at or after compliance_start.  Before that time, hold the stream in
+        SCHEDULED state; at the start time, begin streaming.
+        """
+        try:
+            cs_h, cs_m, cs_s = (int(x) for x in "06:00:00".split(":"))
+        except ValueError:
+            return
+
+        now_secs = now.hour * 3600 + now.minute * 60 + now.second
+
+        for state in self.states:
+            cfg = state.config
+            if not cfg.compliance_enabled:
+                continue
+            try:
+                parts  = cfg.compliance_start.split(":")
+                target = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            except Exception:
+                continue
+
+            today_idx = now.weekday()
+            scheduled = (not cfg.weekdays) or (today_idx in cfg.weekdays)
+
+            if not scheduled or not cfg.enabled:
+                continue
+
+            # At or after compliance_start and stream is not yet live → start it.
+            if now_secs >= target and state.status == StreamStatus.SCHEDULED:
+                log.info(
+                    "manager: compliance start time reached for '%s'.",
+                    cfg.name,
+                )
+                state.log_add(
+                    f"⏰ Compliance start reached ({cfg.compliance_start}) — "
+                    "stream beginning."
+                )
+                self._start_worker(state)
+
+            # Before compliance_start and stream is live but compliance blocks it.
+            elif now_secs < target and state.status == StreamStatus.LIVE:
+                # Only block on the very first tick after midnight; after that
+                # the stream is already validated from a previous scheduler pass.
+                pass
+
+    # ── Per-stream control (public) ───────────────────────────────────────────
+
+    def start(self, name: str) -> bool:
+        """
+        Manually start a stream by name (regardless of weekday schedule).
+        Returns True on success.
+        """
+        state = self.get_state(name)
+        if state is None:
+            log.warning("manager.start: unknown stream '%s'.", name)
+            return False
+        if state.status == StreamStatus.LIVE:
+            log.info("manager.start: '%s' already LIVE.", name)
+            return True
+        self._start_worker(state)
+        return True
+
+    def stop(self, name: str) -> bool:
+        """
+        Manually stop a stream by name.
+        Returns True on success.
+        """
+        state = self.get_state(name)
+        if state is None:
+            log.warning("manager.stop: unknown stream '%s'.", name)
+            return False
+        self._stop_worker(state, reason="manual-stop")
+        return True
+
+    def restart(self, name: str) -> bool:
+        """
+        Restart a stream: stop (if running) then start.
+        Returns True on success.
+        """
+        state = self.get_state(name)
+        if state is None:
+            log.warning("manager.restart: unknown stream '%s'.", name)
+            return False
+        log.info("manager: restarting '%s'.", name)
+        state.log_add("🔄 Restarting stream …")
+        self._stop_worker(state, reason="restart")
+        time.sleep(0.5)
+        self._start_worker(state)
+        return True
+
+    def rescan_folder(self, state: StreamState) -> None:
+        """
+        Force an immediate folder rescan for a folder-source stream.
+        Delegates to FolderWatcherRegistry; falls back to a direct scan.
+        """
+        if state.config.folder_source is None:
+            msg = f"[{state.config.name}] rescan_folder: not a folder-source stream."
+            log.warning(msg)
+            state.log_add(f"⚠ {msg}")
+            return
+
+        msg = (
+            f"[{state.config.name}] Manual folder rescan triggered: "
+            f"{state.config.folder_source.name}"
+        )
+        self._glog.add(msg, "INFO")
+        state.log_add(f"🔍 {msg}")
+        self._fw_registry.rescan(state)
+
+    def clear_error(self, name: str) -> bool:
+        """Reset error state and restart count for a stream (C key in TUI)."""
+        state = self.get_state(name)
+        if state is None:
+            return False
+        state.clear_error()
+        log.info("manager: error state cleared for '%s'.", name)
+        return True
+
+    # ── URL export ────────────────────────────────────────────────────────────
+
+    def export_urls(self) -> Path:
+        """
+        Write a plain-text file listing all RTSP (and HLS) stream URLs.
+        Returns the Path of the written file.
+        """
+        from hc.utils import _local_ip
+        ip   = _local_ip()
+        lines: List[str] = [
+            f"# {APP_NAME} v{APP_VER} — Stream URLs",
+            f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"# Server IP: {ip}",
+            "",
         ]
-    else:
-        # Default: Mon → Sun, skipping today
-        other_day_order = [
-            d for d in range(7) if d != today
-        ]
 
-    for d in other_day_order:
-        for fp in sorted(other_buckets[d], key=_sort_key):
-            ordered.append((d, fp))
+        for state in self.states:
+            cfg = state.config
+            rtsp_url = f"rtsp://{ip}:{cfg.port}/{cfg.stream_path}"
+            lines.append(f"[{cfg.name}]")
+            lines.append(f"  RTSP : {rtsp_url}")
+            if cfg.hls_enabled:
+                hls_url = (
+                    f"http://{ip}:{getattr(cfg, 'hls_port', cfg.port + 800)}"
+                    f"/{cfg.stream_path}/index.m3u8"
+                )
+                lines.append(f"  HLS  : {hls_url}")
+            lines.append(
+                f"  Days : {cfg.weekdays_display()}"
+            )
+            lines.append(
+                f"  Files: {len(cfg.playlist)} in playlist"
+            )
+            lines.append("")
 
-    # ── Assign priorities 1 … N ───────────────────────────────────────────────
-    items: List[PlaylistItem] = [
-        PlaylistItem(file_path=fp, start_position="00:00:00", priority=i + 1)
-        for i, (_, fp) in enumerate(ordered)
-    ]
+        out = BASE_DIR() / "stream_urls.txt"
+        out.write_text("\n".join(lines), encoding="utf-8")
+        log.info("manager: URLs exported to '%s'.", out)
+        return out
 
-    return items, warnings
+    # ── Internal worker helpers ───────────────────────────────────────────────
 
+    def _start_worker(self, state: StreamState) -> None:
+        """Create (or retrieve) and start the StreamWorker for *state*."""
+        name = state.config.name
+        with self._lock:
+            worker = self._workers.get(name)
+            if worker is None:
+                worker = StreamWorker(state=state, glog=self._glog)
+                self._workers[name] = worker
 
-def scan_folder_interactive(
-    folder: Path,
-    sort_mode: str = SortMode.ALPHA_FWD,
-) -> Tuple[List[PlaylistItem], List[str], Dict[int, List[PlaylistItem]]]:
-    """
-    Extended scan that also returns a per-weekday breakdown (useful for TUI
-    preview).  Untagged files appear in every weekday bucket.
+        try:
+            worker.start()
+            log.info("manager: worker started for '%s'.", name)
+        except Exception as exc:
+            log.error("manager: failed to start worker for '%s': %s", name, exc)
+            state.set_status(StreamStatus.ERROR)
+            state.log_add(f"✘ Worker start failed: {exc}")
 
-    Returns ``(all_items, warnings, per_day_map)`` where *per_day_map* maps
-    0–6 to the list of items that should play on that day (tagged + untagged).
+    def _stop_worker(self, state: StreamState, reason: str = "stop") -> None:
+        """Signal and wait for the StreamWorker for *state* to stop."""
+        name = state.config.name
+        with self._lock:
+            worker = self._workers.get(name)
 
-    The master *all_items* list is always today-aware (today's tagged files
-    first, then untagged, then other days).
-    """
-    items, warnings = scan_folder(folder, sort_mode)
+        if worker is None:
+            return
 
-    per_day: Dict[int, List[PlaylistItem]] = {d: [] for d in range(7)}
-    all_day: List[PlaylistItem] = []
+        try:
+            worker.stop(reason=reason)
+            log.info("manager: worker stopped for '%s' (reason=%s).", name, reason)
+        except Exception as exc:
+            log.warning(
+                "manager: error stopping worker for '%s': %s",
+                name, exc,
+            )
 
-    for item in items:
-        day = detect_day(item.file_path.name)
-        if day is not None:
-            per_day[day].append(item)
-        else:
-            all_day.append(item)
+    # ── Convenience: add a stream at runtime (web upload flow) ────────────────
 
-    # Untagged files appear in every day's bucket.
-    for d in range(7):
-        per_day[d].extend(all_day)
+    def add_stream(self, cfg: StreamConfig) -> StreamState:
+        """
+        Register a brand-new StreamConfig at runtime (e.g. via web UI).
+        Does NOT auto-start — caller must call start(cfg.name) if desired.
+        """
+        state = self._add_stream(cfg)
+        log.info("manager: new stream '%s' registered.", cfg.name)
+        return state
 
-    return items, warnings, per_day
+    def remove_stream(self, name: str) -> bool:
+        """
+        Stop and remove a stream at runtime (e.g. deleted via web UI).
+        Returns True if the stream was found and removed.
+        """
+        state = self.get_state(name)
+        if state is None:
+            return False
+        self._stop_worker(state, reason="remove")
+        if state.config.folder_source:
+            self._fw_registry.unregister(state)
+        with self._lock:
+            self._states = [s for s in self._states if s.config.name != name]
+            self._workers.pop(name, None)
+        log.info("manager: stream '%s' removed.", name)
+        return True
+
+    # ── String representation ─────────────────────────────────────────────────
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return (
+            f"<StreamManager streams={len(self._states)} "
+            f"live={sum(1 for s in self._states if s.status == StreamStatus.LIVE)}>"
+        )

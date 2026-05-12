@@ -1,0 +1,16 @@
+{
+    "enabled": false,
+    "mode": "smtp",
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "use_tls": true,
+    "username": "you@gmail.com",
+    "password": "your-app-password",
+    "from_addr": "you@gmail.com",
+    "to_addrs": [
+        "ops@example.com"
+    ],
+    "on_error": true,
+    "on_stop": true,
+    "cooldown_secs": 300
+}

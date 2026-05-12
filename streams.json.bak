@@ -1,0 +1,62 @@
+[
+  {
+    "stream_name": "Stream_1",
+    "port": 8554,
+    "files": "D:\\GITHUB\\HydraCast\\media\\TEST",
+    "weekdays": "all",
+    "enabled": true,
+    "shuffle": false,
+    "stream_path": "stream",
+    "video_bitrate": "2500k",
+    "audio_bitrate": "128k",
+    "hls_enabled": true,
+    "compliance_enabled": false,
+    "compliance_start": "06:00:00",
+    "compliance_loop": false
+  },
+  {
+    "stream_name": "Stream_2",
+    "port": 8564,
+    "files": "D:\\GITHUB\\HydraCast\\media",
+    "weekdays": "all",
+    "enabled": true,
+    "shuffle": false,
+    "stream_path": "ch2",
+    "video_bitrate": "4000k",
+    "audio_bitrate": "192k",
+    "hls_enabled": true,
+    "compliance_enabled": false,
+    "compliance_start": "06:00:00",
+    "compliance_loop": false
+  },
+  {
+    "stream_name": "Test",
+    "port": 9000,
+    "files": "D:\\GITHUB\\HydraCast\\media",
+    "weekdays": "all",
+    "enabled": true,
+    "shuffle": false,
+    "stream_path": "ab",
+    "video_bitrate": "2500k",
+    "audio_bitrate": "128k",
+    "hls_enabled": true,
+    "compliance_enabled": false,
+    "compliance_start": "06:00:00",
+    "compliance_loop": false
+  },
+  {
+    "stream_name": "test",
+    "port": 9002,
+    "files": "D:\\GITHUB\\HydraCast\\media",
+    "weekdays": "all",
+    "enabled": true,
+    "shuffle": false,
+    "stream_path": "stream",
+    "video_bitrate": "2500k",
+    "audio_bitrate": "128k",
+    "hls_enabled": true,
+    "compliance_enabled": true,
+    "compliance_start": "06:00:00",
+    "compliance_loop": false
+  }
+]

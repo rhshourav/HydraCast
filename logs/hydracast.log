@@ -1,0 +1,1011 @@
+2026-05-12 13:29:25,053  INFO     HydraCast v0.0.001 started — 4 stream(s) configured.
+2026-05-12 13:29:25,054  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:29:25,054  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:29:25,054  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:29:25,055  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:29:25,055  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:29:25,055  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:29:25,055  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:29:25,056  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:29:25,056  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:29:25,056  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:29:25,056  WARNING  [Stream_4] start() called while already in progress — skipped.
+2026-05-12 13:29:25,057  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:29:25,103  INFO     Web UI → http://0.0.0.0:8080
+2026-05-12 13:29:25,103  INFO     Web UI → http://192.168.19.44:8080
+2026-05-12 13:29:41,005  INFO     [Stream_1] Stop requested.
+2026-05-12 13:29:41,005  INFO     [Stream_4] Stop requested.
+2026-05-12 13:29:41,005  INFO     Stop ALL streams
+2026-05-12 13:29:42,006  INFO     [Stream_1] Stream stopped cleanly.
+2026-05-12 13:29:42,006  INFO     [Stream_4] Stream stopped cleanly.
+2026-05-12 13:30:26,053  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:30:26,054  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:30:26,054  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:30:26,055  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:30:26,056  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:30:26,057  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:30:26,060  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:30:26,062  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:31:26,606  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:31:26,607  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:31:26,607  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:31:26,607  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:31:26,607  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:31:26,607  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:31:26,608  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:31:26,608  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:32:27,358  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:32:27,358  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:32:27,358  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:32:27,359  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:32:27,359  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:32:27,359  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:32:27,360  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:32:27,360  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:33:28,527  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:33:28,527  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:33:28,527  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:33:28,527  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:33:28,528  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:33:28,530  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:33:28,550  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:33:28,550  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:34:29,632  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:34:29,633  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:34:29,633  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:34:29,634  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:34:29,634  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:34:29,634  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:34:29,635  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:34:29,635  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:35:30,386  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:35:30,387  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:35:30,388  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:35:30,388  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:35:30,389  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:35:30,389  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:35:30,389  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:35:30,390  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:36:30,999  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:36:31,000  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:36:31,000  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:36:31,000  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:36:31,002  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:36:31,002  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:36:31,002  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:36:31,003  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:37:31,571  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:37:31,572  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:37:31,572  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:37:31,573  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:37:31,574  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:37:31,574  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:37:31,574  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:37:31,575  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:38:32,179  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:38:32,180  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:38:32,181  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:38:32,181  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:38:32,182  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:38:32,183  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:38:32,183  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:38:32,184  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:39:32,965  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:39:32,966  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:39:32,966  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:39:32,966  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:39:32,967  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:39:32,967  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:39:32,970  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:39:32,970  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:40:33,473  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:40:33,474  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:40:33,474  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:40:33,474  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:40:33,475  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:40:33,475  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:40:33,476  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:40:33,476  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:41:33,883  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:41:33,883  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:41:33,884  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:41:33,884  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:41:33,885  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:41:33,885  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:41:33,885  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:41:33,886  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:42:34,440  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:42:34,441  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:42:34,442  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:42:34,442  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:42:34,444  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:42:34,444  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:42:34,445  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:42:34,445  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:43:35,573  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:43:35,573  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:43:35,574  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:43:35,574  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:43:35,574  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:43:35,575  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:43:35,577  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:43:35,578  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:44:36,154  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:44:36,155  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:44:36,155  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:44:36,155  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:44:36,156  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:44:36,156  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:44:36,157  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:44:36,157  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:45:36,819  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:45:36,820  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:45:36,820  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:45:36,821  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:45:36,822  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:45:36,823  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:45:36,823  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:45:36,824  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:46:37,491  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:46:37,494  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:46:37,494  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:46:37,495  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:46:37,495  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:46:37,496  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:46:37,497  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:46:37,500  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:47:37,981  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:47:37,983  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:47:37,983  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:47:37,984  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:47:37,984  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:47:37,985  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:47:37,986  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:47:37,987  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:48:38,506  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:48:38,507  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:48:38,507  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:48:38,507  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:48:38,509  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:48:38,510  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:48:38,511  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:48:38,512  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:49:39,116  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:49:39,117  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:49:39,118  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:49:39,118  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:49:39,119  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:49:39,119  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:49:39,121  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:49:39,122  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:50:39,675  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:50:39,675  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:50:39,675  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:50:39,675  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:50:39,676  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:50:39,676  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:50:39,677  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:50:39,677  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:51:40,322  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:51:40,325  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:51:40,325  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:51:40,325  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:51:40,327  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:51:40,327  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:51:40,329  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:51:40,330  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:52:40,767  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:52:40,768  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:52:40,768  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:52:40,768  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:52:40,769  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:52:40,770  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:52:40,770  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:52:40,771  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:53:42,113  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:53:42,114  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:53:42,114  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:53:42,114  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:53:42,114  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:53:42,114  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:53:42,114  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:53:42,115  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:54:42,725  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:54:42,725  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:54:42,725  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:54:42,725  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:54:42,726  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:54:42,726  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:54:42,727  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:54:42,727  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:55:43,290  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:55:43,305  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:55:43,306  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:55:43,307  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:55:43,308  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:55:43,308  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:55:43,309  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:55:43,310  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:56:43,750  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:56:43,751  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:56:43,751  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:56:43,751  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:56:43,752  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:56:43,752  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:56:43,753  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:56:43,755  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:57:44,145  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:57:44,145  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:57:44,145  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:57:44,145  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:57:44,146  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:57:44,146  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:57:44,147  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:57:44,147  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:58:44,823  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:58:44,825  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:58:44,825  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:58:44,825  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:58:44,827  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:58:44,828  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:58:44,830  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:58:44,831  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 13:59:45,462  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 13:59:45,463  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 13:59:45,463  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 13:59:45,463  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 13:59:45,463  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 13:59:45,464  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 13:59:45,464  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 13:59:45,464  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:00:46,045  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:00:46,046  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:00:46,046  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:00:46,047  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:00:46,047  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:00:46,047  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:00:46,048  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:00:46,048  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:01:46,749  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:01:46,750  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:01:46,750  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:01:46,750  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:01:46,752  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:01:46,752  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:01:46,753  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:01:46,755  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:02:48,064  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:02:48,064  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:02:48,065  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:02:48,065  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:02:48,065  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:02:48,065  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:02:48,066  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:02:48,066  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:03:48,600  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:03:48,600  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:03:48,600  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:03:48,600  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:03:48,601  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:03:48,601  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:03:48,603  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:03:48,604  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:04:49,123  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:04:49,124  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:04:49,124  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:04:49,124  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:04:49,125  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:04:49,125  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:04:49,126  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:04:49,127  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:05:49,682  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:05:49,683  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:05:49,683  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:05:49,683  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:05:49,683  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:05:49,683  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:05:49,683  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:05:49,684  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:06:50,346  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:06:50,347  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:06:50,347  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:06:50,347  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:06:50,348  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:06:50,349  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:06:50,350  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:06:50,350  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:07:50,827  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:07:50,828  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:07:50,828  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:07:50,828  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:07:50,829  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:07:50,829  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:07:50,830  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:07:50,830  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:08:51,523  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:08:51,523  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:08:51,523  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:08:51,524  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:08:51,525  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:08:51,526  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:08:51,526  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:08:51,527  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:09:52,047  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:09:52,047  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:09:52,048  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:09:52,048  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:09:52,050  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:09:52,050  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:09:52,051  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:09:52,051  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:10:52,563  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:10:52,564  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:10:52,565  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:10:52,565  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:10:52,566  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:10:52,566  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:10:52,567  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:10:52,568  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:11:52,965  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:11:52,965  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:11:52,965  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:11:52,966  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:11:52,967  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:11:52,967  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:11:52,967  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:11:52,967  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:12:54,065  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:12:54,066  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:12:54,066  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:12:54,066  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:12:54,067  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:12:54,067  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:12:54,067  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:12:54,067  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:13:55,119  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:13:55,120  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:13:55,120  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:13:55,120  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:13:55,123  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:13:55,123  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:13:55,123  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:13:55,126  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:14:55,877  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:14:55,879  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:14:55,879  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:14:55,879  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:14:55,880  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:14:55,881  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:14:55,882  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:14:55,883  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:15:56,310  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:15:56,312  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:15:56,312  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:15:56,313  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:15:56,314  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:15:56,314  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:15:56,315  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:15:56,316  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:16:57,028  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:16:57,028  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:16:57,029  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:16:57,029  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:16:57,029  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:16:57,030  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:16:57,030  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:16:57,030  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:17:57,685  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:17:57,699  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:17:57,699  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:17:57,699  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:17:57,699  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:17:57,700  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:17:57,700  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:17:57,701  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:18:58,411  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:18:58,413  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:18:58,413  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:18:58,413  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:18:58,415  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:18:58,418  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:18:58,431  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:18:58,432  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:19:58,878  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:19:58,879  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:19:58,879  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:19:58,880  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:19:58,881  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:19:58,882  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:19:58,883  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:19:58,883  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:20:59,650  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:20:59,650  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:20:59,651  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:20:59,651  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:20:59,651  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:20:59,652  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:20:59,652  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:20:59,652  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:22:00,662  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:22:00,663  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:22:00,663  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:22:00,663  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:22:00,664  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:22:00,664  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:22:00,664  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:22:00,665  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:23:01,688  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:23:01,688  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:23:01,688  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:23:01,688  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:23:01,689  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:23:01,689  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:23:01,689  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:23:01,690  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:24:02,566  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:24:02,566  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:24:02,566  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:24:02,566  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:24:02,566  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:24:02,567  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:24:02,567  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:24:02,567  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:25:03,659  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:25:03,660  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:25:03,660  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:25:03,660  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:25:03,660  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:25:03,661  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:25:03,662  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:25:03,662  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:26:04,516  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:26:04,517  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:26:04,517  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:26:04,517  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:26:04,517  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:26:04,518  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:26:04,519  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:26:04,519  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:27:05,050  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:27:05,050  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:27:05,050  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:27:05,050  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:27:05,051  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:27:05,051  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:27:05,052  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:27:05,052  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:28:05,528  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:28:05,529  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:28:05,529  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:28:05,529  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:28:05,530  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:28:05,532  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:28:05,534  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:28:05,535  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:29:06,240  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:29:06,241  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:29:06,242  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:29:06,242  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:29:06,243  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:29:06,243  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:29:06,244  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:29:06,245  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:29:37,191  INFO     [Stream_1] Stop requested.
+2026-05-12 14:29:37,192  INFO     [Stream_4] Stop requested.
+2026-05-12 14:34:36,408  INFO     HydraCast v0.0.001 started — 4 stream(s) configured.
+2026-05-12 14:34:36,410  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 14:34:36,411  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 14:34:36,411  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:34:36,412  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:34:36,412  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 14:34:36,414  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 14:34:36,414  WARNING  [Stream_1] start() called while already in progress — skipped.
+2026-05-12 14:34:36,414  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 14:34:36,415  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:34:36,416  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 14:34:36,416  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 14:34:36,418  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 14:34:36,469  INFO     Web UI → http://0.0.0.0:8080
+2026-05-12 14:34:36,470  INFO     Web UI → http://192.168.19.44:8080
+2026-05-12 15:02:32,246  INFO     Protect mode active — Ctrl-C disabled. Use Q in the TUI or the Web UI to stop.
+2026-05-12 15:02:32,246  INFO     HydraCast v0.0.001 started — 4 stream(s) configured.
+2026-05-12 15:02:32,247  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:02:32,247  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:02:32,248  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:02:32,248  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:02:32,249  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:02:32,252  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:02:32,253  WARNING  [Stream_1] start() called while already in progress — skipped.
+2026-05-12 15:02:32,253  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:02:32,254  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:02:32,255  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:02:32,255  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:02:32,257  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:02:32,281  INFO     Web UI → http://0.0.0.0:8080
+2026-05-12 15:02:32,282  INFO     Web UI → http://192.168.19.44:8080
+2026-05-12 15:03:04,129  INFO     HydraCast v0.0.001 started — 4 stream(s) configured.
+2026-05-12 15:03:04,130  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:03:04,130  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:03:04,130  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:03:04,130  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:03:04,131  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:03:04,131  WARNING  [Stream_1] start() called while already in progress — skipped.
+2026-05-12 15:03:04,131  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:03:04,131  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:03:04,132  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:03:04,132  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:03:04,132  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:03:04,134  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:03:04,153  INFO     Web UI → http://0.0.0.0:8080
+2026-05-12 15:03:04,154  INFO     Web UI → http://192.168.19.44:8080
+2026-05-12 15:03:25,121  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:03:25,121  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:03:25,123  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:03:25,123  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:03:25,123  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:03:25,125  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:03:25,432  INFO     [Stream_1] Stop requested.
+2026-05-12 15:03:25,432  INFO     [Stream_4] Stop requested.
+2026-05-12 15:03:26,434  INFO     [Stream_1] Stream stopped cleanly.
+2026-05-12 15:03:26,435  INFO     [Stream_4] Stream stopped cleanly.
+2026-05-12 15:03:31,570  INFO     [Stream_1] Stop requested.
+2026-05-12 15:03:31,570  INFO     [Stream_4] Stop requested.
+2026-05-12 15:03:32,571  INFO     [Stream_1] Stream stopped cleanly.
+2026-05-12 15:03:32,571  INFO     [Stream_4] Stream stopped cleanly.
+2026-05-12 15:04:04,605  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:04:04,605  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:04:04,606  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:04:04,606  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:04:04,607  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:04:04,607  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:04:04,608  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:04:04,608  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:06:09,441  INFO     HydraCast v0.0.001 started — 4 stream(s) configured.
+2026-05-12 15:06:09,442  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:06:09,443  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:06:09,444  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:06:09,444  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:06:09,445  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:06:09,446  WARNING  [Stream_1] start() called while already in progress — skipped.
+2026-05-12 15:06:09,446  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:06:09,447  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:06:09,447  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:06:09,448  WARNING  [Stream_4] start() called while already in progress — skipped.
+2026-05-12 15:06:09,477  INFO     Web UI → http://0.0.0.0:8080
+2026-05-12 15:06:09,477  INFO     Web UI → http://192.168.19.44:8080
+2026-05-12 15:06:59,845  INFO     Upload saved: D:\GITHUB\HydraCast\media\ab1.mkv
+2026-05-12 15:07:04,743  INFO     Upload saved: D:\GITHUB\HydraCast\media\Absurd.Planet.S01E02.720p.NF.WEBRip.x264-GalaxyTV.mkv
+2026-05-12 15:07:10,399  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:07:10,399  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:07:10,399  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:07:10,399  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:07:10,400  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:07:10,400  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:07:10,401  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:07:10,401  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:07:15,729  INFO     Upload saved: D:\GITHUB\HydraCast\media\Tales.From.the.Loop.S01E08.720p.AMZN.WEBRip.x264-GalaxyTV.mkv
+2026-05-12 15:07:20,386  INFO     Upload saved: D:\GITHUB\HydraCast\media\Tales.From.the.Loop.S01E07.720p.AMZN.WEBRip.x264-GalaxyTV.mkv
+2026-05-12 15:08:11,369  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:08:11,371  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:08:11,371  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:08:11,372  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:08:11,373  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:08:11,374  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:08:11,376  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:08:11,377  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:08:56,455  INFO     [Stream_1] Firing one-shot: Absurd.Planet.S01E02.720p.NF.WEBRip.x264-GalaxyTV.mkv
+2026-05-12 15:08:56,456  INFO     [Stream_1] One-shot event starting: Absurd.Planet.S01E02.720p.NF.WEBRip.x264-GalaxyTV.mkv
+2026-05-12 15:08:56,808  INFO     [Stream_1] Launching FFmpeg | file=Absurd.Planet.S01E02.720p.NF.WEBRip.x264-GalaxyTV.mkv | seek=00:00:00 | vbr=2500k abr=128k
+2026-05-12 15:08:56,833  INFO     [Stream_1] FFmpeg PID=32804
+2026-05-12 15:09:11,886  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:09:11,887  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:09:11,888  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:09:11,888  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:09:11,890  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:09:11,890  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:09:11,892  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:09:11,893  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:09:56,948  INFO     [Stream_4] Firing one-shot: Tales.From.the.Loop.S01E07.720p.AMZN.WEBRip.x264-GalaxyTV.mkv
+2026-05-12 15:09:56,948  INFO     [Stream_4] One-shot event starting: Tales.From.the.Loop.S01E07.720p.AMZN.WEBRip.x264-GalaxyTV.mkv
+2026-05-12 15:09:57,367  INFO     [Stream_4] Launching FFmpeg | file=Tales.From.the.Loop.S01E07.720p.AMZN.WEBRip.x264-GalaxyTV.mkv | seek=00:00:00 | vbr=2500k abr=128k
+2026-05-12 15:09:57,378  INFO     [Stream_4] FFmpeg PID=20904
+2026-05-12 15:10:12,375  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:10:12,375  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:10:12,375  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:10:12,376  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:10:12,376  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:10:12,377  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:10:12,377  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:10:12,378  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:10:18,766  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:10:18,766  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:10:18,766  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:10:55,081  INFO     [Stream_1] Restart requested.
+2026-05-12 15:10:55,082  INFO     Restart → Stream_1
+2026-05-12 15:10:55,082  INFO     [Stream_1] Killing FFmpeg PID=32804
+2026-05-12 15:10:55,116  INFO     [Stream_1] FFmpeg PID=32804 terminated.
+2026-05-12 15:10:56,116  INFO     [Stream_1] Stream stopped for restart.
+2026-05-12 15:10:56,617  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:10:56,617  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:10:56,618  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:11:12,857  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:11:12,858  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:11:12,858  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:11:12,858  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:11:12,859  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:11:12,859  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:11:12,859  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:11:12,860  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:11:12,933  INFO     [Stream_1] Stop requested.
+2026-05-12 15:11:12,933  INFO     [Stream_4] Stop requested.
+2026-05-12 15:11:12,933  INFO     [Stream_4] Killing FFmpeg PID=20904
+2026-05-12 15:11:12,947  INFO     [Stream_4] FFmpeg PID=20904 terminated.
+2026-05-12 15:15:11,138  INFO     HydraCast v0.0.001 started — 4 stream(s) configured.
+2026-05-12 15:15:11,139  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:15:11,139  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:15:11,139  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:15:11,139  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:15:11,140  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:15:11,140  WARNING  [Stream_1] start() called while already in progress — skipped.
+2026-05-12 15:15:11,140  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:15:11,141  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:15:11,141  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:15:11,141  WARNING  [Stream_4] start() called while already in progress — skipped.
+2026-05-12 15:15:11,155  INFO     Web UI → http://0.0.0.0:8080
+2026-05-12 15:15:11,155  INFO     Web UI → http://192.168.19.44:8080
+2026-05-12 15:16:10,626  INFO     mail_config.json updated via Web UI (mode=smtp enabled=True)
+2026-05-12 15:16:11,529  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:16:11,530  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:16:11,530  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:16:11,531  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:16:11,532  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:16:11,532  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:16:11,533  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:16:11,533  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:16:20,298  ERROR    mailer: test_alert failed: SMTP authentication failed (smtp-mail.outlook.com:587). For Gmail use an App Password, not your account password. Detail: (535, b'5.7.139 Authentication unsuccessful, basic authentication is disabled. [SG2PR04CA0200.apcprd04.prod.outlook.com 2026-05-12T09:16:20.144Z 08DEAF7F10EA0DC8]')
+2026-05-12 15:16:54,854  ERROR    mailer: test_alert failed: SMTP authentication failed (smtp-mail.outlook.com:587). For Gmail use an App Password, not your account password. Detail: (535, b'5.7.139 Authentication unsuccessful, basic authentication is disabled. [SG2PR04CA0202.apcprd04.prod.outlook.com 2026-05-12T09:16:54.744Z 08DEAFAE5C9D818E]')
+2026-05-12 15:17:12,211  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:17:12,212  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:17:12,212  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:17:12,212  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:17:12,213  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:17:12,213  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:17:12,213  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:17:12,214  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:18:12,740  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:18:12,740  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:18:12,740  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:18:12,740  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:18:12,741  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:18:12,741  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:18:12,741  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:18:12,741  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:19:13,451  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:19:13,452  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:19:13,453  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:19:13,453  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:19:13,454  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:19:13,454  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:19:13,456  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:19:13,456  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:19:14,273  INFO     Upload saved: D:\GITHUB\HydraCast\media\TEST\ab1.mkv
+2026-05-12 15:20:14,051  INFO     [Stream_1] Scheduler: starting.
+2026-05-12 15:20:14,052  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:20:14,052  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:20:14,052  INFO     [Stream_1] Current file: \path\to\video.mp4
+2026-05-12 15:20:14,052  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:20:14,052  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:20:14,053  ERROR    [Stream_1] File not found: \path\to\video.mp4
+2026-05-12 15:20:14,053  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:20:19,410  INFO     CSV [Stream_1]: folder-source 'TEST' → 1 file(s)
+2026-05-12 15:20:19,411  WARNING  CSV [Stream_1]: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:20:19,413  INFO     folder_watcher: started for 'D:\GITHUB\HydraCast\media\TEST'
+2026-05-12 15:20:19,413  INFO     FolderWatcherRegistry: new watcher for 'D:\GITHUB\HydraCast\media\TEST'
+2026-05-12 15:20:19,413  INFO     streams.csv reloaded — 4 updated, 0 new.
+2026-05-12 15:20:19,413  INFO     streams.csv reloaded — 4 updated, 0 new.
+2026-05-12 15:20:19,414  INFO     streams.csv reloaded
+2026-05-12 15:20:34,256  INFO     [Stream_1] Restart requested.
+2026-05-12 15:20:34,256  INFO     Restart → Stream_1
+2026-05-12 15:20:35,256  INFO     [Stream_1] Stream stopped for restart.
+2026-05-12 15:20:35,758  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:20:35,758  INFO     [Stream_1] Current file: D:\GITHUB\HydraCast\media\TEST\ab1.mkv
+2026-05-12 15:20:35,758  INFO     [Stream_1] Folder source detected — re-scanning for media files: D:\GITHUB\HydraCast\media\TEST
+2026-05-12 15:20:35,761  WARNING  [Stream_1] Folder scanner: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:20:35,762  INFO     [Stream_1] Folder scan complete: 1 file(s) found. Starting with: ab1.mkv
+2026-05-12 15:20:35,764  INFO     [Stream_1] File verified: ab1.mkv (270834 KB)
+2026-05-12 15:20:35,850  INFO     [Stream_1] File duration: 00:19:13
+2026-05-12 15:20:35,890  INFO     [Stream_1] Start seek position: 00:00:00
+2026-05-12 15:20:35,890  INFO     [Stream_1] Checking port 8554 availability …
+2026-05-12 15:20:36,400  INFO     [Stream_1] Port 8554 is free.
+2026-05-12 15:20:36,400  INFO     [Stream_1] Writing MediaMTX YAML config …
+2026-05-12 15:20:36,401  INFO     [Stream_1] Writing MediaMTX config → D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:20:36,401  INFO     [Stream_1] Port assignment: RTSP=8554  RTP=8556 (even✓)  RTCP=8557
+2026-05-12 15:20:36,402  INFO     [Stream_1] Config written successfully: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:20:36,402  INFO     [Stream_1] MediaMTX config written: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:20:36,402  INFO     [Stream_1] Launching MediaMTX | config=D:\GITHUB\HydraCast\configs\mediamtx_8554.yml | log=D:\GITHUB\HydraCast\logs\mediamtx_8554.log
+2026-05-12 15:20:37,769  INFO     [Stream_1] MediaMTX spawned PID=32820 on :8554
+2026-05-12 15:20:39,291  INFO     [Stream_1] MediaMTX running stably (PID=32820)
+2026-05-12 15:20:39,291  INFO     [Stream_1] Waiting for MediaMTX to bind :8554 (timeout 13s) …
+2026-05-12 15:20:39,293  INFO     [Stream_1] MediaMTX is live on :8554
+2026-05-12 15:20:39,293  INFO     [Stream_1] Launching FFmpeg | file=ab1.mkv | seek=00:00:00 | vbr=2500k abr=128k
+2026-05-12 15:20:39,385  INFO     [Stream_1] FFmpeg PID=36256
+2026-05-12 15:20:39,386  INFO     [Stream_1] ✓ LIVE → rtsp://127.0.0.1:8554/stream
+2026-05-12 15:20:39,387  INFO     [Stream_1] Monitor thread started.
+2026-05-12 15:21:14,773  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:21:14,774  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:21:14,774  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:21:14,776  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:21:29,540  INFO     [Stream_1] Stop requested.
+2026-05-12 15:21:29,576  INFO     resume_store: saved Stream_1 → ab1.mkv @ 50.2s
+2026-05-12 15:21:29,576  INFO     [Stream_1] Resume position saved: ab1.mkv @ 00:00:50
+2026-05-12 15:21:29,576  INFO     [Stream_1] Killing FFmpeg PID=36256
+2026-05-12 15:21:29,587  INFO     [Stream_1] FFmpeg PID=36256 terminated.
+2026-05-12 15:21:29,629  INFO     [Stream_1] Monitor exiting: stop flag set.
+2026-05-12 15:21:30,282  INFO     [Stream_1] Restart requested.
+2026-05-12 15:21:30,587  INFO     [Stream_1] Killing MediaMTX PID=32820
+2026-05-12 15:21:30,594  INFO     [Stream_1] MediaMTX PID=32820 terminated.
+2026-05-12 15:21:30,594  INFO     [Stream_1] Stream stopped cleanly.
+2026-05-12 15:21:31,285  INFO     [Stream_1] Stream stopped for restart.
+2026-05-12 15:21:31,786  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:21:31,786  INFO     [Stream_1] Current file: D:\GITHUB\HydraCast\media\TEST\ab1.mkv
+2026-05-12 15:21:31,786  INFO     [Stream_1] Folder source detected — re-scanning for media files: D:\GITHUB\HydraCast\media\TEST
+2026-05-12 15:21:31,788  WARNING  [Stream_1] Folder scanner: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:21:31,789  INFO     [Stream_1] Folder scan complete: 1 file(s) found. Starting with: ab1.mkv
+2026-05-12 15:21:31,790  INFO     [Stream_1] File verified: ab1.mkv (270834 KB)
+2026-05-12 15:21:31,855  INFO     [Stream_1] File duration: 00:19:13
+2026-05-12 15:21:31,861  INFO     [Stream_1] Resuming from saved position: ab1.mkv @ 00:00:50 (saved 2026-05-12 15:21:29)
+2026-05-12 15:21:31,862  INFO     resume_store: cleared position for 'Stream_1'
+2026-05-12 15:21:31,862  INFO     [Stream_1] Start seek position: 00:00:50
+2026-05-12 15:21:31,862  INFO     [Stream_1] Checking port 8554 availability …
+2026-05-12 15:21:32,371  INFO     [Stream_1] Port 8554 is free.
+2026-05-12 15:21:32,371  INFO     [Stream_1] Writing MediaMTX YAML config …
+2026-05-12 15:21:32,383  INFO     [Stream_1] Writing MediaMTX config → D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:32,384  INFO     [Stream_1] Port assignment: RTSP=8554  RTP=8556 (even✓)  RTCP=8557
+2026-05-12 15:21:32,386  INFO     [Stream_1] Config written successfully: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:32,388  INFO     [Stream_1] MediaMTX config written: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:32,389  INFO     [Stream_1] Launching MediaMTX | config=D:\GITHUB\HydraCast\configs\mediamtx_8554.yml | log=D:\GITHUB\HydraCast\logs\mediamtx_8554.log
+2026-05-12 15:21:32,399  INFO     [Stream_1] MediaMTX spawned PID=2536 on :8554
+2026-05-12 15:21:33,917  INFO     [Stream_1] MediaMTX running stably (PID=2536)
+2026-05-12 15:21:33,918  INFO     [Stream_1] Waiting for MediaMTX to bind :8554 (timeout 13s) …
+2026-05-12 15:21:33,918  INFO     [Stream_1] MediaMTX is live on :8554
+2026-05-12 15:21:33,919  INFO     [Stream_1] Launching FFmpeg | file=ab1.mkv | seek=00:00:50 | vbr=2500k abr=128k
+2026-05-12 15:21:33,933  INFO     [Stream_1] FFmpeg PID=9472
+2026-05-12 15:21:33,933  INFO     [Stream_1] ✓ LIVE → rtsp://127.0.0.1:8554/stream
+2026-05-12 15:21:33,934  INFO     [Stream_1] Monitor thread started.
+2026-05-12 15:21:53,232  INFO     [Stream_1] Restart requested.
+2026-05-12 15:21:53,232  INFO     [Stream_1] Killing FFmpeg PID=9472
+2026-05-12 15:21:53,245  INFO     [Stream_1] FFmpeg PID=9472 terminated.
+2026-05-12 15:21:53,284  INFO     [Stream_1] Monitor exiting: stop flag set.
+2026-05-12 15:21:54,189  INFO     [Stream_1] Restart requested.
+2026-05-12 15:21:54,246  INFO     [Stream_1] Killing MediaMTX PID=2536
+2026-05-12 15:21:54,250  INFO     [Stream_1] MediaMTX PID=2536 terminated.
+2026-05-12 15:21:54,250  INFO     [Stream_1] Stream stopped for restart.
+2026-05-12 15:21:54,402  INFO     [Stream_1] Restart requested.
+2026-05-12 15:21:54,750  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:21:54,750  INFO     [Stream_1] Current file: D:\GITHUB\HydraCast\media\TEST\ab1.mkv
+2026-05-12 15:21:54,750  INFO     [Stream_1] Folder source detected — re-scanning for media files: D:\GITHUB\HydraCast\media\TEST
+2026-05-12 15:21:54,751  WARNING  [Stream_1] Folder scanner: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:21:54,751  INFO     [Stream_1] Folder scan complete: 1 file(s) found. Starting with: ab1.mkv
+2026-05-12 15:21:54,752  INFO     [Stream_1] File verified: ab1.mkv (270834 KB)
+2026-05-12 15:21:54,799  INFO     [Stream_1] File duration: 00:19:13
+2026-05-12 15:21:54,799  INFO     [Stream_1] Start seek position: 00:00:00
+2026-05-12 15:21:54,799  INFO     [Stream_1] Checking port 8554 availability …
+2026-05-12 15:21:55,303  INFO     [Stream_1] Port 8554 is free.
+2026-05-12 15:21:55,304  INFO     [Stream_1] Writing MediaMTX YAML config …
+2026-05-12 15:21:55,304  INFO     [Stream_1] Writing MediaMTX config → D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:55,305  INFO     [Stream_1] Port assignment: RTSP=8554  RTP=8556 (even✓)  RTCP=8557
+2026-05-12 15:21:55,305  INFO     [Stream_1] Config written successfully: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:55,305  INFO     [Stream_1] MediaMTX config written: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:55,306  INFO     [Stream_1] Launching MediaMTX | config=D:\GITHUB\HydraCast\configs\mediamtx_8554.yml | log=D:\GITHUB\HydraCast\logs\mediamtx_8554.log
+2026-05-12 15:21:55,311  INFO     [Stream_1] MediaMTX spawned PID=18156 on :8554
+2026-05-12 15:21:56,839  INFO     [Stream_1] MediaMTX running stably (PID=18156)
+2026-05-12 15:21:56,840  INFO     [Stream_1] Waiting for MediaMTX to bind :8554 (timeout 13s) …
+2026-05-12 15:21:56,843  INFO     [Stream_1] MediaMTX is live on :8554
+2026-05-12 15:21:56,843  INFO     [Stream_1] Launching FFmpeg | file=ab1.mkv | seek=00:00:00 | vbr=2500k abr=128k
+2026-05-12 15:21:56,871  INFO     [Stream_1] FFmpeg PID=26224
+2026-05-12 15:21:56,871  INFO     [Stream_1] ✓ LIVE → rtsp://127.0.0.1:8554/stream
+2026-05-12 15:21:56,872  INFO     [Stream_1] Monitor thread started.
+2026-05-12 15:21:56,873  INFO     [Stream_1] Killing FFmpeg PID=26224
+2026-05-12 15:21:56,877  INFO     [Stream_1] FFmpeg PID=26224 terminated.
+2026-05-12 15:21:56,924  INFO     [Stream_1] Monitor exiting: stop flag set.
+2026-05-12 15:21:57,877  INFO     [Stream_1] Killing MediaMTX PID=18156
+2026-05-12 15:21:57,880  INFO     [Stream_1] MediaMTX PID=18156 terminated.
+2026-05-12 15:21:57,881  INFO     [Stream_1] Stream stopped for restart.
+2026-05-12 15:21:58,381  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:21:58,381  INFO     [Stream_1] Current file: D:\GITHUB\HydraCast\media\TEST\ab1.mkv
+2026-05-12 15:21:58,382  INFO     [Stream_1] Folder source detected — re-scanning for media files: D:\GITHUB\HydraCast\media\TEST
+2026-05-12 15:21:58,383  WARNING  [Stream_1] Folder scanner: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:21:58,383  INFO     [Stream_1] Folder scan complete: 1 file(s) found. Starting with: ab1.mkv
+2026-05-12 15:21:58,384  INFO     [Stream_1] File verified: ab1.mkv (270834 KB)
+2026-05-12 15:21:58,439  INFO     [Stream_1] File duration: 00:19:13
+2026-05-12 15:21:58,440  INFO     [Stream_1] Start seek position: 00:00:00
+2026-05-12 15:21:58,440  INFO     [Stream_1] Checking port 8554 availability …
+2026-05-12 15:21:58,953  INFO     [Stream_1] Port 8554 is free.
+2026-05-12 15:21:58,954  INFO     [Stream_1] Writing MediaMTX YAML config …
+2026-05-12 15:21:58,955  INFO     [Stream_1] Writing MediaMTX config → D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:58,956  INFO     [Stream_1] Port assignment: RTSP=8554  RTP=8556 (even✓)  RTCP=8557
+2026-05-12 15:21:58,957  INFO     [Stream_1] Config written successfully: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:58,957  INFO     [Stream_1] MediaMTX config written: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:21:58,957  INFO     [Stream_1] Launching MediaMTX | config=D:\GITHUB\HydraCast\configs\mediamtx_8554.yml | log=D:\GITHUB\HydraCast\logs\mediamtx_8554.log
+2026-05-12 15:21:58,966  INFO     [Stream_1] MediaMTX spawned PID=36540 on :8554
+2026-05-12 15:22:00,488  INFO     [Stream_1] MediaMTX running stably (PID=36540)
+2026-05-12 15:22:00,488  INFO     [Stream_1] Waiting for MediaMTX to bind :8554 (timeout 13s) …
+2026-05-12 15:22:00,489  INFO     [Stream_1] MediaMTX is live on :8554
+2026-05-12 15:22:00,489  INFO     [Stream_1] Launching FFmpeg | file=ab1.mkv | seek=00:00:00 | vbr=2500k abr=128k
+2026-05-12 15:22:00,499  INFO     [Stream_1] FFmpeg PID=21536
+2026-05-12 15:22:00,499  INFO     [Stream_1] ✓ LIVE → rtsp://127.0.0.1:8554/stream
+2026-05-12 15:22:00,499  INFO     [Stream_1] Monitor thread started.
+2026-05-12 15:22:00,500  INFO     [Stream_1] Killing FFmpeg PID=21536
+2026-05-12 15:22:00,501  INFO     [Stream_1] FFmpeg PID=21536 terminated.
+2026-05-12 15:22:00,550  INFO     [Stream_1] Monitor exiting: stop flag set.
+2026-05-12 15:22:01,502  INFO     [Stream_1] Killing MediaMTX PID=36540
+2026-05-12 15:22:01,507  INFO     [Stream_1] MediaMTX PID=36540 terminated.
+2026-05-12 15:22:01,508  INFO     [Stream_1] Stream stopped for restart.
+2026-05-12 15:22:01,630  INFO     CSV [Stream_1]: folder-source 'TEST' → 1 file(s)
+2026-05-12 15:22:01,630  WARNING  CSV [Stream_1]: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:22:01,634  INFO     streams.csv reloaded — 4 updated, 0 new.
+2026-05-12 15:22:01,635  INFO     streams.csv reloaded — 4 updated, 0 new.
+2026-05-12 15:22:01,635  INFO     streams.csv reloaded
+2026-05-12 15:22:02,008  INFO     [Stream_1] Starting stream | port=8554 | path=stream | files=1 | bitrate=2500k/128k
+2026-05-12 15:22:02,009  INFO     [Stream_1] Current file: D:\GITHUB\HydraCast\media\TEST\ab1.mkv
+2026-05-12 15:22:02,009  INFO     [Stream_1] Folder source detected — re-scanning for media files: D:\GITHUB\HydraCast\media\TEST
+2026-05-12 15:22:02,012  WARNING  [Stream_1] Folder scanner: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:22:02,012  INFO     [Stream_1] Folder scan complete: 1 file(s) found. Starting with: ab1.mkv
+2026-05-12 15:22:02,014  INFO     [Stream_1] File verified: ab1.mkv (270834 KB)
+2026-05-12 15:22:02,102  INFO     [Stream_1] File duration: 00:19:13
+2026-05-12 15:22:02,102  INFO     [Stream_1] Start seek position: 00:00:00
+2026-05-12 15:22:02,102  INFO     [Stream_1] Checking port 8554 availability …
+2026-05-12 15:22:02,611  INFO     [Stream_1] Port 8554 is free.
+2026-05-12 15:22:02,612  INFO     [Stream_1] Writing MediaMTX YAML config …
+2026-05-12 15:22:02,612  INFO     [Stream_1] Writing MediaMTX config → D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:22:02,612  INFO     [Stream_1] Port assignment: RTSP=8554  RTP=8556 (even✓)  RTCP=8557
+2026-05-12 15:22:02,613  INFO     [Stream_1] Config written successfully: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:22:02,613  INFO     [Stream_1] MediaMTX config written: D:\GITHUB\HydraCast\configs\mediamtx_8554.yml
+2026-05-12 15:22:02,614  INFO     [Stream_1] Launching MediaMTX | config=D:\GITHUB\HydraCast\configs\mediamtx_8554.yml | log=D:\GITHUB\HydraCast\logs\mediamtx_8554.log
+2026-05-12 15:22:02,619  INFO     [Stream_1] MediaMTX spawned PID=18784 on :8554
+2026-05-12 15:22:04,131  INFO     [Stream_1] MediaMTX running stably (PID=18784)
+2026-05-12 15:22:04,132  INFO     [Stream_1] Waiting for MediaMTX to bind :8554 (timeout 13s) …
+2026-05-12 15:22:04,133  INFO     [Stream_1] MediaMTX is live on :8554
+2026-05-12 15:22:04,133  INFO     [Stream_1] Launching FFmpeg | file=ab1.mkv | seek=00:00:00 | vbr=2500k abr=128k
+2026-05-12 15:22:04,161  INFO     [Stream_1] FFmpeg PID=33836
+2026-05-12 15:22:04,162  INFO     [Stream_1] ✓ LIVE → rtsp://127.0.0.1:8554/stream
+2026-05-12 15:22:04,162  INFO     [Stream_1] Monitor thread started.
+2026-05-12 15:22:04,292  INFO     CSV [Stream_1]: folder-source 'TEST' → 1 file(s)
+2026-05-12 15:22:04,292  WARNING  CSV [Stream_1]: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:22:04,293  INFO     streams.csv reloaded — 4 updated, 0 new.
+2026-05-12 15:22:04,293  INFO     streams.csv reloaded — 4 updated, 0 new.
+2026-05-12 15:22:04,293  INFO     streams.csv reloaded
+2026-05-12 15:22:08,509  INFO     [Stream_3] Restart requested.
+2026-05-12 15:22:08,509  INFO     Restart → Stream_3
+2026-05-12 15:22:09,509  INFO     [Stream_3] Stream stopped for restart.
+2026-05-12 15:22:09,996  INFO     [Stream_3] Restart requested.
+2026-05-12 15:22:09,997  INFO     Restart → Stream_3
+2026-05-12 15:22:10,010  INFO     [Stream_3] Starting stream | port=8574 | path=ch3 | files=1 | bitrate=1500k/128k
+2026-05-12 15:22:10,010  INFO     [Stream_3] Playlist shuffled: [0]
+2026-05-12 15:22:10,010  INFO     [Stream_3] Current file: \media\demo.mp4
+2026-05-12 15:22:10,011  ERROR    [Stream_3] File not found: \media\demo.mp4
+2026-05-12 15:22:11,011  INFO     [Stream_3] Stream stopped for restart.
+2026-05-12 15:22:11,512  INFO     [Stream_3] Starting stream | port=8574 | path=ch3 | files=1 | bitrate=1500k/128k
+2026-05-12 15:22:11,512  INFO     [Stream_3] Current file: \media\demo.mp4
+2026-05-12 15:22:11,514  ERROR    [Stream_3] File not found: \media\demo.mp4
+2026-05-12 15:22:15,315  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:22:15,316  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:22:15,316  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:22:15,317  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:23:15,787  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:23:15,788  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:23:15,788  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:23:15,789  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:24:16,324  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:24:16,325  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:24:16,325  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:24:16,326  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:25:16,696  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:25:16,696  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:25:16,696  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:25:16,697  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:26:17,015  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:26:17,016  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:26:17,016  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:26:17,016  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:27:19,252  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:27:19,253  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:27:19,256  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:27:19,257  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:28:19,718  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:28:19,718  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:28:19,718  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:28:19,719  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:29:21,179  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:29:21,179  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:29:21,179  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:29:21,180  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:30:22,300  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:30:22,304  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:30:22,304  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:30:22,306  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:31:05,558  ERROR    mailer: test_alert failed: SMTP authentication failed (smtp-mail.outlook.com:587). For Gmail use an App Password, not your account password. Detail: (535, b'5.7.139 Authentication unsuccessful, basic authentication is disabled. [SG2PR04CA0201.apcprd04.prod.outlook.com 2026-05-12T09:31:05.485Z 08DEAF6BF095F22C]')
+2026-05-12 15:31:22,932  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:31:22,933  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:31:22,934  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:31:22,935  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:32:23,432  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:32:23,433  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:32:23,433  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:32:23,433  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:33:23,828  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:33:23,829  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:33:23,830  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:33:23,830  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:34:25,388  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:34:25,388  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:34:25,388  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:34:25,389  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:35:25,842  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:35:25,842  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:35:25,843  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:35:25,843  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:36:26,199  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:36:26,199  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:36:26,199  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:36:26,200  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:37:26,584  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:37:26,585  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:37:26,585  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:37:26,585  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:38:26,970  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:38:26,971  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:38:26,971  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:38:26,971  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:39:27,448  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:39:27,448  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:39:27,448  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:39:27,449  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:39:43,527  INFO     CSV [Stream_1]: folder-source 'TEST' → 1 file(s)
+2026-05-12 15:39:43,527  WARNING  CSV [Stream_1]: ⚠  1 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv
+2026-05-12 15:39:43,529  INFO     CSV [Stream_2]: folder-source 'media' → 4 file(s)
+2026-05-12 15:39:43,529  WARNING  CSV [Stream_2]: ⚠  4 file(s) have no _day_ tag — assigned to ALL days (added last with warning): ab1.mkv, Absurd.Planet.S01E02.720p.NF.WEBRip.x264-GalaxyTV.mkv, Tales.From.the.Loop.S01E07.720p.AMZN.WEBRip.x264-GalaxyTV.mkv, Tales.From.the.Loop.S01E08.720p.AMZN.WEBRip.x264-GalaxyTV.mkv
+2026-05-12 15:39:43,533  INFO     folder_watcher: started for 'D:\GITHUB\HydraCast\media'
+2026-05-12 15:39:43,533  INFO     FolderWatcherRegistry: new watcher for 'D:\GITHUB\HydraCast\media'
+2026-05-12 15:39:43,533  INFO     streams.csv reloaded — 4 updated, 0 new.
+2026-05-12 15:39:43,533  INFO     streams.csv reloaded — 4 updated, 0 new.
+2026-05-12 15:39:43,533  INFO     streams.csv reloaded
+2026-05-12 15:39:47,298  INFO     [Stream_3] Restart requested.
+2026-05-12 15:39:47,298  INFO     Restart → Stream_3
+2026-05-12 15:39:48,298  INFO     [Stream_3] Stream stopped for restart.
+2026-05-12 15:39:48,799  INFO     [Stream_3] Starting stream | port=8574 | path=ch3 | files=1 | bitrate=1500k/128k
+2026-05-12 15:39:48,799  INFO     [Stream_3] Current file: \media\demo.mp4
+2026-05-12 15:39:48,800  ERROR    [Stream_3] File not found: \media\demo.mp4
+2026-05-12 15:40:27,928  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:40:27,928  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:40:27,929  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:40:27,930  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:41:28,486  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:41:28,487  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:41:28,487  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:41:28,488  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:42:28,950  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:42:28,950  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:42:28,950  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:42:28,951  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:43:29,307  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:43:29,308  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:43:29,308  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:43:29,308  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:44:29,738  INFO     [Stream_4] Scheduler: starting.
+2026-05-12 15:44:29,748  INFO     [Stream_4] Starting stream | port=8584 | path=ch4 | files=1 | bitrate=2500k/128k
+2026-05-12 15:44:29,748  INFO     [Stream_4] Current file: \media\show.mp4
+2026-05-12 15:44:29,749  ERROR    [Stream_4] File not found: \media\show.mp4
+2026-05-12 15:44:33,388  INFO     [Stream_1] Stop requested.
+2026-05-12 15:44:33,388  INFO     [Stream_3] Stop requested.
+2026-05-12 15:44:33,389  INFO     [Stream_4] Stop requested.
+2026-05-12 15:44:33,395  INFO     resume_store: saved Stream_1 → ab1.mkv @ 195.6s
+2026-05-12 15:44:33,397  INFO     [Stream_1] Resume position saved: ab1.mkv @ 00:03:15
+2026-05-12 15:44:33,397  INFO     [Stream_1] Killing FFmpeg PID=33836
+2026-05-12 15:44:33,415  INFO     [Stream_1] FFmpeg PID=33836 terminated.
+2026-05-12 15:44:33,452  INFO     [Stream_1] Monitor exiting: stop flag set.
+2026-05-12 15:44:34,389  INFO     [Stream_3] Stream stopped cleanly.
+2026-05-12 15:44:34,389  INFO     [Stream_4] Stream stopped cleanly.
+2026-05-12 15:44:34,416  INFO     [Stream_1] Killing MediaMTX PID=18784
+2026-05-12 15:44:34,480  INFO     [Stream_1] MediaMTX PID=18784 terminated.
+2026-05-12 15:44:34,480  INFO     [Stream_1] Stream stopped cleanly.
