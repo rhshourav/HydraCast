@@ -388,6 +388,23 @@ class StreamWorker:
         # folder-scan feature robust: the CSV can point to a folder and the
         # worker will expand it on every start.
         resolved_path = item.file_path
+
+        # If the path is relative (e.g. bare "media" from the CSV) and doesn't
+        # resolve as-is, try anchoring it under MEDIA_DIR.
+        if not resolved_path.is_absolute() and not resolved_path.exists():
+            try:
+                from hc.constants import MEDIA_DIR
+                candidate = MEDIA_DIR() / resolved_path
+                if candidate.exists():
+                    resolved_path = candidate
+                    self._log(
+                        f"Resolved relative path '{item.file_path}' "
+                        f"→ '{resolved_path}'",
+                        "INFO",
+                    )
+            except Exception as exc:
+                self._log(f"Could not resolve relative path against MEDIA_DIR: {exc}", "WARN")
+
         if resolved_path.is_dir():
             self._log(
                 f"Path is a directory — scanning for media files: {resolved_path}",
