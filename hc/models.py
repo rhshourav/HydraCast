@@ -74,6 +74,11 @@ class StreamConfig:
     hls_enabled:    bool  = False
     row_index:      int   = 0
 
+    # ── Folder-source tracking ───────────────────────────────────────────────
+    # Set when the CSV entry points to a directory.  Preserved across restarts
+    # so the folder is always re-scanned for new/removed files on every start.
+    folder_source: Optional[Path] = None
+
     # ── Compliance / broadcast-sync fields ────────────────────────────────────
     # When compliance_enabled is True the stream calculates the correct seek
     # offset so it matches a continuous linear broadcast that started at
