@@ -1,5 +1,10 @@
 """
 hc/models.py  —  Core dataclasses and enums.
+
+Changes vs v5.0.0:
+  • StreamConfig: three new compliance fields (compliance_enabled,
+    compliance_start, compliance_loop).
+  • StreamState:  initial_offset field for per-start ±offset feature.
 """
 from __future__ import annotations
 
@@ -69,7 +74,15 @@ class StreamConfig:
     hls_enabled:    bool  = False
     row_index:      int   = 0
 
-    # ── Derived properties ────────────────────────────────────
+    # ── Compliance / broadcast-sync fields ────────────────────────────────────
+    # When compliance_enabled is True the stream calculates the correct seek
+    # offset so it matches a continuous linear broadcast that started at
+    # compliance_start each day.
+    compliance_enabled: bool = False
+    compliance_start:   str  = "06:00:00"   # HH:MM:SS wall-clock broadcast start
+    compliance_loop:    bool = False         # seek within loops for short videos
+
+    # ── Derived properties ────────────────────────────────────────────────────
     @property
     def rtsp_path(self) -> str:
         return self.stream_path if self.stream_path else "stream"
@@ -133,6 +146,8 @@ class StreamState:
     playlist_order:   List[int]                  = field(default_factory=list)
     seek_target:      Optional[float]            = None
     oneshot_active:   bool                       = False
+    # Per-start ±time offset applied once at the very next start (cleared after use)
+    initial_offset:   float                      = 0.0
     log:              List[str]                  = field(default_factory=list)
     _lock:            threading.Lock             = field(default_factory=threading.Lock)
 
