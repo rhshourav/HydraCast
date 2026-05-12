@@ -1,6 +1,0 @@
-stream_name,port,files,weekdays,enabled,shuffle,stream_path,video_bitrate,audio_bitrate,hls_enabled
-Stream_1,8554,D:\GITHUB\HydraCast\test.mkv,ALL,TRUE,FALSE,stream,2500k,128k,FALSE
-Stream_2,8555,/path/to/a.mp4@00:05:00;/path/to/b.mkv,Mon|Wed|Fri,TRUE,FALSE,ch2,4000k,192k,FALSE
-Stream_3,8556,/media/demo.mp4,Sat|Sun,FALSE,TRUE,ch3,1500k,128k,FALSE
-Stream_4,8557,/media/show.mp4,Weekdays,TRUE,FALSE,ch4,2500k,128k,TRUE
-Stream_5,8859,/media/show.mp4,Weekdays,TRUE,FALSE,ch5,2500k,128k,TRUE
