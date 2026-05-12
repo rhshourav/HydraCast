@@ -1,5 +1,13 @@
 """
 hc/constants.py  —  All global constants and directory paths.
+
+v6.0 changes
+────────────
+• CONFIG_DIR added: all user-facing config lives in  <base>/config/
+• streams.json  now lives at  config/streams.json
+• events.json   now lives at  config/events.json   (was events.csv)
+• CSV_FILE()    kept for one-shot legacy migration only (streams.csv → config/streams.json)
+• EVENTS_CSV()  kept for one-shot legacy migration only (events.csv  → config/events.json)
 """
 from __future__ import annotations
 
@@ -32,21 +40,32 @@ def set_base_dir(script_path: Path) -> None:
     base = script_path.parent.resolve()
     _dirs["BASE"]    = base
     _dirs["BIN"]     = base / "bin"
-    _dirs["CONFIGS"] = base / "configs"
+    _dirs["CONFIG"]  = base / "config"              # ← user-facing config dir (NEW)
+    _dirs["CONFIGS"] = base / "configs"             # ← mediamtx generated YAMLs
     _dirs["LOGS"]    = base / "logs"
     _dirs["MEDIA"]   = base / "media"
-    _dirs["CSV"]     = base / "streams.csv"
-    _dirs["EVENTS"]  = base / "events.csv"
-    for key in ("BIN", "CONFIGS", "LOGS", "MEDIA"):
+    # Canonical config file locations inside config/
+    _dirs["STREAMS_JSON"] = base / "config" / "streams.json"
+    _dirs["EVENTS_JSON"]  = base / "config" / "events.json"
+    # Legacy paths — kept ONLY for migration helpers (not created automatically)
+    _dirs["CSV"]          = base / "streams.csv"       # old streams location
+    _dirs["EVENTS_CSV"]   = base / "events.csv"        # old events location
+    # Create required runtime dirs
+    for key in ("BIN", "CONFIG", "CONFIGS", "LOGS", "MEDIA"):
         _dirs[key].mkdir(parents=True, exist_ok=True)
 
-def BASE_DIR()    -> Path: return _dirs["BASE"]
-def BIN_DIR()     -> Path: return _dirs["BIN"]
-def CONFIGS_DIR() -> Path: return _dirs["CONFIGS"]
-def LOGS_DIR()    -> Path: return _dirs["LOGS"]
-def MEDIA_DIR()   -> Path: return _dirs["MEDIA"]
-def CSV_FILE()    -> Path: return _dirs["CSV"]
-def EVENTS_FILE() -> Path: return _dirs["EVENTS"]
+# ── Path accessors ─────────────────────────────────────────────────────────────
+def BASE_DIR()       -> Path: return _dirs["BASE"]
+def BIN_DIR()        -> Path: return _dirs["BIN"]
+def CONFIG_DIR()     -> Path: return _dirs["CONFIG"]          # config/ folder
+def CONFIGS_DIR()    -> Path: return _dirs["CONFIGS"]         # mediamtx yml folder
+def LOGS_DIR()       -> Path: return _dirs["LOGS"]
+def MEDIA_DIR()      -> Path: return _dirs["MEDIA"]
+def STREAMS_JSON()   -> Path: return _dirs["STREAMS_JSON"]    # config/streams.json
+def EVENTS_FILE()    -> Path: return _dirs["EVENTS_JSON"]     # config/events.json
+# Legacy helpers (used only by migration code)
+def CSV_FILE()       -> Path: return _dirs["CSV"]             # old streams.csv
+def EVENTS_CSV()     -> Path: return _dirs["EVENTS_CSV"]      # old events.csv
 
 # ── Web / upload ──────────────────────────────────────────────────────────────
 WEB_PORT         = 80
