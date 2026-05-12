@@ -1,5 +1,11 @@
 """
 hc/csv_manager.py  —  Load / save streams.csv and events.csv.
+
+Changes vs v5.0.0:
+  • CSV_COLUMNS extended with compliance_enabled, compliance_start,
+    compliance_loop (backward-compatible: old CSVs without these columns
+    silently default to False / "06:00:00" / False).
+  • StreamConfig.compliance_* fields are persisted in save().
 """
 from __future__ import annotations
 
@@ -17,18 +23,24 @@ from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 CSV_COLUMNS = [
     "stream_name", "port", "files", "weekdays", "enabled",
     "shuffle", "stream_path", "video_bitrate", "audio_bitrate", "hls_enabled",
+    # Compliance fields (optional – old CSVs without these columns are fine)
+    "compliance_enabled", "compliance_start", "compliance_loop",
 ]
 
 # NOTE: template ports spaced ≥ 10 apart so RTP/RTCP companion ports never collide.
 CSV_TEMPLATE_ROWS = [
     ["Stream_1", "8554", "/path/to/video.mp4@00:00:00#1",
-     "ALL", "true", "false", "stream", "2500k", "128k", "false"],
+     "ALL", "true", "false", "stream", "2500k", "128k", "false",
+     "false", "06:00:00", "false"],
     ["Stream_2", "8564", "/path/to/a.mp4@00:05:00#1;/path/to/b.mkv@00:00:00#2",
-     "Mon|Wed|Fri", "true", "false", "ch2", "4000k", "192k", "false"],
+     "Mon|Wed|Fri", "true", "false", "ch2", "4000k", "192k", "false",
+     "false", "06:00:00", "false"],
     ["Stream_3", "8574", "/media/demo.mp4@00:00:00#1",
-     "Sat|Sun", "false", "true", "ch3", "1500k", "128k", "false"],
+     "Sat|Sun", "false", "true", "ch3", "1500k", "128k", "false",
+     "false", "06:00:00", "false"],
     ["Stream_4", "8584", "/media/show.mp4@00:00:00#1",
-     "Weekdays", "true", "false", "ch4", "2500k", "128k", "true"],
+     "Weekdays", "true", "false", "ch4", "2500k", "128k", "true",
+     "false", "06:00:00", "false"],
 ]
 
 EVENTS_COLUMNS = ["event_id", "stream_name", "file_path", "play_at", "post_action", "start_pos"]
@@ -78,6 +90,17 @@ class CSVManager:
     def _sanitize_bitrate(raw: str, default: str) -> str:
         raw = raw.strip()
         return raw.lower() if re.fullmatch(r"\d+[kKmM]?", raw) else default
+
+    @staticmethod
+    def _sanitize_hms(raw: str) -> str:
+        """Validate HH:MM:SS string; return '06:00:00' if invalid."""
+        raw = raw.strip()
+        if re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", raw):
+            parts = raw.split(":")
+            if len(parts) == 2:
+                raw = raw + ":00"
+            return raw
+        return "06:00:00"
 
     @staticmethod
     def parse_files(raw: str) -> List[PlaylistItem]:
@@ -160,6 +183,12 @@ class CSVManager:
                 vid_br   = cls._sanitize_bitrate(row.get("video_bitrate", "2500k"), "2500k")
                 aud_br   = cls._sanitize_bitrate(row.get("audio_bitrate", "128k"), "128k")
                 hls_en   = cls.parse_bool(row.get("hls_enabled", "false"))
+
+                # Compliance fields — optional, default to disabled
+                comp_en    = cls.parse_bool(row.get("compliance_enabled", "false"))
+                comp_start = cls._sanitize_hms(row.get("compliance_start", "06:00:00"))
+                comp_loop  = cls.parse_bool(row.get("compliance_loop", "false"))
+
                 sorted_pl = sorted(playlist, key=lambda x: x.priority)
                 configs.append(StreamConfig(
                     name=name, port=port, playlist=sorted_pl,
@@ -167,6 +196,9 @@ class CSVManager:
                     stream_path=spath, video_bitrate=vid_br,
                     audio_bitrate=aud_br, hls_enabled=hls_en,
                     row_index=i - 2,
+                    compliance_enabled=comp_en,
+                    compliance_start=comp_start,
+                    compliance_loop=comp_loop,
                 ))
 
         for e in errors:
@@ -181,7 +213,7 @@ class CSVManager:
                 )
             seen[c.port] = c.name
 
-        # ── Port-gap warning (recommended ≥ 10 apart for RTP/RTCP companion ports)
+        # ── Port-gap warning ─────────────────────────────────────────────────
         sorted_ports = sorted((c.port, c.name) for c in configs)
         for j in range(len(sorted_ports) - 1):
             p1, n1 = sorted_ports[j]
@@ -214,6 +246,9 @@ class CSVManager:
                     str(c.enabled).lower(), str(c.shuffle).lower(),
                     c.stream_path, c.video_bitrate, c.audio_bitrate,
                     str(c.hls_enabled).lower(),
+                    str(c.compliance_enabled).lower(),
+                    c.compliance_start,
+                    str(c.compliance_loop).lower(),
                 ])
 
     # ── Load / save events ────────────────────────────────────────────────────
