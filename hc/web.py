@@ -790,6 +790,71 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- Mail Alerts -->
+  <div style="margin-top:4px">
+    <div class="section-hdr"><h2>Mail Alerts</h2><span class="sep"></span>
+      <button class="btn b" onclick="loadMailConfig()">↻ Load</button>
+    </div>
+    <div class="card card-body" style="padding:16px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
+        Alerts are sent via SMTP when a stream enters ERROR or stops unexpectedly.
+        Config is stored in <code style="color:var(--cyan)">mail_config.json</code> in the HydraCast base directory.
+      </div>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:12px">
+        <div class="fg">
+          <label>SMTP Host</label>
+          <input id="ml-host" placeholder="smtp.gmail.com">
+        </div>
+        <div class="fg">
+          <label>SMTP Port</label>
+          <input id="ml-port" type="number" placeholder="587" value="587">
+        </div>
+        <div class="fg">
+          <label>Username</label>
+          <input id="ml-user" placeholder="you@gmail.com" autocomplete="username">
+        </div>
+        <div class="fg">
+          <label>Password / App Password</label>
+          <input id="ml-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="fg">
+          <label>From Address</label>
+          <input id="ml-from" placeholder="you@gmail.com">
+        </div>
+        <div class="fg">
+          <label>To Addresses (comma-separated)</label>
+          <input id="ml-to" placeholder="ops@example.com, backup@example.com">
+        </div>
+        <div class="fg">
+          <label>Cooldown (seconds)</label>
+          <input id="ml-cooldown" type="number" placeholder="300" value="300">
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+          <input type="checkbox" id="ml-enabled" style="width:auto;accent-color:var(--accent)"> Enabled
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+          <input type="checkbox" id="ml-tls" checked style="width:auto;accent-color:var(--accent)"> Use STARTTLS
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+          <input type="checkbox" id="ml-on-error" checked style="width:auto;accent-color:var(--accent)"> Alert on ERROR
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+          <input type="checkbox" id="ml-on-stop" checked style="width:auto;accent-color:var(--accent)"> Alert on unexpected stop
+        </label>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <button class="btn g" onclick="saveMailConfig()">💾 Save Config</button>
+        <div class="fg" style="flex-direction:row;gap:6px;align-items:center;flex:1;min-width:200px">
+          <input id="ml-test-to" placeholder="Test recipient (optional)" style="flex:1">
+          <button class="btn b" onclick="testMailAlert()">✉ Send Test</button>
+        </div>
+      </div>
+      <div id="ml-status" style="font-size:11px;color:var(--text3);margin-top:10px"></div>
+    </div>
+  </div>
+
   <!-- Danger Zone -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2 style="color:var(--red)">Danger Zone</h2><span class="sep"></span></div>
@@ -872,7 +937,7 @@ function switchTab(name,btn){
   else if(name==='events'){loadEvtForm();loadEvents();}
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
-  else if(name==='settings'){updateSysInfo();}
+  else if(name==='settings'){updateSysInfo();loadMailConfig();}
 }
 
 // ═══════════════════════════════════
@@ -1452,6 +1517,78 @@ function applyPollInterval(){
 }
 
 // ═══════════════════════════════════
+// MAIL CONFIG
+// ═══════════════════════════════════
+async function loadMailConfig(){
+  try{
+    const d=await fetch('/api/mail_config').then(r=>r.json());
+    if(d.error){document.getElementById('ml-status').textContent='⚠ '+d.error;return;}
+    document.getElementById('ml-host').value=d.smtp_host||'smtp.gmail.com';
+    document.getElementById('ml-port').value=d.smtp_port||587;
+    document.getElementById('ml-user').value=d.username||'';
+    document.getElementById('ml-pass').value=d.password||'';
+    document.getElementById('ml-from').value=d.from_addr||'';
+    document.getElementById('ml-to').value=(d.to_addrs||[]).join(', ');
+    document.getElementById('ml-cooldown').value=d.cooldown_secs??300;
+    document.getElementById('ml-enabled').checked=!!d.enabled;
+    document.getElementById('ml-tls').checked=d.use_tls!==false;
+    document.getElementById('ml-on-error').checked=d.on_error!==false;
+    document.getElementById('ml-on-stop').checked=d.on_stop!==false;
+    document.getElementById('ml-status').textContent='✓ Config loaded from mail_config.json';
+    document.getElementById('ml-status').style.color='var(--green)';
+  }catch(e){
+    document.getElementById('ml-status').textContent='Failed to load config';
+    document.getElementById('ml-status').style.color='var(--red)';
+  }
+}
+
+async function saveMailConfig(){
+  const toRaw=document.getElementById('ml-to').value;
+  const toList=toRaw.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!toList.length){toast('Enter at least one To address','err');return;}
+  const payload={
+    enabled:document.getElementById('ml-enabled').checked,
+    smtp_host:document.getElementById('ml-host').value.trim(),
+    smtp_port:parseInt(document.getElementById('ml-port').value)||587,
+    use_tls:document.getElementById('ml-tls').checked,
+    username:document.getElementById('ml-user').value.trim(),
+    password:document.getElementById('ml-pass').value,
+    from_addr:document.getElementById('ml-from').value.trim(),
+    to_addrs:toList,
+    on_error:document.getElementById('ml-on-error').checked,
+    on_stop:document.getElementById('ml-on-stop').checked,
+    cooldown_secs:parseInt(document.getElementById('ml-cooldown').value)||300,
+  };
+  try{
+    const r=await fetch('/api/save_mail_config',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const j=await r.json();
+    toast(j.msg||(j.ok?'Saved':'Error'),j.ok?'ok':'err');
+    const st=document.getElementById('ml-status');
+    st.textContent=j.ok?'✓ mail_config.json saved':'✕ '+j.msg;
+    st.style.color=j.ok?'var(--green)':'var(--red)';
+  }catch(e){toast('Save failed','err');}
+}
+
+async function testMailAlert(){
+  const to=document.getElementById('ml-test-to').value.trim()||null;
+  const st=document.getElementById('ml-status');
+  st.textContent='Sending test email…';st.style.color='var(--yellow)';
+  try{
+    const r=await fetch('/api/test_mail_alert',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(to?{to_addr:to}:{})
+    });
+    const j=await r.json();
+    toast(j.msg||(j.ok?'Test sent':'Failed'),j.ok?'ok':'err');
+    st.textContent=j.ok?'✓ Test email sent successfully':'✕ '+j.msg;
+    st.style.color=j.ok?'var(--green)':'var(--red)';
+  }catch(e){toast('Test failed','err');st.textContent='Request failed';st.style.color='var(--red)';}
+}
+
+// ═══════════════════════════════════
 // INIT
 // ═══════════════════════════════════
 (async function init(){
@@ -1599,6 +1736,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
             "/api/stream_view":    lambda: self._get_stream_view(qs),
+            "/api/mail_config":    self._get_mail_config,
         }
 
         handler = routes.get(path)
@@ -1846,6 +1984,31 @@ class WebHandler(BaseHTTPRequestHandler):
             "duration":    st.duration,
             "progress":    st.progress,
         })
+
+    def _get_mail_config(self) -> None:
+        """Return the current mail_config.json contents (password redacted)."""
+        from hc.constants import BASE_DIR
+        path = BASE_DIR() / "mail_config.json"
+        try:
+            if path.exists():
+                import json as _json
+                cfg = _json.loads(path.read_text(encoding="utf-8"))
+                # Redact the password so it never crosses the wire in plain text.
+                # The save endpoint accepts an empty string to mean "keep existing".
+                if "password" in cfg and cfg["password"]:
+                    cfg["password"] = "••••••••"
+                self._json(cfg)
+            else:
+                # Return template defaults so the form is pre-filled sensibly.
+                self._json({
+                    "enabled": False, "smtp_host": "smtp.gmail.com",
+                    "smtp_port": 587, "use_tls": True,
+                    "username": "", "password": "",
+                    "from_addr": "", "to_addrs": [],
+                    "on_error": True, "on_stop": True, "cooldown_secs": 300,
+                })
+        except Exception as exc:
+            self._json({"error": str(exc)}, 500)
 
     # ── POST dispatch ────────────────────────────────────────────────────────
     def _dispatch(self, action: str, data: Dict[str, Any]) -> None:
@@ -2098,6 +2261,57 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "msg": f"Created: {raw}"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "save_mail_config":
+            try:
+                from hc.constants import BASE_DIR
+                import json as _json
+                smtp_host = str(data.get("smtp_host", "")).strip()
+                smtp_port = int(data.get("smtp_port", 587))
+                to_addrs  = data.get("to_addrs", [])
+                if not isinstance(to_addrs, list) or not to_addrs:
+                    raise ValueError("to_addrs must be a non-empty list")
+                if not (1 <= smtp_port <= 65535):
+                    raise ValueError(f"Invalid SMTP port: {smtp_port}")
+                path = BASE_DIR() / "mail_config.json"
+                # Preserve the stored password if the client sent the redaction placeholder
+                password = str(data.get("password", ""))
+                if password in ("••••••••", ""):
+                    try:
+                        existing = _json.loads(path.read_text(encoding="utf-8"))
+                        password = existing.get("password", "")
+                    except Exception:
+                        password = ""
+                cfg = {
+                    "enabled":       bool(data.get("enabled", False)),
+                    "smtp_host":     smtp_host,
+                    "smtp_port":     smtp_port,
+                    "use_tls":       bool(data.get("use_tls", True)),
+                    "username":      str(data.get("username", "")).strip(),
+                    "password":      password,
+                    "from_addr":     str(data.get("from_addr", "")).strip(),
+                    "to_addrs":      [str(a).strip() for a in to_addrs if str(a).strip()],
+                    "on_error":      bool(data.get("on_error", True)),
+                    "on_stop":       bool(data.get("on_stop", True)),
+                    "cooldown_secs": max(0, int(data.get("cooldown_secs", 300))),
+                }
+                path.write_text(_json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
+                log.info("mail_config.json updated via Web UI (enabled=%s)", cfg["enabled"])
+                self._json({"ok": True, "msg": "mail_config.json saved"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "test_mail_alert":
+            try:
+                to_addr = str(data.get("to_addr", "")).strip() or None
+                from hc.mailer import test_alert
+                ok = test_alert(to_addr)
+                if ok:
+                    self._json({"ok": True,  "msg": "Test email sent — check your inbox."})
+                else:
+                    self._json({"ok": False, "msg": "Test failed — check mail_config.json and server logs."})
+            except Exception as exc:
+                self._json({"ok": False, "msg": f"Test error: {exc}"})
 
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
