@@ -1,18 +1,35 @@
 """
-hc/folder_scanner.py — Folder scanner with _day_-tag detection and priority sorting.
+hc/folder_scanner.py — Folder scanner with _day_-tag detection, today-aware
+priority sorting, and streaming only today's (+ untagged) files first.
 
 Day detection rule: the weekday abbreviation / full name must be wrapped by
 underscores on both sides, e.g.  episode_01_thu_.mp4  or  news_MONDAY_final.mkv.
 Case is ignored during matching, but the original casing is preserved in the
 file name.
 
-Conflict resolution within the same day-bucket (or within untagged files):
-the chosen sort_mode applies; alphabetical order is the final tiebreaker so
-results are always deterministic.
+TODAY-AWARE STREAMING RULE
+──────────────────────────
+When a folder is scanned HydraCast compares each file's day-tag against the
+current calendar weekday (Monday = 0 … Sunday = 6).
+
+  1. Files tagged for TODAY  — sorted by the chosen sort_mode, placed FIRST.
+  2. Files with no day-tag   — sorted by the chosen sort_mode, placed SECOND.
+  3. Files tagged for OTHER days — sorted day-order then sort_mode, placed LAST.
+
+This means a folder containing:
+
+    news_mon_.mp4  news_tue_.mp4  news_wed_.mp4  intro.mp4
+
+…on a Tuesday will stream in the order:
+    news_tue_.mp4  →  intro.mp4  →  news_mon_.mp4  →  news_wed_.mp4  …
+
+Conflict resolution within the same bucket: sort_mode applies; alphabetical
+order is the final tiebreaker so results are always deterministic.
 """
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -42,6 +59,9 @@ _DAY_INDEX: Dict[str, int] = {
     "sunday": 6, "sun": 6,
 }
 
+# Human-readable day names for logging / UI.
+_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
 
 def detect_day(filename: str) -> Optional[int]:
     """
@@ -50,6 +70,11 @@ def detect_day(filename: str) -> Optional[int]:
     """
     m = _DAY_RE.search(filename)
     return _DAY_INDEX.get(m.group(1).lower()) if m else None
+
+
+def today_weekday() -> int:
+    """Return today's weekday index: Monday = 0, Sunday = 6."""
+    return date.today().weekday()
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +94,7 @@ class SortMode:
     ALPHA_REV = "alpha_rev"
     NUM_FWD   = "num_fwd"
     NUM_REV   = "num_rev"
-    DAY_FWD   = "day_fwd"   # Mon → Sun (day-tagged first, then untagged)
+    DAY_FWD   = "day_fwd"   # Mon → Sun  (today-tagged first, then untagged)
     DAY_REV   = "day_rev"   # Sun → Mon
     DATE_FWD  = "date_fwd"  # oldest → newest
     DATE_REV  = "date_rev"  # newest → oldest
@@ -83,8 +108,8 @@ class SortMode:
         ALPHA_REV: "Alphabetical  Z → A",
         NUM_FWD:   "Numerical     0 → 9  (embedded episode numbers)",
         NUM_REV:   "Numerical     9 → 0",
-        DAY_FWD:   "By Weekday    Mon → Sun  (untagged at end)",
-        DAY_REV:   "By Weekday    Sun → Mon  (untagged at end)",
+        DAY_FWD:   "By Weekday    Mon → Sun  (today first, untagged second)",
+        DAY_REV:   "By Weekday    Sun → Mon  (today first, untagged second)",
         DATE_FWD:  "By File Date  oldest → newest",
         DATE_REV:  "By File Date  newest → oldest",
     }
@@ -101,13 +126,15 @@ def scan_folder(
     Scan *folder* for supported media files and return
     ``(playlist_items, warnings)``.
 
-    * Day-tagged files (_mon_, _thu_, …) are grouped by weekday.
-    * Within each weekday group — and within the untagged group — files are
-      ordered according to *sort_mode*.
-    * Alphabetical order is always the final tiebreaker so the result is
-      deterministic.
-    * Priorities are assigned 1, 2, 3 … in the final order.
-    * Untagged files are placed after all tagged files with a warning.
+    TODAY-AWARE ordering (always applied regardless of sort_mode):
+      Tier 1 — files tagged for today's weekday
+      Tier 2 — files with no day-tag
+      Tier 3 — files tagged for other weekdays (in weekday order)
+
+    Within each tier the chosen *sort_mode* is applied; alphabetical name is
+    always the final tiebreaker so results are fully deterministic.
+
+    Priorities are assigned 1, 2, 3 … in the final order.
     """
     if not folder.is_dir():
         return [], [f"'{folder}' is not a directory."]
@@ -115,34 +142,46 @@ def scan_folder(
     raw_files: List[Path] = sorted(
         [f for f in folder.iterdir()
          if f.is_file() and f.suffix.lower() in SUPPORTED_EXTS],
-        key=lambda p: p.name.lower(),          # stable base order
+        key=lambda p: p.name.lower(),   # stable base order
     )
 
     if not raw_files:
         return [], [f"No supported media files found in '{folder}'."]
 
+    today = today_weekday()
     warnings: List[str] = []
 
-    # Split into tagged buckets (0–6) and untagged
-    buckets: Dict[int, List[Path]] = {d: [] for d in range(7)}
-    untagged: List[Path] = []
+    # ── Bucket files ──────────────────────────────────────────────────────────
+    today_files:   List[Path] = []          # tier 1: tagged today
+    untagged:      List[Path] = []          # tier 2: no tag
+    other_buckets: Dict[int, List[Path]] = {d: [] for d in range(7)}  # tier 3
 
     for fp in raw_files:
         day = detect_day(fp.name)
-        if day is not None:
-            buckets[day].append(fp)
-        else:
+        if day is None:
             untagged.append(fp)
+        elif day == today:
+            today_files.append(fp)
+        else:
+            other_buckets[day].append(fp)
 
+    # ── Warnings ──────────────────────────────────────────────────────────────
     if untagged:
         names_preview = ", ".join(p.name for p in untagged[:4])
         if len(untagged) > 4:
             names_preview += f" … (+{len(untagged) - 4} more)"
         warnings.append(
             f"⚠  {len(untagged)} file(s) have no _day_ tag — "
-            f"assigned to ALL days (added last with warning): {names_preview}"
+            f"streamed after today's ({_DAY_NAMES[today]}) files: {names_preview}"
         )
 
+    if today_files:
+        warnings.append(
+            f"ℹ  {len(today_files)} file(s) tagged for today "
+            f"({_DAY_NAMES[today]}) — placed first in playlist."
+        )
+
+    # ── Sort key builder ──────────────────────────────────────────────────────
     def _sort_key(fp: Path):
         """Primary sort key using *sort_mode*; alpha name is always tiebreaker."""
         name = fp.name.lower()
@@ -163,28 +202,37 @@ def scan_folder(
             return (mtime, name)
         if sort_mode == SortMode.DATE_REV:
             return (-mtime, name)
-        # DAY_FWD / DAY_REV — within each bucket we fall back to alpha
+        # DAY_FWD / DAY_REV — within each bucket fall back to alpha
         return (name,)
 
-    # Build ordered file list
+    # ── Assemble ordered list (today → untagged → others) ────────────────────
     ordered: List[Tuple[Optional[int], Path]] = []
 
-    if sort_mode in (SortMode.DAY_FWD, SortMode.DAY_REV):
-        day_order = range(7) if sort_mode == SortMode.DAY_FWD else range(6, -1, -1)
-        for d in day_order:
-            for fp in sorted(buckets[d], key=_sort_key):
-                ordered.append((d, fp))
-        for fp in sorted(untagged, key=_sort_key):
-            ordered.append((None, fp))
-    else:
-        # All files together; day-tagged ones sorted before untagged (stable)
-        all_tagged = [fp for bucket in buckets.values() for fp in bucket]
-        for fp in sorted(all_tagged, key=_sort_key):
-            ordered.append((detect_day(fp.name), fp))
-        for fp in sorted(untagged, key=_sort_key):
-            ordered.append((None, fp))
+    # Tier 1: today's files
+    for fp in sorted(today_files, key=_sort_key):
+        ordered.append((today, fp))
 
-    # Assign priorities 1 … N
+    # Tier 2: untagged files
+    for fp in sorted(untagged, key=_sort_key):
+        ordered.append((None, fp))
+
+    # Tier 3: other weekday files
+    if sort_mode == SortMode.DAY_REV:
+        # Sun → Mon order for the "other" bucket, wrapping around today
+        other_day_order = [
+            d for d in range(6, -1, -1) if d != today
+        ]
+    else:
+        # Default: Mon → Sun, skipping today
+        other_day_order = [
+            d for d in range(7) if d != today
+        ]
+
+    for d in other_day_order:
+        for fp in sorted(other_buckets[d], key=_sort_key):
+            ordered.append((d, fp))
+
+    # ── Assign priorities 1 … N ───────────────────────────────────────────────
     items: List[PlaylistItem] = [
         PlaylistItem(file_path=fp, start_position="00:00:00", priority=i + 1)
         for i, (_, fp) in enumerate(ordered)
@@ -203,6 +251,9 @@ def scan_folder_interactive(
 
     Returns ``(all_items, warnings, per_day_map)`` where *per_day_map* maps
     0–6 to the list of items that should play on that day (tagged + untagged).
+
+    The master *all_items* list is always today-aware (today's tagged files
+    first, then untagged, then other days).
     """
     items, warnings = scan_folder(folder, sort_mode)
 
@@ -216,6 +267,7 @@ def scan_folder_interactive(
         else:
             all_day.append(item)
 
+    # Untagged files appear in every day's bucket.
     for d in range(7):
         per_day[d].extend(all_day)
 
