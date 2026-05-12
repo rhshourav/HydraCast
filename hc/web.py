@@ -796,62 +796,115 @@ select option{background:var(--bg3)}
       <button class="btn b" onclick="loadMailConfig()">↻ Load</button>
     </div>
     <div class="card card-body" style="padding:16px">
-      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">
-        Alerts are sent via SMTP when a stream enters ERROR or stops unexpectedly.
-        Config is stored in <code style="color:var(--cyan)">mail_config.json</code> in the HydraCast base directory.
+
+      <!-- Mode tabs -->
+      <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border)">
+        <button id="ml-tab-gmail" class="nav-tab active" onclick="switchMailMode('gmail_oauth2')"
+          style="padding:8px 18px;font-size:12px">
+          <span class="tab-dot"></span>Gmail (OAuth2)
+        </button>
+        <button id="ml-tab-smtp" class="nav-tab" onclick="switchMailMode('smtp')"
+          style="padding:8px 18px;font-size:12px">
+          <span class="tab-dot"></span>SMTP (Outlook / Other)
+        </button>
       </div>
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:12px">
-        <div class="fg">
-          <label>SMTP Host</label>
-          <input id="ml-host" placeholder="smtp.gmail.com">
+      <input type="hidden" id="ml-mode" value="gmail_oauth2">
+
+      <!-- ── Gmail OAuth2 panel ── -->
+      <div id="ml-panel-gmail">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.8">
+          Sign in with Google — no passwords stored. Requires
+          <code style="color:var(--cyan)">gmail_client_secret.json</code> in the HydraCast base directory.<br>
+          Libraries needed: <code style="color:var(--cyan)">pip install google-auth google-auth-oauthlib google-api-python-client</code>
         </div>
-        <div class="fg">
-          <label>SMTP Port</label>
-          <input id="ml-port" type="number" placeholder="587" value="587">
+        <div id="ml-gmail-status-box" style="padding:10px 14px;border-radius:8px;background:var(--bg3);
+            border:1px solid var(--border);font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+          <span id="ml-gmail-dot" style="width:9px;height:9px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
+          <span id="ml-gmail-label">Not connected</span>
+          <button class="btn b" style="margin-left:auto" onclick="connectGmail()">🔗 Connect Gmail</button>
+          <button class="btn r" id="ml-gmail-revoke" style="display:none" onclick="revokeGmail()">✕ Disconnect</button>
         </div>
-        <div class="fg">
-          <label>Username</label>
-          <input id="ml-user" placeholder="you@gmail.com" autocomplete="username">
-        </div>
-        <div class="fg">
-          <label>Password / App Password</label>
-          <input id="ml-pass" type="password" placeholder="••••••••" autocomplete="current-password">
-        </div>
-        <div class="fg">
-          <label>From Address</label>
-          <input id="ml-from" placeholder="you@gmail.com">
-        </div>
-        <div class="fg">
-          <label>To Addresses (comma-separated)</label>
-          <input id="ml-to" placeholder="ops@example.com, backup@example.com">
-        </div>
-        <div class="fg">
-          <label>Cooldown (seconds)</label>
-          <input id="ml-cooldown" type="number" placeholder="300" value="300">
+        <div id="ml-gmail-poll-msg" style="font-size:11px;color:var(--yellow);margin-bottom:12px;display:none">
+          ⏳ Waiting for Google sign-in in browser… <button class="btn" style="margin-left:8px" onclick="checkOAuthStatus()">Check Status</button>
         </div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
-          <input type="checkbox" id="ml-enabled" style="width:auto;accent-color:var(--accent)"> Enabled
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
-          <input type="checkbox" id="ml-tls" checked style="width:auto;accent-color:var(--accent)"> Use STARTTLS
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
-          <input type="checkbox" id="ml-on-error" checked style="width:auto;accent-color:var(--accent)"> Alert on ERROR
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
-          <input type="checkbox" id="ml-on-stop" checked style="width:auto;accent-color:var(--accent)"> Alert on unexpected stop
-        </label>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-        <button class="btn g" onclick="saveMailConfig()">💾 Save Config</button>
-        <div class="fg" style="flex-direction:row;gap:6px;align-items:center;flex:1;min-width:200px">
-          <input id="ml-test-to" placeholder="Test recipient (optional)" style="flex:1">
-          <button class="btn b" onclick="testMailAlert()">✉ Send Test</button>
+
+      <!-- ── SMTP panel ── -->
+      <div id="ml-panel-smtp" style="display:none">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.8">
+          Works with Outlook, Office 365, Yahoo, or any SMTP server.<br>
+          For Gmail SMTP use an <b>App Password</b> (not your account password).
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;
+            font-size:11px;color:var(--text3);margin-bottom:14px">
+          <b style="color:var(--text2)">Quick presets:</b>&nbsp;
+          <button class="btn" onclick="smtpPreset('outlook')" style="font-size:10px">Outlook.com</button>
+          <button class="btn" onclick="smtpPreset('office365')" style="font-size:10px">Office 365</button>
+          <button class="btn" onclick="smtpPreset('yahoo')" style="font-size:10px">Yahoo</button>
+          <button class="btn" onclick="smtpPreset('gmail')" style="font-size:10px">Gmail SMTP</button>
+        </div>
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:12px">
+          <div class="fg">
+            <label>SMTP Host</label>
+            <input id="ml-host" placeholder="smtp.office365.com">
+          </div>
+          <div class="fg">
+            <label>SMTP Port</label>
+            <input id="ml-port" type="number" placeholder="587" value="587">
+          </div>
+          <div class="fg">
+            <label>Username</label>
+            <input id="ml-user" placeholder="you@outlook.com" autocomplete="username">
+          </div>
+          <div class="fg">
+            <label>Password / App Password</label>
+            <input id="ml-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+          </div>
+          <div class="fg">
+            <label>From Address</label>
+            <input id="ml-from" placeholder="you@outlook.com">
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+            <input type="checkbox" id="ml-tls" checked style="width:auto;accent-color:var(--accent)"> Use STARTTLS
+          </label>
         </div>
       </div>
-      <div id="ml-status" style="font-size:11px;color:var(--text3);margin-top:10px"></div>
+
+      <!-- ── Shared settings (both modes) ── -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-bottom:12px">
+          <div class="fg">
+            <label>To Addresses (comma-separated)</label>
+            <input id="ml-to" placeholder="ops@example.com, backup@example.com">
+          </div>
+          <div class="fg">
+            <label>Cooldown (seconds)</label>
+            <input id="ml-cooldown" type="number" placeholder="300" value="300">
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+            <input type="checkbox" id="ml-enabled" style="width:auto;accent-color:var(--accent)"> Enabled
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+            <input type="checkbox" id="ml-on-error" checked style="width:auto;accent-color:var(--accent)"> Alert on ERROR
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+            <input type="checkbox" id="ml-on-stop" checked style="width:auto;accent-color:var(--accent)"> Alert on unexpected stop
+          </label>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <button class="btn g" onclick="saveMailConfig()">💾 Save Config</button>
+          <div class="fg" style="flex-direction:row;gap:6px;align-items:center;flex:1;min-width:200px">
+            <input id="ml-test-to" placeholder="Test recipient (optional)" style="flex:1">
+            <button class="btn b" onclick="testMailAlert()">✉ Send Test</button>
+          </div>
+        </div>
+        <div id="ml-status" style="font-size:11px;color:var(--text3);margin-top:10px"></div>
+      </div>
+
     </div>
   </div>
 
@@ -1519,21 +1572,71 @@ function applyPollInterval(){
 // ═══════════════════════════════════
 // MAIL CONFIG
 // ═══════════════════════════════════
+const _SMTP_PRESETS={
+  outlook: {host:'smtp-mail.outlook.com', port:587, tls:true},
+  office365:{host:'smtp.office365.com',   port:587, tls:true},
+  yahoo:   {host:'smtp.mail.yahoo.com',   port:587, tls:true},
+  gmail:   {host:'smtp.gmail.com',        port:587, tls:true},
+};
+
+function smtpPreset(key){
+  const p=_SMTP_PRESETS[key];if(!p)return;
+  document.getElementById('ml-host').value=p.host;
+  document.getElementById('ml-port').value=p.port;
+  document.getElementById('ml-tls').checked=p.tls;
+  toast('Preset applied — fill in username & password','info');
+}
+
+function switchMailMode(mode){
+  document.getElementById('ml-mode').value=mode;
+  const isGmail=(mode==='gmail_oauth2');
+  document.getElementById('ml-panel-gmail').style.display=isGmail?'':'none';
+  document.getElementById('ml-panel-smtp').style.display=isGmail?'none':'';
+  document.getElementById('ml-tab-gmail').classList.toggle('active',isGmail);
+  document.getElementById('ml-tab-smtp').classList.toggle('active',!isGmail);
+}
+
+function _setGmailUI(tokenExists){
+  const dot=document.getElementById('ml-gmail-dot');
+  const lbl=document.getElementById('ml-gmail-label');
+  const rev=document.getElementById('ml-gmail-revoke');
+  if(tokenExists){
+    dot.style.background='var(--green)';
+    lbl.textContent='Connected — Gmail account authorised';
+    rev.style.display='';
+  } else {
+    dot.style.background='var(--text3)';
+    lbl.textContent='Not connected';
+    rev.style.display='none';
+  }
+}
+
 async function loadMailConfig(){
   try{
     const d=await fetch('/api/mail_config').then(r=>r.json());
     if(d.error){document.getElementById('ml-status').textContent='⚠ '+d.error;return;}
+
+    const mode=d.mode||'smtp';
+    switchMailMode(mode);
+
+    // SMTP fields
     document.getElementById('ml-host').value=d.smtp_host||'smtp.gmail.com';
     document.getElementById('ml-port').value=d.smtp_port||587;
     document.getElementById('ml-user').value=d.username||'';
     document.getElementById('ml-pass').value=d.password||'';
     document.getElementById('ml-from').value=d.from_addr||'';
+    document.getElementById('ml-tls').checked=d.use_tls!==false;
+
+    // Shared fields
     document.getElementById('ml-to').value=(d.to_addrs||[]).join(', ');
     document.getElementById('ml-cooldown').value=d.cooldown_secs??300;
     document.getElementById('ml-enabled').checked=!!d.enabled;
-    document.getElementById('ml-tls').checked=d.use_tls!==false;
     document.getElementById('ml-on-error').checked=d.on_error!==false;
     document.getElementById('ml-on-stop').checked=d.on_stop!==false;
+
+    // OAuth2 status
+    _setGmailUI(!!d.oauth2_token_exists);
+
     document.getElementById('ml-status').textContent='✓ Config loaded from mail_config.json';
     document.getElementById('ml-status').style.color='var(--green)';
   }catch(e){
@@ -1546,18 +1649,21 @@ async function saveMailConfig(){
   const toRaw=document.getElementById('ml-to').value;
   const toList=toRaw.split(',').map(s=>s.trim()).filter(Boolean);
   if(!toList.length){toast('Enter at least one To address','err');return;}
+  const mode=document.getElementById('ml-mode').value;
   const payload={
+    mode,
     enabled:document.getElementById('ml-enabled').checked,
+    to_addrs:toList,
+    on_error:document.getElementById('ml-on-error').checked,
+    on_stop:document.getElementById('ml-on-stop').checked,
+    cooldown_secs:parseInt(document.getElementById('ml-cooldown').value)||300,
+    // SMTP fields (ignored by server when mode=gmail_oauth2)
     smtp_host:document.getElementById('ml-host').value.trim(),
     smtp_port:parseInt(document.getElementById('ml-port').value)||587,
     use_tls:document.getElementById('ml-tls').checked,
     username:document.getElementById('ml-user').value.trim(),
     password:document.getElementById('ml-pass').value,
     from_addr:document.getElementById('ml-from').value.trim(),
-    to_addrs:toList,
-    on_error:document.getElementById('ml-on-error').checked,
-    on_stop:document.getElementById('ml-on-stop').checked,
-    cooldown_secs:parseInt(document.getElementById('ml-cooldown').value)||300,
   };
   try{
     const r=await fetch('/api/save_mail_config',{
@@ -1586,6 +1692,55 @@ async function testMailAlert(){
     st.textContent=j.ok?'✓ Test email sent successfully':'✕ '+j.msg;
     st.style.color=j.ok?'var(--green)':'var(--red)';
   }catch(e){toast('Test failed','err');st.textContent='Request failed';st.style.color='var(--red)';}
+}
+
+async function connectGmail(){
+  const st=document.getElementById('ml-status');
+  st.textContent='Starting Gmail auth flow…';st.style.color='var(--yellow)';
+  try{
+    const r=await fetch('/api/gmail_oauth2_start',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const j=await r.json();
+    if(j.ok){
+      document.getElementById('ml-gmail-poll-msg').style.display='';
+      st.textContent=j.msg||'Browser opened — sign in with Google.';
+      st.style.color='var(--yellow)';
+    } else {
+      st.textContent='✕ '+j.msg;st.style.color='var(--red)';
+      toast(j.msg,'err');
+    }
+  }catch(e){toast('Connect failed','err');}
+}
+
+async function checkOAuthStatus(){
+  try{
+    const r=await fetch('/api/gmail_oauth2_status').then(res=>res.json());
+    const st=document.getElementById('ml-status');
+    const poll=document.getElementById('ml-gmail-poll-msg');
+    if(r.status==='done'||r.token_exists){
+      poll.style.display='none';
+      _setGmailUI(true);
+      st.textContent='✓ Gmail connected successfully!';st.style.color='var(--green)';
+      toast('Gmail connected!','ok');
+    } else if(r.status==='error'){
+      poll.style.display='none';
+      st.textContent='✕ Auth failed: '+r.error;st.style.color='var(--red)';
+      toast('OAuth2 failed','err');
+    } else {
+      st.textContent='Still waiting for sign-in…';st.style.color='var(--yellow)';
+    }
+  }catch(e){toast('Status check failed','err');}
+}
+
+async function revokeGmail(){
+  if(!confirm('Disconnect Gmail? You will need to re-authorise to send alerts.'))return;
+  try{
+    const r=await fetch('/api/gmail_oauth2_revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const j=await r.json();
+    toast(j.msg||(j.ok?'Disconnected':'Error'),j.ok?'ok':'err');
+    if(j.ok) _setGmailUI(false);
+    document.getElementById('ml-status').textContent=j.msg;
+    document.getElementById('ml-status').style.color=j.ok?'var(--green)':'var(--red)';
+  }catch(e){toast('Revoke failed','err');}
 }
 
 // ═══════════════════════════════════
@@ -1736,7 +1891,8 @@ class WebHandler(BaseHTTPRequestHandler):
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
             "/api/stream_view":    lambda: self._get_stream_view(qs),
-            "/api/mail_config":    self._get_mail_config,
+            "/api/mail_config":         self._get_mail_config,
+            "/api/gmail_oauth2_status": self._get_gmail_oauth2_status,
         }
 
         handler = routes.get(path)
@@ -1988,15 +2144,18 @@ class WebHandler(BaseHTTPRequestHandler):
     def _get_mail_config(self) -> None:
         """Return the current mail_config.json contents (password redacted)."""
         from hc.constants import BASE_DIR
+        import json as _json
         path = BASE_DIR() / "mail_config.json"
         try:
             if path.exists():
-                import json as _json
                 cfg = _json.loads(path.read_text(encoding="utf-8"))
                 # Redact the password so it never crosses the wire in plain text.
-                # The save endpoint accepts an empty string to mean "keep existing".
                 if "password" in cfg and cfg["password"]:
                     cfg["password"] = "••••••••"
+                # Tell the UI whether a Gmail token already exists
+                from hc.mailer import get_oauth2_flow_status
+                status = get_oauth2_flow_status()
+                cfg["oauth2_token_exists"] = status["token_exists"]
                 self._json(cfg)
             else:
                 # Return template defaults so the form is pre-filled sensibly.
@@ -2009,6 +2168,14 @@ class WebHandler(BaseHTTPRequestHandler):
                 })
         except Exception as exc:
             self._json({"error": str(exc)}, 500)
+
+    def _get_gmail_oauth2_status(self) -> None:
+        """Return the current OAuth2 flow status (polled by UI while auth is in progress)."""
+        try:
+            from hc.mailer import get_oauth2_flow_status
+            self._json(get_oauth2_flow_status())
+        except Exception as exc:
+            self._json({"status": "error", "error": str(exc), "token_exists": False})
 
     # ── POST dispatch ────────────────────────────────────────────────────────
     def _dispatch(self, action: str, data: Dict[str, Any]) -> None:
@@ -2266,11 +2433,11 @@ class WebHandler(BaseHTTPRequestHandler):
             try:
                 from hc.constants import BASE_DIR
                 import json as _json
-                smtp_host = str(data.get("smtp_host", "")).strip()
-                smtp_port = int(data.get("smtp_port", 587))
+                mode      = str(data.get("mode", "smtp")).strip()
                 to_addrs  = data.get("to_addrs", [])
                 if not isinstance(to_addrs, list) or not to_addrs:
                     raise ValueError("to_addrs must be a non-empty list")
+                smtp_port = int(data.get("smtp_port", 587))
                 if not (1 <= smtp_port <= 65535):
                     raise ValueError(f"Invalid SMTP port: {smtp_port}")
                 path = BASE_DIR() / "mail_config.json"
@@ -2284,19 +2451,21 @@ class WebHandler(BaseHTTPRequestHandler):
                         password = ""
                 cfg = {
                     "enabled":       bool(data.get("enabled", False)),
-                    "smtp_host":     smtp_host,
+                    "mode":          mode,
+                    "to_addrs":      [str(a).strip() for a in to_addrs if str(a).strip()],
+                    "on_error":      bool(data.get("on_error", True)),
+                    "on_stop":       bool(data.get("on_stop", True)),
+                    "cooldown_secs": max(0, int(data.get("cooldown_secs", 300))),
+                    # SMTP fields (kept even in OAuth2 mode so switching back works)
+                    "smtp_host":     str(data.get("smtp_host", "")).strip(),
                     "smtp_port":     smtp_port,
                     "use_tls":       bool(data.get("use_tls", True)),
                     "username":      str(data.get("username", "")).strip(),
                     "password":      password,
                     "from_addr":     str(data.get("from_addr", "")).strip(),
-                    "to_addrs":      [str(a).strip() for a in to_addrs if str(a).strip()],
-                    "on_error":      bool(data.get("on_error", True)),
-                    "on_stop":       bool(data.get("on_stop", True)),
-                    "cooldown_secs": max(0, int(data.get("cooldown_secs", 300))),
                 }
                 path.write_text(_json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
-                log.info("mail_config.json updated via Web UI (enabled=%s)", cfg["enabled"])
+                log.info("mail_config.json updated via Web UI (mode=%s enabled=%s)", mode, cfg["enabled"])
                 self._json({"ok": True, "msg": "mail_config.json saved"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
@@ -2305,13 +2474,29 @@ class WebHandler(BaseHTTPRequestHandler):
             try:
                 to_addr = str(data.get("to_addr", "")).strip() or None
                 from hc.mailer import test_alert
-                ok = test_alert(to_addr)
+                ok, err = test_alert(to_addr)
                 if ok:
                     self._json({"ok": True,  "msg": "Test email sent — check your inbox."})
                 else:
-                    self._json({"ok": False, "msg": "Test failed — check mail_config.json and server logs."})
+                    self._json({"ok": False, "msg": err or "Test failed — check server logs."})
             except Exception as exc:
                 self._json({"ok": False, "msg": f"Test error: {exc}"})
+
+        elif action == "gmail_oauth2_start":
+            try:
+                from hc.mailer import start_gmail_oauth2_flow
+                ok, msg = start_gmail_oauth2_flow()
+                self._json({"ok": ok, "msg": msg})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "gmail_oauth2_revoke":
+            try:
+                from hc.mailer import revoke_gmail_token
+                ok, msg = revoke_gmail_token()
+                self._json({"ok": ok, "msg": msg})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
