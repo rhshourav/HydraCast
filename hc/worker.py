@@ -271,9 +271,18 @@ class StreamWorker:
 
     def restart(self, seek: Optional[float] = None) -> None:
         self._log("Restart requested.")
-        self.stop()
-        time.sleep(0.8)
-        self.start(seek_override=seek)
+        # Acquire the start lock BEFORE stopping so the monitor thread's
+        # _auto_restart cannot sneak in and call start() between stop() and
+        # our own start() call — which caused the "already in progress" skip.
+        if not self._start_lock.acquire(timeout=15):
+            self._log("Restart: could not acquire start lock in 15s — aborting.", "WARN")
+            return
+        try:
+            self.stop()
+            time.sleep(0.5)
+            self._do_start(seek_override=seek)
+        finally:
+            self._start_lock.release()
 
     def seek(self, seconds: float) -> None:
         self._seeking.set()
@@ -996,7 +1005,17 @@ class StreamWorker:
             self._log(f"Auto-restart #{self.state.restart_count} starting …", "WARN")
             self._kill_mediamtx()
             time.sleep(0.3)
-            self.start()
+            # Use start() normally here — _auto_restart runs in the monitor
+            # thread which never holds _start_lock, so this is safe.
+            # We use the blocking acquire (default) so if a manual restart
+            # just grabbed the lock we wait for it rather than silently skip.
+            if self._start_lock.acquire(timeout=20):
+                try:
+                    self._do_start()
+                finally:
+                    self._start_lock.release()
+            else:
+                self._log("Auto-restart: could not acquire start lock — skipping.", "WARN")
 
     def _kill_ffmpeg(self) -> None:
         proc = self.state.ffmpeg_proc
