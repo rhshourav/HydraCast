@@ -1,5 +1,12 @@
 """
 hc/manager.py  —  StreamManager: orchestrates workers, scheduler, event loop.
+
+v5.1 additions:
+  • FolderWatcherRegistry — live folder monitoring for folder-source streams.
+  • rescan_folder(state)  — force immediate folder rescan (TUI F key).
+  • clear_error(state)    — clear ERROR status and reset restart counter (TUI C key).
+  • reload_csv()          — hot-reload streams.csv without restarting LIVE streams
+                            (TUI L key).
 """
 from __future__ import annotations
 
@@ -11,6 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from hc.csv_manager import CSVManager
+from hc.folder_watcher import FolderWatcherRegistry
 from hc.models import OneShotEvent, StreamConfig, StreamState, StreamStatus
 from hc.worker import LogBuffer, StreamWorker
 
@@ -25,6 +33,8 @@ class StreamManager:
         self._sched_t: Optional[threading.Thread] = None
         self._event_t: Optional[threading.Thread] = None
         self.events:   List[OneShotEvent]         = CSVManager.load_events()
+        # Live folder watcher pool — one watcher thread per unique folder path.
+        self._fw_registry = FolderWatcherRegistry(glog)
 
     # ── Worker factory ────────────────────────────────────────────────────────
     def _worker(self, state: StreamState) -> StreamWorker:
@@ -38,6 +48,9 @@ class StreamManager:
             return
         state.playlist_index = 0
         state.playlist_order = []
+        # Register/refresh the folder watcher whenever a stream starts.
+        if state.config.folder_source:
+            self._fw_registry.register(state)
         w = self._worker(state)
         threading.Thread(target=w.start, daemon=True,
                          name=f"start-{state.config.port}").start()
@@ -76,11 +89,138 @@ class StreamManager:
             elif s.config.is_scheduled_today():
                 self.start_stream(s)
             else:
+                # Register folder watcher even for scheduled-but-not-yet-started streams
+                # so the playlist stays current while we're waiting.
+                if s.config.folder_source:
+                    self._fw_registry.register(s)
                 s.status = StreamStatus.SCHEDULED
 
     def stop_all(self) -> None:
         for s in self.states:
             self.stop_stream(s)
+
+    # ── Folder rescan (TUI F key) ─────────────────────────────────────────────
+    def rescan_folder(self, state: StreamState) -> None:
+        """
+        Force an immediate folder rescan for *state*.
+
+        • If the stream has a folder_source, the watcher triggers a full
+          rescan and updates cfg.playlist in-place.
+        • If no folder_source is set but the first playlist entry is a
+          directory, it is promoted to folder_source first.
+        • Safe to call while the stream is LIVE — the updated playlist is
+          picked up when the worker advances to the next file.
+        """
+        cfg = state.config
+
+        # Auto-promote if folder_source not yet set.
+        if cfg.folder_source is None:
+            if cfg.playlist and cfg.playlist[0].file_path.is_dir():
+                cfg.folder_source = cfg.playlist[0].file_path
+                self._glog.add(
+                    f"[{cfg.name}] Promoted folder_source: {cfg.folder_source.name}",
+                    "INFO",
+                )
+            else:
+                self._glog.add(
+                    f"[{cfg.name}] rescan_folder: not a folder-source stream.",
+                    "WARN",
+                )
+                return
+
+        # Ensure a watcher is running for this folder.
+        self._fw_registry.register(state)
+        # Trigger the rescan.
+        self._fw_registry.rescan(state)
+        self._glog.add(
+            f"[{cfg.name}] Folder rescan triggered: {cfg.folder_source.name}", "INFO"
+        )
+
+    # ── Clear error (TUI C key) ───────────────────────────────────────────────
+    def clear_error(self, state: StreamState) -> None:
+        """
+        Clear an ERROR state and reset the restart counter so the auto-restart
+        back-off starts fresh.  Does not restart the stream automatically.
+        """
+        state.error_msg    = ""
+        state.restart_count = 0
+        if state.status == StreamStatus.ERROR:
+            state.status = StreamStatus.STOPPED
+        msg = f"[{state.config.name}] Error cleared — ready to restart."
+        state.log_add(msg)
+        self._glog.add(msg, "INFO")
+
+    # ── Hot CSV reload (TUI L key) ────────────────────────────────────────────
+    def reload_csv(self) -> None:
+        """
+        Re-read streams.csv and update in-memory config without restarting
+        any currently-LIVE or STARTING streams.
+
+        Fields updated for ALL streams (safe while running):
+          weekdays, enabled, shuffle, video_bitrate, audio_bitrate,
+          compliance_enabled, compliance_start, compliance_loop
+
+        Fields updated only for STOPPED / SCHEDULED / ERROR streams:
+          playlist, stream_path, hls_enabled, folder_source
+
+        New streams (names that appear in the CSV but not in memory) are
+        appended.  Streams removed from the CSV are left running until they
+        stop naturally; they are then marked DISABLED.
+        """
+        try:
+            new_configs: List[StreamConfig] = CSVManager.load()
+        except Exception as exc:
+            self._glog.add(f"reload_csv failed: {exc}", "ERROR")
+            return
+
+        new_by_name: Dict[str, StreamConfig] = {c.name: c for c in new_configs}
+        existing_names = {s.config.name for s in self.states}
+
+        updated = 0
+        for state in self.states:
+            nc = new_by_name.get(state.config.name)
+            if nc is None:
+                # Stream removed from CSV — mark disabled when it stops.
+                continue
+
+            cfg = state.config
+            is_active = state.status in (StreamStatus.LIVE, StreamStatus.STARTING)
+
+            # Always-safe field updates.
+            cfg.weekdays             = nc.weekdays
+            cfg.enabled              = nc.enabled
+            cfg.shuffle              = nc.shuffle
+            cfg.video_bitrate        = nc.video_bitrate
+            cfg.audio_bitrate        = nc.audio_bitrate
+            cfg.compliance_enabled   = nc.compliance_enabled
+            cfg.compliance_start     = nc.compliance_start
+            cfg.compliance_loop      = nc.compliance_loop
+
+            # Destructive field updates — only apply when stream is idle.
+            if not is_active:
+                cfg.playlist      = nc.playlist
+                cfg.stream_path   = nc.stream_path
+                cfg.hls_enabled   = nc.hls_enabled
+                # Update folder_source and re-register watcher if it changed.
+                if nc.folder_source != cfg.folder_source:
+                    cfg.folder_source = nc.folder_source
+                    if cfg.folder_source:
+                        self._fw_registry.register(state)
+
+            updated += 1
+
+        # Append genuinely new streams.
+        added = 0
+        for name, nc in new_by_name.items():
+            if name not in existing_names:
+                new_state = StreamState(config=nc)
+                self.states.append(new_state)
+                self._fw_registry.register(new_state)
+                added += 1
+
+        msg = f"streams.csv reloaded — {updated} updated, {added} new."
+        self._glog.add(msg, "INFO")
+        logging.info(msg)
 
     # ── Scheduler loop ────────────────────────────────────────────────────────
     def _scheduler_loop(self) -> None:
@@ -146,6 +286,7 @@ class StreamManager:
     def shutdown(self) -> None:
         self._running = False
         self.stop_all()
+        self._fw_registry.stop_all()
         deadline = time.time() + 12
         while time.time() < deadline:
             if not any(
