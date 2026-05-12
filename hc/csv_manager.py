@@ -1,28 +1,37 @@
 """
-hc/csv_manager.py  —  Load / save streams (JSON) and events (CSV).
+hc/csv_manager.py  —  Load / save streams (JSON) and events (JSON).
 
-Migration note
-──────────────
-streams.csv is replaced by streams.json.  On first run, if streams.json
-does not exist but streams.csv does, the old file is automatically
-migrated (read → written as JSON) and renamed to streams.csv.bak so the
-original is preserved.
+v6.0 changes
+────────────
+• All config lives under  <base>/config/
+    streams → config/streams.json   (was streams.json beside the script)
+    events  → config/events.json    (was events.csv — now fully JSON)
+• Class renamed to ConfigManager; CSVManager is kept as an alias so
+  existing call-sites in manager.py / web.py / hydracast.py need no changes.
+• One-shot legacy migrations:
+    streams.csv          → config/streams.json
+    streams.json (root)  → config/streams.json
+    events.csv           → config/events.json
 
-Why JSON?
-─────────
-CSV row parsing breaks when the *files* column contains semicolons,
-commas, or Windows-style paths — all of which appear in realistic
-playlists.  JSON carries the files list as a plain string value inside
-a quoted field, so no delimiter collisions are possible.  The JSON is
-also easier to generate / modify programmatically from the Web UI's
-create_stream / delete_stream endpoints.
+Why JSON for events?
+────────────────────
+CSV rows break when file_path contains commas or semicolons.
+JSON carries all fields as typed values — no delimiter collisions and no
+custom escaping needed.
 
-Changes vs v5.0.0 / v5.1
-──────────────────────────
-  • StreamConfig is now persisted in streams.json (not streams.csv).
-  • Backward-compatible: existing streams.csv files are auto-migrated.
-  • compliance_enabled / compliance_start / compliance_loop preserved.
-  • load() auto-detects folder sources (unchanged from v5.1).
+JSON event format (array of objects):
+  [
+    {
+      "event_id":    "uuid-...",
+      "stream_name": "Stream_1",
+      "file_path":   "/media/clip.mp4",
+      "play_at":     "2024-06-01 10:00:00",
+      "post_action": "resume",
+      "start_pos":   "00:00:00",
+      "played":      false
+    },
+    ...
+  ]
 """
 from __future__ import annotations
 
@@ -34,18 +43,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
-from hc.constants import CSV_FILE, EVENTS_FILE, WEEKDAY_MAP
+from hc.constants import (
+    CONFIG_DIR, CSV_FILE, EVENTS_CSV, EVENTS_FILE, STREAMS_JSON,
+    WEEKDAY_MAP,
+)
 from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 
-# ── Path helpers ───────────────────────────────────────────────────────────────
-
-def _STREAMS_JSON() -> Path:
-    """Return the path to streams.json (sibling of streams.csv)."""
-    return CSV_FILE().with_name("streams.json")
-
-
-# ── Column headers (kept for the events CSV) ───────────────────────────────────
-EVENTS_COLUMNS = ["event_id", "stream_name", "file_path", "play_at", "post_action", "start_pos"]
 
 # ── JSON template written when no config file exists ──────────────────────────
 _JSON_TEMPLATE: List[dict] = [
@@ -82,12 +85,24 @@ _JSON_TEMPLATE: List[dict] = [
 ]
 
 
-class CSVManager:
+class ConfigManager:
+    """
+    Manages persistent configuration for HydraCast.
+
+    All files live under  <base>/config/:
+      • config/streams.json  — stream definitions
+      • config/events.json   — one-shot scheduled events
+
+    Legacy migration (runs once, silently):
+      • <base>/streams.csv       → config/streams.json
+      • <base>/streams.json      → config/streams.json   (old root location)
+      • <base>/events.csv        → config/events.json
+    """
 
     # ── Template ──────────────────────────────────────────────────────────────
     @staticmethod
     def create_template() -> None:
-        dst = _STREAMS_JSON()
+        dst = STREAMS_JSON()
         dst.write_text(
             json.dumps(_JSON_TEMPLATE, indent=2, ensure_ascii=False),
             encoding="utf-8",
@@ -214,7 +229,7 @@ class CSVManager:
             if items:
                 config.playlist = items
                 logging.info(
-                    "JSON [%s]: folder-source '%s' → %d file(s)",
+                    "JSON [%s]: folder-source '%s' → %d file(s) (today's + untagged)",
                     config.name, folder.name, len(items),
                 )
             else:
@@ -230,75 +245,137 @@ class CSVManager:
                 config.name, folder, exc,
             )
 
-    # ── Migration: streams.csv → streams.json ─────────────────────────────────
+    # ── Migration helpers ─────────────────────────────────────────────────────
     @classmethod
-    def _migrate_csv_to_json(cls) -> bool:
+    def _migrate_streams_to_config(cls) -> bool:
         """
-        If streams.csv exists and streams.json does not, read the CSV and
-        write it out as JSON.  Returns True on success.
+        Look for streams config in legacy locations (root streams.csv or root
+        streams.json) and migrate to config/streams.json.
+        Returns True if a migration was performed.
         """
-        old = CSV_FILE()
-        new = _STREAMS_JSON()
-        if not old.exists() or new.exists():
+        dst = STREAMS_JSON()
+        if dst.exists():
+            return False  # already in the right place
+
+        # Try root streams.json first (intermediate location from v5.x)
+        root_json = CSV_FILE().with_name("streams.json")
+        if root_json.exists():
+            try:
+                dst.write_bytes(root_json.read_bytes())
+                bak = root_json.with_suffix(".json.bak")
+                root_json.rename(bak)
+                logging.info(
+                    "Migrated streams.json (root) → config/streams.json. "
+                    "Old file renamed to %s", bak.name,
+                )
+                return True
+            except Exception as exc:
+                logging.error("streams.json (root) → config/ migration failed: %s", exc)
+
+        # Fallback: try legacy streams.csv
+        old_csv = CSV_FILE()
+        if old_csv.exists():
+            try:
+                rows: List[dict] = []
+                with open(old_csv, newline="", encoding="utf-8") as f:
+                    for row in csv.DictReader(f):
+                        name = row.get("stream_name", "").strip()
+                        if not name:
+                            continue
+                        rows.append({
+                            "stream_name":       name,
+                            "port":              int(row.get("port", "8554").strip()),
+                            "files":             row.get("files", "").strip(),
+                            "weekdays":          row.get("weekdays", "ALL").strip(),
+                            "enabled":           row.get("enabled", "true").strip().lower(),
+                            "shuffle":           row.get("shuffle", "false").strip().lower(),
+                            "stream_path":       row.get("stream_path", "stream").strip() or "stream",
+                            "video_bitrate":     row.get("video_bitrate", "2500k").strip(),
+                            "audio_bitrate":     row.get("audio_bitrate", "128k").strip(),
+                            "hls_enabled":       row.get("hls_enabled", "false").strip().lower(),
+                            "compliance_enabled": row.get("compliance_enabled", "false").strip().lower(),
+                            "compliance_start":  row.get("compliance_start", "06:00:00").strip(),
+                            "compliance_loop":   row.get("compliance_loop", "false").strip().lower(),
+                        })
+                dst.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+                bak = old_csv.with_suffix(".csv.bak")
+                old_csv.rename(bak)
+                logging.info(
+                    "Migrated streams.csv → config/streams.json (%d stream(s)). "
+                    "Old file renamed to %s", len(rows), bak.name,
+                )
+                return True
+            except Exception as exc:
+                logging.error("streams.csv → config/ migration failed: %s", exc)
+
+        return False
+
+    @classmethod
+    def _migrate_events_to_json(cls) -> bool:
+        """
+        Migrate events.csv (root) → config/events.json if needed.
+        Returns True if a migration was performed.
+        """
+        dst = EVENTS_FILE()
+        if dst.exists():
             return False
+
+        old_csv = EVENTS_CSV()
+        if not old_csv.exists():
+            return False
+
         try:
-            rows: List[dict] = []
-            with open(old, newline="", encoding="utf-8") as f:
-                for row in csv.DictReader(f):
-                    name = row.get("stream_name", "").strip()
-                    if not name:
-                        continue
-                    rows.append({
-                        "stream_name":       name,
-                        "port":              int(row.get("port", "8554").strip()),
-                        "files":             row.get("files", "").strip(),
-                        "weekdays":          row.get("weekdays", "ALL").strip(),
-                        "enabled":           row.get("enabled", "true").strip().lower(),
-                        "shuffle":           row.get("shuffle", "false").strip().lower(),
-                        "stream_path":       row.get("stream_path", "stream").strip() or "stream",
-                        "video_bitrate":     row.get("video_bitrate", "2500k").strip(),
-                        "audio_bitrate":     row.get("audio_bitrate", "128k").strip(),
-                        "hls_enabled":       row.get("hls_enabled", "false").strip().lower(),
-                        "compliance_enabled": row.get("compliance_enabled", "false").strip().lower(),
-                        "compliance_start":  row.get("compliance_start", "06:00:00").strip(),
-                        "compliance_loop":   row.get("compliance_loop", "false").strip().lower(),
-                    })
-            new.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
-            bak = old.with_suffix(".csv.bak")
-            old.rename(bak)
+            events: List[dict] = []
+            with open(old_csv, newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        events.append({
+                            "event_id":    row.get("event_id", "").strip(),
+                            "stream_name": row.get("stream_name", "").strip(),
+                            "file_path":   row.get("file_path", "").strip(),
+                            "play_at":     row.get("play_at", "").strip(),
+                            "post_action": row.get("post_action", "resume").strip(),
+                            "start_pos":   row.get("start_pos", "00:00:00").strip(),
+                            "played":      row.get("played", "false").strip().lower() in ("true", "1"),
+                        })
+                    except Exception as exc:
+                        logging.warning("events.csv migration: skipping row: %s", exc)
+            dst.write_text(json.dumps(events, indent=2, ensure_ascii=False), encoding="utf-8")
+            bak = old_csv.with_suffix(".csv.bak")
+            old_csv.rename(bak)
             logging.info(
-                "Migrated streams.csv → streams.json (%d stream(s)). "
-                "Old file renamed to %s",
-                len(rows), bak.name,
+                "Migrated events.csv → config/events.json (%d event(s)). "
+                "Old file renamed to %s", len(events), bak.name,
             )
             return True
         except Exception as exc:
-            logging.error("CSV→JSON migration failed: %s", exc)
+            logging.error("events.csv → config/events.json migration failed: %s", exc)
             return False
 
     # ── Load / save streams ───────────────────────────────────────────────────
     @classmethod
     def load(cls) -> List[StreamConfig]:
-        dst = _STREAMS_JSON()
+        dst = STREAMS_JSON()
 
-        # Auto-migrate old streams.csv if present
+        # Auto-migrate from any legacy location.
         if not dst.exists():
-            cls._migrate_csv_to_json()
+            cls._migrate_streams_to_config()
 
         if not dst.exists():
             cls.create_template()
             raise FileNotFoundError(
-                f"streams.json not found → template created at:\n  {dst}\n"
+                f"config/streams.json not found → template created at:\n  {dst}\n"
                 "Edit it with your stream details, then restart HydraCast."
             )
 
         try:
             raw_rows = json.loads(dst.read_text(encoding="utf-8"))
         except Exception as exc:
-            raise ValueError(f"streams.json is not valid JSON: {exc}") from exc
+            raise ValueError(f"config/streams.json is not valid JSON: {exc}") from exc
 
         if not isinstance(raw_rows, list):
-            raise ValueError("streams.json must contain a JSON array at the top level.")
+            raise ValueError("config/streams.json must contain a JSON array at the top level.")
 
         configs: List[StreamConfig] = []
         errors:  List[str]          = []
@@ -374,7 +451,7 @@ class CSVManager:
 
         if not configs:
             logging.warning(
-                "JSON: No valid streams in streams.json — "
+                "JSON: No valid streams in config/streams.json — "
                 "starting in web-only mode. "
                 "Use the Web UI → Configure tab to add streams."
             )
@@ -406,46 +483,66 @@ class CSVManager:
                 "compliance_start":   c.compliance_start,
                 "compliance_loop":    c.compliance_loop,
             })
-        _STREAMS_JSON().write_text(
+        STREAMS_JSON().write_text(
             json.dumps(rows, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
-    # ── Load / save events (still CSV — simple flat rows, no delimiter risk) ───
+    # ── Load / save events (now fully JSON) ───────────────────────────────────
     @classmethod
     def load_events(cls) -> List[OneShotEvent]:
-        if not EVENTS_FILE().exists():
+        # One-shot migration from legacy events.csv if needed.
+        cls._migrate_events_to_json()
+
+        dst = EVENTS_FILE()
+        if not dst.exists():
             return []
+
+        try:
+            raw = json.loads(dst.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logging.warning("config/events.json load error: %s", exc)
+            return []
+
+        if not isinstance(raw, list):
+            logging.warning("config/events.json: expected a JSON array — returning empty.")
+            return []
+
         events: List[OneShotEvent] = []
-        with open(EVENTS_FILE(), newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                try:
-                    events.append(OneShotEvent(
-                        event_id=row["event_id"].strip(),
-                        stream_name=row["stream_name"].strip(),
-                        file_path=Path(row["file_path"].strip()),
-                        play_at=datetime.strptime(
-                            row["play_at"].strip(), "%Y-%m-%d %H:%M:%S"),
-                        post_action=row.get("post_action", "resume").strip(),
-                        played=cls.parse_bool(row.get("played", "false")),
-                        start_pos=row.get("start_pos", "00:00:00").strip(),
-                    ))
-                except Exception as exc:
-                    logging.warning("Events CSV row error: %s", exc)
+        for row in raw:
+            try:
+                events.append(OneShotEvent(
+                    event_id=str(row["event_id"]).strip(),
+                    stream_name=str(row["stream_name"]).strip(),
+                    file_path=Path(str(row["file_path"]).strip()),
+                    play_at=datetime.strptime(
+                        str(row["play_at"]).strip(), "%Y-%m-%d %H:%M:%S"),
+                    post_action=str(row.get("post_action", "resume")).strip(),
+                    played=bool(row.get("played", False)),
+                    start_pos=str(row.get("start_pos", "00:00:00")).strip(),
+                ))
+            except Exception as exc:
+                logging.warning("config/events.json row error: %s — row: %s", exc, row)
         return events
 
     @classmethod
     def save_events(cls, events: List[OneShotEvent]) -> None:
-        with open(EVENTS_FILE(), "w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(EVENTS_COLUMNS + ["played"])
-            for e in events:
-                w.writerow([
-                    e.event_id, e.stream_name, str(e.file_path),
-                    e.play_at.strftime("%Y-%m-%d %H:%M:%S"),
-                    e.post_action, e.start_pos, str(e.played).lower(),
-                ])
+        rows = [
+            {
+                "event_id":    e.event_id,
+                "stream_name": e.stream_name,
+                "file_path":   str(e.file_path),
+                "play_at":     e.play_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "post_action": e.post_action,
+                "start_pos":   e.start_pos,
+                "played":      e.played,
+            }
+            for e in events
+        ]
+        EVENTS_FILE().write_text(
+            json.dumps(rows, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     @classmethod
     def add_event(cls, events: List[OneShotEvent], e: OneShotEvent) -> None:
@@ -458,3 +555,7 @@ class CSVManager:
             if e.event_id == event_id:
                 e.played = True
         cls.save_events(events)
+
+
+# ── Backward-compatible alias ─────────────────────────────────────────────────
+CSVManager = ConfigManager
