@@ -8,9 +8,24 @@
 #  ██║  ██║   ██║   ██████╔╝██║  ██║██║  ██║╚██████╗██║  ██║███████║   ██║
 #  ╚═╝  ╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝
 #
-#  HydraCast  —  Multi-Stream RTSP Weekly Scheduler  v5.1.0
+#  HydraCast  —  Multi-Stream RTSP Weekly Scheduler  v5.3.0
 #  Author  : rhshourav
 #  GitHub  : https://github.com/rhshourav/HydraCast
+#
+#  v5.3 changelog
+#  ──────────────
+#  CHANGED  streams.csv / events.csv replaced with JSON files in config/:
+#             config/streams.json  — stream definitions
+#             config/events.json   — one-shot events
+#  NEW      CSVManager removed; JSONManager (hc/json_manager.py) handles
+#           all persistence.  Public API is identical so all call-sites only
+#           needed their import updated.
+#  NEW      Folder-source playlist is now TODAY-AWARE:
+#             1. Files tagged _today_ (e.g. _tue_) stream FIRST.
+#             2. Untagged files stream SECOND (available every day).
+#             3. Other weekday files stream LAST (in weekday order).
+#           This means a correctly named folder auto-curates the right
+#           content for the current day without any manual intervention.
 #
 #  v5.1 changelog
 #  ──────────────
@@ -29,7 +44,7 @@
 #  NEW      --background — daemonize (Linux/macOS fork; Windows detached proc);
 #                          runs web-only with no TUI, safe for unattended use.
 #  FIXED    After web upload, folder-source streams pick up new files on
-#           next start/restart (no manual CSV reload needed).
+#           next start/restart (no manual JSON reload needed).
 #  FIXED    seek_start_pos AttributeError on fresh StreamState.
 #  IMPROVED restart() no longer races with _monitor auto-restart.
 #  IMPROVED FolderWatcher polls folder sources every 15 s and updates
@@ -103,7 +118,7 @@ set_base_dir(Path(__file__))
 
 # Now it is safe to import everything else.
 from hc import web as _web_module          # noqa: E402
-from hc.csv_manager import CSVManager      # noqa: E402
+from hc.json_manager import JSONManager    # noqa: E402  (replaces csv_manager)
 from hc.dependency import DependencyManager # noqa: E402
 from hc.firewall import FirewallManager    # noqa: E402
 from hc.manager import StreamManager       # noqa: E402
@@ -326,6 +341,7 @@ def _preflight(console: Console) -> List[StreamConfig]:
     console.print(f"[{CD}]  Bind addr : {LISTEN_ADDR()}[/]")
     console.print(f"[{CD}]  Base dir  : {BASE_DIR()}[/]")
     console.print(f"[{CD}]  Media dir : {MEDIA_DIR()}[/]")
+    console.print(f"[{CD}]  Config dir: {CONFIGS_DIR()}[/]")
     console.print()
 
     # ── MediaMTX ──────────────────────────────────────────────────────────────
@@ -351,26 +367,26 @@ def _preflight(console: Console) -> List[StreamConfig]:
         set_ffprobe(ffprobe_path)
     console.print(f"[{CG}]✔  FFprobe : {ffprobe_path or 'ffprobe (system PATH)'}[/]")
 
-    # ── streams.csv ───────────────────────────────────────────────────────────
-    
+    # ── config/streams.json ───────────────────────────────────────────────────
     try:
-        configs = CSVManager.load()
+        configs = JSONManager.load()
     except FileNotFoundError as exc:
         console.print(f"\n[{CY}]⚠  {exc}[/]")
         sys.exit(0)
     except Exception as exc:
-        console.print(f"[{CR}]✘  CSV error: {exc}[/]")
+        console.print(f"[{CR}]✘  Config error: {exc}[/]")
         sys.exit(1)
+
     if configs:
         console.print(
-            f"[{CG}]✔  Loaded {len(configs)} stream(s) from streams.csv[/]"
+            f"[{CG}]✔  Loaded {len(configs)} stream(s) from config/streams.json[/]"
         )
         # Show folder-source streams so the operator can verify the scan.
         for c in configs:
             if c.folder_source:
                 console.print(
                     f"[{CD}]   └─ [{c.name}] folder-source: {c.folder_source.name} "
-                    f"({len(c.playlist)} file(s) found)[/]"
+                    f"({len(c.playlist)} file(s) found, today's tagged files first)[/]"
                 )
     else:
         console.print(
@@ -380,7 +396,6 @@ def _preflight(console: Console) -> List[StreamConfig]:
         console.print(
             f"[{CD}]   Open the Web UI → Configure tab to add streams.[/]"
         )
-
 
     # ── Firewall ──────────────────────────────────────────────────────────────
     enabled_ports = [c.port for c in configs if c.enabled]
@@ -408,7 +423,7 @@ def main() -> None:
     # ── --list-ports mode ─────────────────────────────────────────────────────
     if args.list_ports:
         try:
-            cfgs = CSVManager.load()
+            cfgs = JSONManager.load()
         except Exception as exc:
             console.print(f"[{CR}]✘  {exc}[/]")
             sys.exit(1)
