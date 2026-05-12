@@ -138,8 +138,21 @@ class CSVManager:
                 pos = f"{int(h):02d}:{int(m):02d}:{int(float(s)):02d}"
             except Exception:
                 pos = "00:00:00"
+            # Resolve relative paths against MEDIA_DIR so that a bare name
+            # like "media" or "shows/s01" works regardless of cwd.
+            raw_p = Path(path_str)
+            if not raw_p.is_absolute():
+                try:
+                    from hc.constants import MEDIA_DIR
+                    candidate = MEDIA_DIR() / raw_p
+                    # Prefer the MEDIA_DIR-relative path if it exists;
+                    # otherwise keep as-is so the error surfaces clearly.
+                    if candidate.exists():
+                        raw_p = candidate
+                except Exception:
+                    pass
             items.append(PlaylistItem(
-                file_path=Path(path_str),
+                file_path=raw_p,
                 start_position=pos,
                 priority=priority,
             ))
