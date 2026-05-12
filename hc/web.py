@@ -1840,6 +1840,64 @@ def _invalidate_lib_cache() -> None:
         _LIB_CACHE = None; _LIB_CACHE_TS = 0.0
 
 
+
+
+def _notify_folder_upload(upload_dir: Path) -> None:
+    """
+    After a successful upload into *upload_dir*, walk all active streams that
+    have a folder_source.  If the stream's folder_source is *upload_dir* or
+    any parent of *upload_dir*, invalidate its in-memory playlist so that the
+    next start/restart picks up the new files automatically.
+
+    This does NOT restart the stream — it only marks the playlist as stale so
+    the worker's folder-rescan logic runs on the very next _do_start().
+    """
+    mgr = _WEB_MANAGER
+    if mgr is None:
+        return
+    try:
+        upload_resolved = upload_dir.resolve()
+        for st in mgr.states:
+            cfg = st.config
+            if cfg.folder_source is None:
+                continue
+            try:
+                folder_resolved = cfg.folder_source.resolve()
+            except Exception:
+                continue
+            # Match if upload landed in the folder or a subfolder of it.
+            try:
+                upload_resolved.relative_to(folder_resolved)
+                is_related = True
+            except ValueError:
+                is_related = (folder_resolved == upload_resolved)
+            if not is_related:
+                continue
+            # Trigger a rescan immediately (non-blocking)
+            import threading as _thr
+            from hc.folder_scanner import scan_folder
+            def _rescan(cfg=cfg, folder=folder_resolved):
+                try:
+                    items, warnings = scan_folder(folder)
+                    if items:
+                        cfg.playlist = items
+                        log.info(
+                            "web upload: refreshed playlist for '%s' "
+                            "(%d files from %s)",
+                            cfg.name, len(items), folder.name,
+                        )
+                    for w in warnings:
+                        log.warning("web upload folder scan: %s", w)
+                except Exception as exc:
+                    log.warning(
+                        "web upload: folder rescan for '%s' failed: %s",
+                        cfg.name, exc,
+                    )
+            _thr.Thread(target=_rescan, daemon=True,
+                        name=f"upload-rescan-{cfg.name}").start()
+    except Exception as exc:
+        log.debug("_notify_folder_upload error: %s", exc)
+
 # =============================================================================
 # REQUEST HANDLER
 # =============================================================================
@@ -2590,6 +2648,8 @@ class WebHandler(BaseHTTPRequestHandler):
 
             _invalidate_lib_cache()
             log.info("Upload saved: %s", dest)
+            # ── Notify folder-source streams about the new file ──
+            _notify_folder_upload(safe_dir)
             self._json({"ok": True, "msg": f"Saved: {safe_name}"})
         except Exception as exc:
             log.error("Upload error: %s", exc)
