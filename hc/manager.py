@@ -5,8 +5,12 @@ v5.1 additions:
   • FolderWatcherRegistry — live folder monitoring for folder-source streams.
   • rescan_folder(state)  — force immediate folder rescan (TUI F key).
   • clear_error(state)    — clear ERROR status and reset restart counter (TUI C key).
-  • reload_csv()          — hot-reload streams.csv without restarting LIVE streams
+  • reload_csv()          — hot-reload streams.json without restarting LIVE streams
                             (TUI L key).
+
+v5.2 additions (Web UI stream management):
+  • add_stream(config)    — add a new stream at runtime and persist to JSON.
+  • remove_stream(name)   — stop and remove a stream at runtime and persist to JSON.
 """
 from __future__ import annotations
 
@@ -89,8 +93,6 @@ class StreamManager:
             elif s.config.is_scheduled_today():
                 self.start_stream(s)
             else:
-                # Register folder watcher even for scheduled-but-not-yet-started streams
-                # so the playlist stays current while we're waiting.
                 if s.config.folder_source:
                     self._fw_registry.register(s)
                 s.status = StreamStatus.SCHEDULED
@@ -98,6 +100,64 @@ class StreamManager:
     def stop_all(self) -> None:
         for s in self.states:
             self.stop_stream(s)
+
+    # ── Add / remove streams at runtime (Web UI) ──────────────────────────────
+    def add_stream(self, config: StreamConfig) -> None:
+        """
+        Add a new stream config to the in-memory list and persist to
+        streams.json.  The stream is created in STOPPED state; the Web UI
+        can start it immediately via the start action.
+        """
+        # Guard against duplicates (name and port).
+        for s in self.states:
+            if s.config.name == config.name:
+                raise ValueError(f"Stream '{config.name}' already exists.")
+            if s.config.port == config.port:
+                raise ValueError(
+                    f"Port {config.port} is already used by '{s.config.name}'."
+                )
+        new_state = StreamState(config=config)
+        self.states.append(new_state)
+        if config.folder_source:
+            self._fw_registry.register(new_state)
+        # Persist
+        CSVManager.save([s.config for s in self.states])
+        logging.info(
+            "Stream added: '%s' (port %d)", config.name, config.port
+        )
+        self._glog.add(
+            f"[{config.name}] Stream added via Web UI (port {config.port}).",
+            "INFO",
+        )
+
+    def remove_stream(self, name: str) -> None:
+        """
+        Stop a stream (if running) and remove it from the in-memory list,
+        then persist to streams.json.  Raises ValueError if not found.
+        """
+        state = self.get_state(name)
+        if state is None:
+            raise ValueError(f"Stream '{name}' not found.")
+
+        # Stop gracefully if active.
+        if state.status in (StreamStatus.LIVE, StreamStatus.STARTING):
+            w = self._workers.get(name)
+            if w:
+                w.stop()   # blocking stop so the port is released cleanly
+
+        # Deregister folder watcher.
+        try:
+            self._fw_registry.unregister(state)
+        except Exception:
+            pass
+
+        self.states  = [s for s in self.states if s.config.name != name]
+        self._workers.pop(name, None)
+
+        # Persist
+        CSVManager.save([s.config for s in self.states])
+        logging.info("Stream removed: '%s'", name)
+        self._glog.add(f"[{name}] Stream removed via Web UI.", "INFO")
 
     # ── Folder rescan (TUI F key) ─────────────────────────────────────────────
     def rescan_folder(self, state: StreamState) -> None:
@@ -150,10 +210,10 @@ class StreamManager:
         state.log_add(msg)
         self._glog.add(msg, "INFO")
 
-    # ── Hot CSV reload (TUI L key) ────────────────────────────────────────────
+    # ── Hot JSON reload (TUI L key) ───────────────────────────────────────────
     def reload_csv(self) -> None:
         """
-        Re-read streams.csv and update in-memory config without restarting
+        Re-read streams.json and update in-memory config without restarting
         any currently-LIVE or STARTING streams.
 
         Fields updated for ALL streams (safe while running):
@@ -163,8 +223,8 @@ class StreamManager:
         Fields updated only for STOPPED / SCHEDULED / ERROR streams:
           playlist, stream_path, hls_enabled, folder_source
 
-        New streams (names that appear in the CSV but not in memory) are
-        appended.  Streams removed from the CSV are left running until they
+        New streams (names that appear in the JSON but not in memory) are
+        appended.  Streams removed from the JSON are left running until they
         stop naturally; they are then marked DISABLED.
         """
         try:
@@ -180,7 +240,7 @@ class StreamManager:
         for state in self.states:
             nc = new_by_name.get(state.config.name)
             if nc is None:
-                # Stream removed from CSV — mark disabled when it stops.
+                # Stream removed from JSON — mark disabled when it stops.
                 continue
 
             cfg = state.config
@@ -218,7 +278,7 @@ class StreamManager:
                 self._fw_registry.register(new_state)
                 added += 1
 
-        msg = f"streams.csv reloaded — {updated} updated, {added} new."
+        msg = f"streams.json reloaded — {updated} updated, {added} new."
         self._glog.add(msg, "INFO")
         logging.info(msg)
 
