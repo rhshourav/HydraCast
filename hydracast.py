@@ -352,29 +352,35 @@ def _preflight(console: Console) -> List[StreamConfig]:
     console.print(f"[{CG}]✔  FFprobe : {ffprobe_path or 'ffprobe (system PATH)'}[/]")
 
     # ── streams.csv ───────────────────────────────────────────────────────────
+    
     try:
         configs = CSVManager.load()
     except FileNotFoundError as exc:
         console.print(f"\n[{CY}]⚠  {exc}[/]")
         sys.exit(0)
-    except ValueError as exc:
-        console.print(f"[{CR}]✘  CSV validation error: {exc}[/]")
-        sys.exit(1)
     except Exception as exc:
         console.print(f"[{CR}]✘  CSV error: {exc}[/]")
         sys.exit(1)
+    if configs:
+        console.print(
+            f"[{CG}]✔  Loaded {len(configs)} stream(s) from streams.csv[/]"
+        )
+        # Show folder-source streams so the operator can verify the scan.
+        for c in configs:
+            if c.folder_source:
+                console.print(
+                    f"[{CD}]   └─ [{c.name}] folder-source: {c.folder_source.name} "
+                    f"({len(c.playlist)} file(s) found)[/]"
+                )
+    else:
+        console.print(
+            f"[{CY}]⚠  No valid streams configured yet — "
+            f"starting in web-only mode.[/]"
+        )
+        console.print(
+            f"[{CD}]   Open the Web UI → Configure tab to add streams.[/]"
+        )
 
-    console.print(
-        f"[{CG}]✔  Loaded {len(configs)} stream(s) from streams.csv[/]"
-    )
-
-    # Show folder-source streams so the operator can verify the scan.
-    for c in configs:
-        if c.folder_source:
-            console.print(
-                f"[{CD}]   └─ [{c.name}] folder-source: {c.folder_source.name} "
-                f"({len(c.playlist)} file(s) found)[/]"
-            )
 
     # ── Firewall ──────────────────────────────────────────────────────────────
     enabled_ports = [c.port for c in configs if c.enabled]
