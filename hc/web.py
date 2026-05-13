@@ -940,11 +940,8 @@ select option{background:var(--bg3)}
     <button class="nav-tab" onclick="switchTab('logs',this)">
       <span class="tab-dot"></span>Logs
     </button>
-    <button class="nav-tab" onclick="switchTab('upload',this)">
-      <span class="tab-dot"></span>Upload
-    </button>
-    <button class="nav-tab" onclick="switchTab('files',this);if(!_fmLoaded){_fmLoaded=true;loadFiles('');}">
-      <span class="tab-dot"></span>Files
+    <button class="nav-tab" onclick="switchTab('media',this);if(!_fmLoaded){_fmLoaded=true;loadFiles('');}">
+      <span class="tab-dot"></span>Media
     </button>
     <button class="nav-tab" onclick="switchTab('events',this)">
       <span class="tab-dot"></span>Events
@@ -1045,73 +1042,87 @@ select option{background:var(--bg3)}
 </div>
 
 <!-- ══ UPLOAD TAB ══ -->
-<div id="tab-upload" class="tab-panel">
-  <div class="section-hdr"><h2>Upload Media</h2><span class="sep"></span></div>
-  <div class="card card-body" style="padding:16px">
-    <div class="row" style="margin-bottom:16px">
-      <div class="fg" style="max-width:280px">
-        <label>Destination Sub-folder</label>
-        <select id="upload-subdir"></select>
-      </div>
-      <button class="btn" onclick="mkSubdir()" style="margin-top:16px">＋ New folder</button>
-    </div>
-    <div id="dropzone" onclick="document.getElementById('fpick').click()">
-      <div class="dz-icon">⬆</div>
-      <div style="font-size:14px;font-weight:600;color:var(--text2)">Drop files or click to browse</div>
-      <div style="font-size:11px">MP4 MKV AVI MOV TS FLV WMV WEBM MPG · MP3 AAC FLAC WAV OGG — max 10 GB</div>
-    </div>
-    <input type="file" id="fpick" multiple accept="video/*,audio/*" style="display:none" onchange="doUpload(this.files)">
-    <ul id="uplist"></ul>
-  </div>
-</div>
+<!-- ══ MEDIA TAB (Upload + File Manager merged) ══ -->
+<div id="tab-media" class="tab-panel">
 
-<!-- ══ FILES TAB ══ -->
-<div id="tab-files" class="tab-panel">
+  <!-- Top bar: upload strip -->
   <div class="section-hdr">
-    <h2>File Manager</h2><span class="sep"></span>
+    <h2>Media Library</h2><span class="sep"></span>
     <button class="btn b" onclick="loadFiles(_fmCurrentPath)">↻ Refresh</button>
     <button class="btn g" onclick="fmNewFolder()">＋ New Folder</button>
   </div>
-  <div class="fm-layout" style="flex:1;min-height:0">
 
-    <!-- Sidebar -->
-    <div class="fm-sidebar">
-      <div class="fm-sidebar-hdr">Folders</div>
-      <div class="fm-dir-list" id="fm-dir-list">
-        <div class="fm-dir-item active" onclick="loadFiles('')">
-          <span class="fm-dir-icon">📁</span> Media (root)
-        </div>
+  <!-- Upload drop zone (collapsed bar at top) -->
+  <div class="card" style="padding:0;overflow:visible">
+    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--bg3);border-radius:var(--radius-lg) var(--radius-lg) 0 0">
+      <div style="font-size:13px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">⬆</span> Upload to:
       </div>
+      <div class="fg" style="min-width:180px;max-width:240px;margin:0">
+        <select id="upload-subdir" style="margin:0"></select>
+      </div>
+      <button class="btn" onclick="mkSubdir()">＋ Subfolder</button>
+      <button class="btn g" onclick="document.getElementById('fpick').click()" style="margin-left:auto">
+        Browse &amp; Upload…
+      </button>
+      <div id="dropzone-mini"
+           style="display:flex;align-items:center;gap:8px;padding:7px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;color:var(--text3);font-size:12px;transition:all 0.2s"
+           onclick="document.getElementById('fpick').click()"
+           ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+           ondragleave="this.style.borderColor='var(--border)'"
+           ondrop="event.preventDefault();this.style.borderColor='var(--border)';doUpload(event.dataTransfer.files)">
+        Drop files here
+      </div>
+      <input type="file" id="fpick" multiple accept="video/*,audio/*" style="display:none" onchange="doUpload(this.files)">
+    </div>
+    <!-- Upload progress list -->
+    <div id="uplist-wrap" style="display:none;padding:10px 16px;border-bottom:1px solid var(--border)">
+      <ul id="uplist" style="list-style:none;display:flex;flex-direction:column;gap:6px;margin:0;padding:0"></ul>
     </div>
 
-    <!-- Main panel -->
-    <div class="fm-main">
-      <div class="fm-main-hdr">
-        <div class="fm-breadcrumb" id="fm-breadcrumb">
-          <span onclick="loadFiles('')">Media</span>
-        </div>
-        <div class="fm-toolbar">
-          <button class="btn b" style="font-size:11px" onclick="loadFiles(_fmCurrentPath)">↻</button>
-          <button class="btn g" style="font-size:11px" onclick="fmNewFolder()">＋ Folder</button>
-        </div>
-      </div>
-      <div class="fm-body" id="fm-body">
-        <div class="fm-empty">
-          <div class="empty-icon">📂</div>
-          <div>Switch to the Files tab to browse your media library.</div>
-        </div>
-      </div>
-      <div class="fm-status-bar" id="fm-status">Ready</div>
-    </div>
+    <!-- File Manager layout -->
+    <div style="display:grid;grid-template-columns:210px 1fr;min-height:520px">
 
+      <!-- Sidebar -->
+      <div style="border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:10px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border);font-family:var(--font-display)">Folders</div>
+        <div class="fm-dir-list" id="fm-dir-list" style="flex:1;overflow-y:auto">
+          <div class="fm-dir-item active" onclick="loadFiles('')">
+            <span class="fm-dir-icon">📁</span> Media (root)
+          </div>
+        </div>
+      </div>
+
+      <!-- Main file list -->
+      <div style="display:flex;flex-direction:column;overflow:hidden">
+        <!-- Breadcrumb + toolbar -->
+        <div style="padding:9px 14px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="fm-breadcrumb" id="fm-breadcrumb" style="flex:1;min-width:0">
+            <span onclick="loadFiles('')">Media</span>
+          </div>
+        </div>
+        <!-- File rows -->
+        <div class="fm-body" id="fm-body" style="flex:1;overflow-y:auto">
+          <div class="fm-empty">
+            <div class="empty-icon">📂</div>
+            <div>Open the Media tab to browse files.</div>
+          </div>
+        </div>
+        <!-- Status bar -->
+        <div class="fm-status-bar" id="fm-status">Ready</div>
+      </div>
+
+    </div>
   </div>
+
 </div>
 
-<!-- FM: Rename dialog -->
+<!-- FM dialogs (shared, outside tab panel) -->
 <div class="fm-dialog-overlay" id="fm-rename-overlay">
   <div class="fm-dialog">
     <h4>✏ Rename</h4>
-    <div class="fg"><label>New name</label>
+    <div class="fg">
+      <label>New name</label>
       <input type="text" id="fm-rename-input" placeholder="new name"
              onkeydown="if(event.key==='Enter')fmDoRename()">
     </div>
@@ -1122,7 +1133,6 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
-<!-- FM: Move dialog -->
 <div class="fm-dialog-overlay" id="fm-move-overlay">
   <div class="fm-dialog">
     <h4>↗ Move to folder</h4>
@@ -1137,7 +1147,6 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
-<!-- FM: Copy dialog -->
 <div class="fm-dialog-overlay" id="fm-copy-overlay">
   <div class="fm-dialog">
     <h4>⎘ Copy to folder</h4>
@@ -1146,8 +1155,8 @@ select option{background:var(--bg3)}
       <select id="fm-copy-dest" style="width:100%"><option value="">Media (root)</option></select>
     </div>
     <div class="fg">
-      <label>New filename <span style="color:var(--text3);font-weight:400">(optional — leave blank to keep same name)</span></label>
-      <input type="text" id="fm-copy-name" placeholder="same as source">
+      <label>New filename <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+      <input type="text" id="fm-copy-name" placeholder="leave blank to keep same name">
     </div>
     <div class="fm-dialog-footer">
       <button class="btn" onclick="fmCloseDialogs()">Cancel</button>
@@ -1656,7 +1665,7 @@ function switchTab(name,btn){
   btn.classList.add('active');
   if(name==='streams'){loadStreams();}
   else if(name==='logs'){fillLogStreamSel();loadLogs();}
-  else if(name==='upload'){loadSubdirs();}
+  else if(name==='media'){loadSubdirs();loadFiles(_fmCurrentPath);}
   else if(name==='events'){loadEvtForm();loadEvents();}
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
@@ -2000,20 +2009,28 @@ async function loadSubdirs(){
 async function mkSubdir(){
   const n=prompt('New folder name:');
   if(!n||!n.trim())return;
-  const r=await api('create_subdir',{name:n.trim()});
-  if(r&&r.ok)loadSubdirs();
+  const fullName=_fmCurrentPath?_fmCurrentPath+'/'+n.trim():n.trim();
+  const r=await api('create_subdir',{name:fullName});
+  if(r&&r.ok){loadSubdirs();loadFiles(_fmCurrentPath);}
 }
 
-const dz=document.getElementById('dropzone');
-dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over')});
-dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
-dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('over');doUpload(e.dataTransfer.files)});
+const dz=document.getElementById('dropzone-mini');
+if(dz){
+  dz.addEventListener('dragover',e=>{e.preventDefault();dz.style.borderColor='var(--accent)'});
+  dz.addEventListener('dragleave',()=>dz.style.borderColor='var(--border)');
+  dz.addEventListener('drop',e=>{e.preventDefault();dz.style.borderColor='var(--border)';doUpload(e.dataTransfer.files)});
+}
 
-function doUpload(files){Array.from(files).forEach(upOne);}
+function doUpload(files){
+  const wrap=document.getElementById('uplist-wrap');
+  if(wrap)wrap.style.display='';
+  Array.from(files).forEach(upOne);
+}
 function upOne(file){
   if(file.size>10*1024*1024*1024){toast(file.name+': exceeds 10 GB','err');return;}
   const id='u'+Math.random().toString(36).slice(2,7);
   const li=document.createElement('li');
+  li.style.cssText='display:flex;align-items:center;gap:10px;font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px';
   li.innerHTML=`
     <span style="flex:1;overflow:hidden;text-overflow:ellipsis;color:var(--text2)">${esc(file.name)}</span>
     <span class="td-muted">${fmtBytes(file.size)}</span>
@@ -2035,8 +2052,11 @@ function upOne(file){
     const t=document.getElementById('up-'+id);
     try{
       const j=JSON.parse(xhr.responseText);
-      if(xhr.status===200&&j.ok){if(t){t.textContent='✓';t.style.color='var(--green)';}toast(file.name+' uploaded','ok');}
-      else{if(t){t.textContent='✕';t.style.color='var(--red)';}toast('Failed: '+(j.msg||file.name),'err');}
+      if(xhr.status===200&&j.ok){
+        if(t){t.textContent='✓';t.style.color='var(--green)';}
+        toast(file.name+' uploaded','ok');
+        loadFiles(_fmCurrentPath);  // refresh file list after upload
+      } else{if(t){t.textContent='✕';t.style.color='var(--red)';}toast('Failed: '+(j.msg||file.name),'err');}
     }catch(_){if(t){t.textContent='✕';t.style.color='var(--red)';}}
   };
   xhr.onerror=()=>toast('Network error: '+file.name,'err');
@@ -3315,6 +3335,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "/api/streams_config": self._get_streams_config,
             "/api/library":        self._get_library,
             "/api/subdirs":        self._get_subdirs,
+            "/api/files":          lambda: self._get_files(qs),
             "/api/events":         self._get_events,
             "/api/logs":           lambda: self._get_logs(qs),
             "/api/system_stats":   self._get_system_stats,
