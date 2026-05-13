@@ -165,14 +165,14 @@ class StreamManager:
                     "manager: '%s' not scheduled for %s — skipping.",
                     cfg.name, day_name,
                 )
-                state.set_status(StreamStatus.SCHEDULED)
+                state.status = StreamStatus.SCHEDULED
                 continue
             if not cfg.playlist:
                 log.warning(
                     "manager: '%s' has no playlist — skipping.",
                     cfg.name,
                 )
-                state.set_status(StreamStatus.ERROR)
+                state.status = StreamStatus.ERROR
                 state.log_add("⚠ No playlist — stream skipped at startup.")
                 continue
             self._start_worker(state)
@@ -285,7 +285,7 @@ class StreamManager:
                 )
                 state.log_add(f"📅 Day changed to {day_name} — stream stopped (not scheduled).")
                 self._stop_worker(state, reason="day-change")
-                state.set_status(StreamStatus.SCHEDULED)
+                state.status = StreamStatus.SCHEDULED
 
             # Refresh folder-source playlist for today's _day_ tags.
             if cfg.folder_source and scheduled_today:
@@ -520,7 +520,7 @@ class StreamManager:
             log.info("manager: worker started for '%s'.", name)
         except Exception as exc:
             log.error("manager: failed to start worker for '%s': %s", name, exc)
-            state.set_status(StreamStatus.ERROR)
+            state.status = StreamStatus.ERROR
             state.log_add(f"✘ Worker start failed: {exc}")
 
     def _stop_worker(self, state: StreamState, reason: str = "stop") -> None:
@@ -533,7 +533,7 @@ class StreamManager:
             return
 
         try:
-            worker.stop(reason=reason)
+            worker.stop()
             log.info("manager: worker stopped for '%s' (reason=%s).", name, reason)
         except Exception as exc:
             log.warning(
