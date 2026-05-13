@@ -41,6 +41,49 @@ def _wait_for_port(port: int, host: str = "127.0.0.1",
     return False
 
 
+def _wait_for_rtsp(port: int, timeout: float = 15.0, interval: float = 0.25) -> bool:
+    """
+    Wait until MediaMTX RTSP handler is fully ready by sending a real
+    RTSP OPTIONS request and checking for a 200 OK response.
+
+    _wait_for_port() only checks TCP connectivity.  On Windows, MediaMTX
+    binds the TCP port 500-800 ms before its RTSP handler is initialised.
+    FFmpeg connecting during that window sends ANNOUNCE and gets a
+    400 Bad Request because the publisher path is not registered yet.
+
+    This probe waits for a valid RTSP response, not just a TCP handshake.
+    """
+    import socket as _socket
+
+    request = (
+        f"OPTIONS rtsp://127.0.0.1:{port}/ RTSP/1.0
+"
+        f"CSeq: 1
+"
+        f"User-Agent: HydraCast-probe
+"
+        f"
+"
+    ).encode()
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            s.settimeout(1.0)
+            s.connect(("127.0.0.1", port))
+            s.sendall(request)
+            resp = s.recv(256).decode(errors="replace")
+            s.close()
+            # MediaMTX returns "RTSP/1.0 200 OK" when fully ready.
+            if "RTSP/1.0 200" in resp:
+                return True
+        except Exception:
+            pass
+        time.sleep(interval)
+    return False
+
+
 def _kill_orphan_on_port(port: int) -> None:
     """Terminate any process listening on the given TCP port."""
     try:
