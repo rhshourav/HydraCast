@@ -56,15 +56,12 @@ def _wait_for_rtsp(port: int, timeout: float = 15.0, interval: float = 0.25) -> 
     import socket as _socket
 
     request = (
-        f"OPTIONS rtsp://127.0.0.1:{port}/ RTSP/1.0
-"
-        f"CSeq: 1
-"
-        f"User-Agent: HydraCast-probe
-"
-        f"
-"
-    ).encode()
+        b"OPTIONS rtsp://127.0.0.1:" + str(port).encode() +
+        b"/ RTSP/1.0\r\n"
+        b"CSeq: 1\r\n"
+        b"User-Agent: HydraCast-probe\r\n"
+        b"\r\n"
+    )
 
     deadline = time.time() + timeout
     while time.time() < deadline:
