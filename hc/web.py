@@ -2086,7 +2086,7 @@ async function loadViewer(){
             <div class="stat-item"><b class="vc-pct-${esc(s.name)}">${pct}%</b></div>
           </div>
           <div class="btn-group">
-            <button class="btn b" style="font-size:10px;padding:3px 8px" onclick="copyText('${esc(s.rtsp_url||s.hls_url||'')}')">📋</button>
+            <button class="btn b" style="font-size:10px;padding:3px 8px" onclick="copyText('${esc(s.hls_url||s.rtsp_url||'')}')">📋</button>
           </div>
         </div>
         <div style="padding:0 14px 10px">
