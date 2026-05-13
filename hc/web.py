@@ -925,7 +925,7 @@ select option{background:var(--bg3)}
       ║  LOGO PLACEHOLDER                                    ║
       ║  To add your own logo image:                         ║
       ║    document.getElementById('logo-img').src =         ║
-      ║      '/your-resources/logo.png';                               ║
+      ║      '/your- resources/logo.png';                               ║
       ║  The fallback "LOGO" text hides automatically when   ║
       ║  the image loads.                                    ║
       ╚══════════════════════════════════════════════════════╝
@@ -1818,13 +1818,21 @@ function _rowCells(s,i,showRtsp){
       <span class="td-name">${esc(s.name)}</span>
       ${s.shuffle?`<span class="tag-shuf">SHUF</span>`:''}
       ${!s.enabled?`<span class="tag-dis">OFF</span>`:''}
+      ${status==='ONESHOT'?`<span style="font-size:10px;font-weight:700;color:var(--purple);background:var(--purple-dim);border:1px solid rgba(154,138,176,0.4);border-radius:4px;padding:2px 7px;margin-left:4px">🎬 EVENT</span>`:''}
       ${s.playlist_count>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(${s.playlist_count} files)</span>`:''}
     </td>
     <td style="color:var(--accent-light)">:${s.port}</td>
     <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
     <td style="min-width:140px">
-      <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
-      <div class="prog-label">${pct}%${s.time_remaining?' · '+fmtRemaining(s.time_remaining)+' left':''}</div>
+      ${status==='ONESHOT'?`
+        <div style="position:relative;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden">
+          <div style="position:absolute;inset:0;background:linear-gradient(90deg,var(--purple),rgba(154,138,176,0.3),var(--purple));background-size:200% 100%;animation:shimmer 1.4s linear infinite"></div>
+        </div>
+        <div class="prog-label" style="color:var(--purple)">🎬 ${s.active_event?esc(s.active_event):'Event playing…'} ${s.time_remaining?'· '+fmtRemaining(s.time_remaining)+' left':pct+'%'}</div>
+      `:`
+        <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
+        <div class="prog-label">${pct}%${s.time_remaining?' · '+fmtRemaining(s.time_remaining)+' left':''}</div>
+      `}
     </td>
     <td class="td-muted" style="white-space:nowrap">${esc(s.position||'--')}</td>
     <td class="td-muted">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
@@ -2152,41 +2160,103 @@ function doUpload(files){
   if(wrap)wrap.style.display='';
   Array.from(files).forEach(upOne);
 }
-function upOne(file){
+
+// Number of simultaneous chunk fetches per file
+const UP_PARALLEL = 4;
+
+async function upOne(file){
   if(file.size>10*1024*1024*1024){toast(file.name+': exceeds 10 GB','err');return;}
+
+  // ── Progress row ──────────────────────────────────────────────────────────
   const id='u'+Math.random().toString(36).slice(2,7);
   const li=document.createElement('li');
+  li.id='li-'+id;
   li.style.cssText='display:flex;align-items:center;gap:10px;font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px';
   li.innerHTML=`
     <span style="flex:1;overflow:hidden;text-overflow:ellipsis;color:var(--text2)">${esc(file.name)}</span>
     <span class="td-muted">${fmtBytes(file.size)}</span>
     <div class="ubar"><div class="ufill" id="uf-${id}" style="width:0"></div></div>
-    <span id="up-${id}" style="min-width:32px;text-align:right;color:var(--text3);font-size:11px">0%</span>`;
+    <span id="up-${id}" style="min-width:36px;text-align:right;color:var(--text3);font-size:11px">0%</span>`;
   document.getElementById('uplist').appendChild(li);
-  const fd=new FormData();
-  fd.append('file',file);
-  fd.append('subdir',document.getElementById('upload-subdir').value);
-  const xhr=new XMLHttpRequest();
-  xhr.upload.onprogress=e=>{
-    if(!e.lengthComputable)return;
-    const p=Math.round(e.loaded/e.total*100);
+
+  function setPct(pct,color){
     const b=document.getElementById('uf-'+id),t=document.getElementById('up-'+id);
-    if(b){b.style.width=p+'%';b.style.background=p===100?'var(--green)':'var(--accent)';}
-    if(t)t.textContent=p+'%';
-  };
-  xhr.onload=()=>{
+    if(b){b.style.width=pct+'%';if(color)b.style.background=color;}
+    if(t)t.textContent=pct+'%';
+  }
+  function setLabel(text,color){
     const t=document.getElementById('up-'+id);
-    try{
-      const j=JSON.parse(xhr.responseText);
-      if(xhr.status===200&&j.ok){
-        if(t){t.textContent='✓';t.style.color='var(--green)';}
-        toast(file.name+' uploaded','ok');
-        loadFiles(_fmCurrentPath);  // refresh file list after upload
-      } else{if(t){t.textContent='✕';t.style.color='var(--red)';}toast('Failed: '+(j.msg||file.name),'err');}
-    }catch(_){if(t){t.textContent='✕';t.style.color='var(--red)';}}
-  };
-  xhr.onerror=()=>toast('Network error: '+file.name,'err');
-  xhr.open('POST','/api/upload');xhr.send(fd);
+    if(t){t.textContent=text;if(color)t.style.color=color;}
+  }
+  function markErr(msg){
+    const b=document.getElementById('uf-'+id);
+    if(b)b.style.background='var(--red)';
+    setLabel('✕','var(--red)');
+    toast('Failed: '+msg,'err');
+  }
+
+  const subdir=document.getElementById('upload-subdir').value;
+
+  // ── 1. Init ───────────────────────────────────────────────────────────────
+  let session_id, chunkSize, totalChunks;
+  try{
+    const CLIENT_CHUNK=4*1024*1024;
+    const estChunks=Math.max(1,Math.ceil(file.size/CLIENT_CHUNK));
+    const r=await fetch('/api/upload/init',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({filename:file.name,size:file.size,total_chunks:estChunks,subdir})
+    });
+    const j=await r.json();
+    if(!j.ok){markErr(j.msg||'Init failed');return;}
+    session_id=j.session_id;
+    chunkSize=j.chunk_size||CLIENT_CHUNK;
+    totalChunks=Math.max(1,Math.ceil(file.size/chunkSize));
+  }catch(e){markErr('Network error (init)');return;}
+
+  // ── 2. Upload chunks in parallel batches ──────────────────────────────────
+  let done=0;
+
+  async function uploadChunk(idx){
+    const start=idx*chunkSize;
+    const blob=file.slice(start,Math.min(start+chunkSize,file.size));
+    const fd=new FormData();
+    fd.append('session_id',session_id);
+    fd.append('chunk_index',String(idx));
+    fd.append('chunk',blob,file.name);
+    const r=await fetch('/api/upload/chunk',{method:'POST',body:fd});
+    const j=await r.json();
+    if(!r.ok||!j.ok)throw new Error(j.msg||`Chunk ${idx} failed`);
+    done++;
+    setPct(Math.round(done/totalChunks*100),done===totalChunks?'var(--green)':'var(--accent)');
+  }
+
+  try{
+    const indices=Array.from({length:totalChunks},(_,i)=>i);
+    for(let i=0;i<indices.length;i+=UP_PARALLEL){
+      await Promise.all(indices.slice(i,i+UP_PARALLEL).map(uploadChunk));
+    }
+  }catch(e){
+    fetch('/api/upload/abort',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id})}).catch(()=>{});
+    markErr(e.message||'Upload failed');
+    return;
+  }
+
+  // ── 3. Finalize ───────────────────────────────────────────────────────────
+  try{
+    const r=await fetch('/api/upload/finalize',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id})
+    });
+    const j=await r.json();
+    if(j.ok){
+      setLabel('✓','var(--green)');
+      toast(file.name+' uploaded','ok');
+      loadFiles(_fmCurrentPath);
+    }else{
+      markErr(j.msg||'Finalize failed');
+    }
+  }catch(e){markErr('Network error (finalize)');}
 }
 
 // ═══════════════════════════════════
@@ -3080,7 +3150,7 @@ function toggleTheme(){
 // INIT
 // ═══════════════════════════════════
 (async function init(){
-  document.getElementById('logo-img').src = '/resources/logo.png';
+  document.getElementById('logo-img').src = '/ resources/logo.png';
   loadStreams();
   updateStats();
   toggleAuto(true);
@@ -3456,7 +3526,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
         """
         Serve a static file from <BASE_DIR>/static/ or BASE_DIR itself.
         Supports: .png .jpg .jpeg .gif .webp .svg .ico .css .js
-        Place resources/logo.png at <BASE_DIR>/resources/logo.png  — it will be served as /resources/logo.png.
+        Place  resources/logo.png at <BASE_DIR>/ resources/logo.png  — it will be served as / resources/logo.png.
         Any file under <BASE_DIR>/static/ is served as /static/<filename>.
         """
         _MIME = {
@@ -3470,7 +3540,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             ".js":   "application/javascript",
         }
         # Resolve file on disk
-        name = url_path.lstrip("/")                     # e.g. "resources/logo.png" or "static/x.png"
+        name = url_path.lstrip("/")                     # e.g. " resources/logo.png" or "static/x.png"
         candidate = BASE_DIR() / name
         if not candidate.exists() or not candidate.is_file():
             self._send(404, b"Not Found", "text/plain")
@@ -3525,6 +3595,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             "/api/mail_config":              self._get_mail_config,
             "/api/gmail_oauth2_status":      self._get_gmail_oauth2_status,
             "/api/microsoft_oauth2_status":  self._get_ms_oauth2_status,
+            "/api/upload/status":            lambda: self._get_upload_status(qs),
         }
 
         handler = routes.get(path)
@@ -3534,7 +3605,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             except Exception as exc:
                 log.error("WebHandler GET %s: %s", path, exc)
                 self._json({"error": "internal server error"}, 500)
-        elif path.startswith("/static/") or path in ("/resources/logo.png", "/favicon.ico"):
+        elif path.startswith("/static/") or path in ("/ resources/logo.png", "/favicon.ico"):
             self._serve_static(path)
         else:
             self._send(404, b"Not Found", "text/plain")
@@ -3543,6 +3614,59 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         ct   = self.headers.get("Content-Type", "")
 
+        # ── Chunked upload endpoints ──────────────────────────────────────────
+        if path == "/api/upload/init":
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(raw)
+            except Exception:
+                self._json({"ok": False, "msg": "Invalid JSON"}, 400); return
+            from hc.web_upload import handle_upload_init
+            resp, code = handle_upload_init(data)
+            self._json(resp, code)
+            return
+
+        if path == "/api/upload/chunk":
+            try:
+                cl = int(self.headers.get("Content-Length", 0))
+                if cl > UPLOAD_MAX_BYTES:
+                    self._json({"ok": False, "msg": "Chunk too large"}, 413); return
+                raw_body = self.rfile.read(cl)
+            except Exception as exc:
+                self._json({"ok": False, "msg": f"Read error: {exc}"}, 500); return
+            from hc.web_upload import handle_upload_chunk
+            resp, code = handle_upload_chunk(raw_body, ct)
+            self._json(resp, code)
+            return
+
+        if path == "/api/upload/finalize":
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(raw)
+            except Exception:
+                self._json({"ok": False, "msg": "Invalid JSON"}, 400); return
+            from hc.web_upload import handle_upload_finalize
+            resp, code = handle_upload_finalize(data)
+            self._json(resp, code)
+            return
+
+        if path == "/api/upload/abort":
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(raw)
+            except Exception:
+                self._json({"ok": False, "msg": "Invalid JSON"}, 400); return
+            sid = str(data.get("session_id", "")).strip()
+            if sid:
+                from hc.web_upload import _UPLOAD_MANAGER
+                _UPLOAD_MANAGER.abort(sid)
+            self._json({"ok": True})
+            return
+
+        # ── Legacy single-shot upload (multipart/form-data catch-all) ────────
         if "multipart/form-data" in ct:
             try:
                 self._handle_upload()
@@ -3612,6 +3736,14 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "bitrate":        st.bitrate,
                 "speed":          st.speed,
                 "app_ver":        APP_VER,
+                # current file being played (name only, safe fallback)
+                "current_file":   getattr(st, "current_file", None),
+                # active unplayed event for this stream, if any
+                "active_event":   next(
+                    (ev.file_path.name for ev in mgr.events
+                     if ev.stream_name == cfg.name and not ev.played),
+                    None
+                ),
             })
         self._json(result)
 
@@ -3911,6 +4043,13 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             self._json(get_microsoft_oauth2_status(cfg))
         except Exception as exc:
             self._json({"status": "error", "error": str(exc), "token_exists": False})
+
+    def _get_upload_status(self, qs: Dict[str, Any]) -> None:
+        """GET /api/upload/status?session_id=X  — chunked upload progress."""
+        from hc.web_upload import handle_upload_status
+        session_id = qs.get("session_id", [""])[0].strip()
+        resp, code = handle_upload_status(session_id)
+        self._json(resp, code)
 
     # ── POST dispatch ────────────────────────────────────────────────────────
     def _dispatch(self, action: str, data: Dict[str, Any]) -> None:
