@@ -217,34 +217,9 @@ class JSONManager:
             return []
 
         try:
-            text = p.read_text(encoding="utf-8").strip()
-            if not text:
-                # File exists but is empty — likely a crash-truncated write.
-                # Rename it so the user keeps a copy, then start fresh.
-                _backup = p.with_suffix(".json.bak")
-                try:
-                    p.rename(_backup)
-                except Exception:
-                    p.unlink(missing_ok=True)
-                log.warning(
-                    "json_manager: streams.json was empty (crash-truncated?). "
-                    "Renamed to streams.json.bak and starting with empty config."
-                )
-                return []
-            raw: List[Dict[str, Any]] = json.loads(text)
+            raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            # File is non-empty but not valid JSON — back it up and continue.
-            _backup = p.with_suffix(".json.bak")
-            try:
-                p.rename(_backup)
-            except Exception:
-                p.unlink(missing_ok=True)
-            log.warning(
-                "json_manager: streams.json contained invalid JSON (%s). "
-                "Renamed to streams.json.bak and starting with empty config.",
-                exc,
-            )
-            return []
+            raise ValueError(f"streams.json is not valid JSON: {exc}") from exc
 
         configs: List[StreamConfig] = []
         for entry in raw:
@@ -260,12 +235,12 @@ class JSONManager:
         p = _streams_path()
         data = [_config_to_dict(c) for c in configs]
         text = json.dumps(data, indent=2, ensure_ascii=False)
-        # Atomic write: write to a sibling temp file then rename so a crash
-        # mid-write never leaves streams.json empty or partially written.
+        # Atomic write: write to a .tmp sibling then rename over the real file.
+        # A crash mid-write will leave the .tmp orphan, NOT a 0-byte streams.json.
         tmp = p.with_suffix(".json.tmp")
         try:
             tmp.write_text(text, encoding="utf-8")
-            tmp.replace(p)          # atomic on POSIX; near-atomic on Windows
+            tmp.replace(p)
         except Exception:
             tmp.unlink(missing_ok=True)
             raise
