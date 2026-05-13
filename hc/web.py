@@ -2725,7 +2725,7 @@ function _plGetStr(cid){
 }
 function renderPlaylistEditor(cid,raw){
   _playlistItems=_parsePL(raw);
-  _playlistItems.sort((a,b)=>b.priority-a.priority);
+  _playlistItems.sort((a,b)=>a.priority-b.priority);
   _renderPLTable(cid);
 }
 function _renderPLTable(cid){
@@ -2755,7 +2755,7 @@ function _renderPLTable(cid){
         +'<span class="pl-toolbar-label"><i class="fa fa-list-ol" style="margin-right:5px;opacity:0.65"></i>'
         +_playlistItems.length+' file'+(_playlistItems.length!==1?'s':'')+'</span>'
         +'<button class="btn b" style="padding:3px 10px;font-size:10px" onclick="_plSort(&apos;'+cid+'&apos;)">'
-          +'<i class="fa fa-sort-numeric-down" style="margin-right:4px"></i>Sort by Priority</button>'
+          +'<i class="fa fa-sort-numeric-up" style="margin-right:4px"></i>Sort by Priority</button>'
         +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plRawView(&apos;'+cid+'&apos;)">'
           +'<i class="fa fa-code" style="margin-right:4px"></i>Raw</button>'
       +'</div>'
@@ -2797,7 +2797,7 @@ function _plSort(cid){
     if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
     if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
   });
-  _playlistItems.sort((a,b)=>b.priority-a.priority);
+  _playlistItems.sort((a,b)=>a.priority-b.priority);
   _renderPLTable(cid);
 }
 function _plAdd(cid){
@@ -2805,7 +2805,7 @@ function _plAdd(cid){
   const raw=inp.value.trim();if(!raw){toast('Enter a file path','err');return;}
   const parsed=_parsePL(raw);if(!parsed.length){toast('Invalid path','err');return;}
   _playlistItems.push(...parsed);
-  _playlistItems.sort((a,b)=>b.priority-a.priority);
+  _playlistItems.sort((a,b)=>a.priority-b.priority);
   inp.value='';_markDirty();_renderPLTable(cid);
 }
 function _plRawView(cid){
@@ -2835,7 +2835,7 @@ function _plRawView(cid){
 }
 function _plTableView(cid){
   const ta=document.querySelector('#'+cid+' textarea');
-  if(ta){_playlistItems=_parsePL(ta.value);_playlistItems.sort((a,b)=>b.priority-a.priority);_markDirty();}
+  if(ta){_playlistItems=_parsePL(ta.value);_playlistItems.sort((a,b)=>a.priority-b.priority);_markDirty();}
   _renderPLTable(cid);
 }
 
