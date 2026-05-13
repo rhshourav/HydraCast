@@ -1318,6 +1318,65 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- Backup & Restore -->
+  <div style="margin-top:4px">
+    <div class="section-hdr"><h2>Backup &amp; Restore</h2><span class="sep"></span></div>
+    <div class="card card-body" style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+
+        <!-- Backup -->
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Create Backup</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
+            Downloads a single <code style="color:var(--accent-light)">.hc</code> file containing all your configuration:
+            <ul style="margin:6px 0 0 16px;color:var(--text3);font-size:11px;line-height:1.9">
+              <li>Stream definitions (streams.json)</li>
+              <li>Scheduled events (events.json)</li>
+              <li>Mail alert config (mail_config.json)</li>
+              <li>Resume positions (resume_positions.json)</li>
+            </ul>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
+              <input type="checkbox" id="bk-streams" checked style="width:auto;accent-color:var(--accent)"> Streams
+            </label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
+              <input type="checkbox" id="bk-events" checked style="width:auto;accent-color:var(--accent)"> Events
+            </label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
+              <input type="checkbox" id="bk-mail" checked style="width:auto;accent-color:var(--accent)"> Mail config
+            </label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
+              <input type="checkbox" id="bk-resume" checked style="width:auto;accent-color:var(--accent)"> Resume positions
+            </label>
+          </div>
+          <button class="btn g" onclick="downloadBackup()">⬇ Download Backup</button>
+          <div id="bk-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
+        </div>
+
+        <!-- Restore -->
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--yellow);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Restore from Backup</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
+            Upload a <code style="color:var(--accent-light)">.hc</code> backup file to restore configuration.
+            <span style="color:var(--red);font-weight:600">All streams will be restarted after restore.</span>
+          </div>
+          <div id="restore-drop" style="border:2px dashed var(--border);border-radius:var(--radius);padding:24px 16px;text-align:center;cursor:pointer;color:var(--text3);transition:all 0.22s;background:var(--bg3)"
+            onclick="document.getElementById('restore-file').click()"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+            ondragleave="this.style.borderColor='var(--border)'"
+            ondrop="event.preventDefault();this.style.borderColor='var(--border)';doRestore(event.dataTransfer.files[0])">
+            <div style="font-size:24px;margin-bottom:6px;opacity:0.4">⬆</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text2)">Drop .hc file or click to browse</div>
+          </div>
+          <input type="file" id="restore-file" accept=".hc" style="display:none" onchange="doRestore(this.files[0])">
+          <div id="restore-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   <!-- Danger Zone -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2 style="color:var(--red)">Danger Zone</h2><span class="sep"></span></div>
@@ -2054,14 +2113,30 @@ function showNewStreamForm(){
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
         <div class="fg"><label>Stream Name *</label><input id="new-name" placeholder="My_Stream" autocomplete="off"></div>
         <div class="fg"><label>Port * (≥10 apart)</label><input id="new-port" type="number" value="8554" min="1024" max="65535"></div>
-        <div class="fg"><label>Stream Path</label><input id="new-spath" value="stream"></div>
+        <div class="fg">
+          <label>Stream Path <span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(blank = root mount IP:Port/)</span></label>
+          <input id="new-spath" value="" placeholder="e.g. live  (optional)">
+        </div>
       </div>
     </div>
     <div class="config-section">
-      <div class="config-section-title">Playlist Files *</div>
-      <textarea id="new-files" rows="6" style="font-size:11px;font-family:var(--font-mono)"
-        placeholder="/path/to/video.mp4\n/path/to/video2.mkv\n\nOptional format:  /path@HH:MM:SS#priority"></textarea>
-      <div style="font-size:10px;color:var(--text3);margin-top:6px">One path per line (or semicolon-separated). Omit @position and #priority for defaults.</div>
+      <div class="config-section-title">Playlist Source</div>
+      <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)">
+        <button id="new-src-tab-files" class="nav-tab active" onclick="switchNewSrcTab('files')" style="padding:7px 16px;font-size:12px"><span class="tab-dot"></span>File List</button>
+        <button id="new-src-tab-folder" class="nav-tab" onclick="switchNewSrcTab('folder')" style="padding:7px 16px;font-size:12px"><span class="tab-dot"></span>Folder Source</button>
+      </div>
+      <div id="new-src-files">
+        <textarea id="new-files" rows="6" style="font-size:11px;font-family:var(--font-mono)"
+          placeholder="/path/to/video.mp4\n/path/to/video2.mkv\n\nOptional format:  /path@HH:MM:SS#priority"></textarea>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px">One path per line (or semicolon-separated). Omit @position and #priority for defaults.</div>
+      </div>
+      <div id="new-src-folder" style="display:none">
+        <div class="fg">
+          <label>Folder Path</label>
+          <input id="new-folder" placeholder="/media/shows  or  media/news">
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px">HydraCast will scan the folder and auto-rebuild the playlist when files change. Day-tags (_mon_, _tue_, …) are detected automatically.</div>
+      </div>
     </div>
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
@@ -2092,6 +2167,42 @@ function showNewStreamForm(){
           <input type="checkbox" id="new-hls" style="width:auto;accent-color:var(--accent)">HLS enabled
         </label>
       </div>
+    </div>
+    <div class="config-section">
+      <div class="config-section-title">Compliance — Broadcast Sync</div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);font-weight:500;margin-bottom:12px">
+          <input type="checkbox" id="new-comp-en" style="width:auto;accent-color:var(--accent)"
+            onchange="document.getElementById('new-comp-fields').style.display=this.checked?'':'none'">
+          Enable compliance mode
+        </label>
+        <div id="new-comp-fields" style="display:none">
+          <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:12px">
+            <div class="fg">
+              <label>Broadcast Start Time (HH:MM:SS)</label>
+              <input id="new-comp-start" value="06:00:00" placeholder="06:00:00">
+            </div>
+            <div class="fg">
+              <label>Timezone offset</label>
+              <input id="new-comp-tz" value="" placeholder="System time (default)" style="opacity:0.7" disabled title="Uses system local time — configure server timezone via OS">
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2);margin-bottom:8px">
+            <input type="checkbox" id="new-comp-loop" style="width:auto;accent-color:var(--accent)">
+            Loop calculation — seek within loops for videos shorter than 24 h
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
+            <input type="checkbox" id="new-comp-strict" style="width:auto;accent-color:var(--accent)">
+            Strict mode — stop stream if seek offset exceeds video duration
+          </label>
+          <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.7;border-top:1px solid var(--border);padding-top:10px">
+            <b style="color:var(--accent-light)">What is compliance mode?</b><br>
+            Calculates the exact seek offset so viewers see what a continuous linear broadcast would be showing right now.
+            Example: 24 h video, broadcast starts 06:00, current time 14:30 → seeks to 08:30:00.
+            Useful for simulating scheduled broadcast channels.
+          </div>
+        </div>
+      </div>
     </div>`;
   // Swap footer buttons for Create mode
   document.getElementById('config-main-footer').innerHTML=`
@@ -2100,25 +2211,41 @@ function showNewStreamForm(){
   document.getElementById('config-main-footer').style.display='flex';
 }
 
+function switchNewSrcTab(mode){
+  document.getElementById('new-src-files').style.display=mode==='files'?'':'none';
+  document.getElementById('new-src-folder').style.display=mode==='folder'?'':'none';
+  document.getElementById('new-src-tab-files').classList.toggle('active',mode==='files');
+  document.getElementById('new-src-tab-folder').classList.toggle('active',mode==='folder');
+}
+
 async function submitNewStream(){
   const name=(document.getElementById('new-name')?.value||'').trim();
   const port=parseInt(document.getElementById('new-port')?.value||0);
-  const files=(document.getElementById('new-files')?.value||'').trim();
+  // Detect source mode
+  const isFolderMode=document.getElementById('new-src-folder')?.style.display!=='none';
+  const files=isFolderMode?'':(document.getElementById('new-files')?.value||'').trim();
+  const folderPath=isFolderMode?(document.getElementById('new-folder')?.value||'').trim():'';
   if(!name){toast('Stream name is required','err');return;}
   if(!/^[\w\-. ]+$/.test(name)){toast('Name: letters, numbers, spaces, hyphens, dots, underscores only','err');return;}
   if(!port||port<1024||port>65535){toast('Port must be 1024-65535','err');return;}
-  if(!files){toast('At least one file path is required','err');return;}
+  if(!isFolderMode&&!files){toast('At least one file path is required','err');return;}
+  if(isFolderMode&&!folderPath){toast('Folder path is required for folder source','err');return;}
   const wdChecked=Array.from(document.querySelectorAll('.new-wd:checked')).map(el=>+el.value);
   const wdMap=['mon','tue','wed','thu','fri','sat','sun'];
   const weekdays=wdChecked.length===7?'all':(wdChecked.map(i=>wdMap[i]).join('|')||'all');
   const r=await api('create_stream',{
     name,port,files,weekdays,
-    stream_path:(document.getElementById('new-spath')?.value||'stream').trim()||'stream',
+    folder_source: folderPath||null,
+    stream_path:(document.getElementById('new-spath')?.value||'').trim(),
     video_bitrate:(document.getElementById('new-vbr')?.value||'2500k').trim()||'2500k',
     audio_bitrate:(document.getElementById('new-abr')?.value||'128k').trim()||'128k',
     shuffle:document.getElementById('new-shuffle')?.checked||false,
     enabled:document.getElementById('new-enabled')?.checked!==false,
     hls_enabled:document.getElementById('new-hls')?.checked||false,
+    compliance_enabled:document.getElementById('new-comp-en')?.checked||false,
+    compliance_start:(document.getElementById('new-comp-start')?.value||'06:00:00').trim()||'06:00:00',
+    compliance_loop:document.getElementById('new-comp-loop')?.checked||false,
+    compliance_strict:document.getElementById('new-comp-strict')?.checked||false,
   });
   if(r?.ok){
     cancelConfig();
@@ -2432,6 +2559,75 @@ async function revokeMicrosoft(){
     document.getElementById('ml-status').textContent=j.msg;
     document.getElementById('ml-status').style.color=j.ok?'var(--green)':'var(--red)';
   }catch(e){toast('Revoke failed','err');}
+}
+
+// ═══════════════════════════════════
+// BACKUP & RESTORE
+// ═══════════════════════════════════
+async function downloadBackup(){
+  const st=document.getElementById('bk-status');
+  st.textContent='Preparing backup…';st.style.color='var(--yellow)';
+  try{
+    const include={
+      streams:document.getElementById('bk-streams')?.checked!==false,
+      events:document.getElementById('bk-events')?.checked!==false,
+      mail:document.getElementById('bk-mail')?.checked!==false,
+      resume:document.getElementById('bk-resume')?.checked!==false,
+    };
+    const r=await fetch('/api/backup',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(include)
+    });
+    if(!r.ok){const j=await r.json();throw new Error(j.msg||'Backup failed');  }
+    const blob=await r.blob();
+    const now=new Date();
+    const ts=[now.getFullYear(),
+      String(now.getMonth()+1).padStart(2,'0'),
+      String(now.getDate()).padStart(2,'0'),
+      '_',
+      String(now.getHours()).padStart(2,'0'),
+      String(now.getMinutes()).padStart(2,'0'),
+      String(now.getSeconds()).padStart(2,'0')].join('');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`hydracast_backup_${ts}.hc`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    st.textContent='✓ Backup downloaded';st.style.color='var(--green)';
+    toast('Backup downloaded','ok');
+  }catch(e){
+    st.textContent='✕ '+e.message;st.style.color='var(--red)';
+    toast('Backup failed: '+e.message,'err');
+  }
+}
+
+async function doRestore(file){
+  if(!file)return;
+  if(!file.name.endsWith('.hc')){toast('Must be a .hc backup file','err');return;}
+  if(!confirm('Restore from this backup?\n\nAll current configuration will be replaced and all streams will restart.\n\nFile: '+file.name))return;
+  const st=document.getElementById('restore-status');
+  st.textContent='Uploading…';st.style.color='var(--yellow)';
+  try{
+    const text=await file.text();
+    let data;
+    try{data=JSON.parse(text);}catch(_){throw new Error('Invalid .hc file — not valid JSON');}
+    if(data.format!=='hydracast_backup'){throw new Error('Not a HydraCast backup file (missing format header)');}
+    const r=await fetch('/api/restore',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(data)
+    });
+    const j=await r.json();
+    if(j.ok){
+      st.textContent='✓ Restored — reloading in 3 s…';st.style.color='var(--green)';
+      toast('Restore successful — restarting streams…','ok');
+      setTimeout(()=>loadStreams(),3500);
+    }else{
+      throw new Error(j.msg||'Restore failed');
+    }
+  }catch(e){
+    st.textContent='✕ '+e.message;st.style.color='var(--red)';
+    toast('Restore failed: '+e.message,'err');
+  }
 }
 
 // ═══════════════════════════════════
@@ -3201,10 +3397,34 @@ class WebHandler(BaseHTTPRequestHandler):
                 port = int(data.get("port", 0))
                 if not (1024 <= port <= 65535):
                     raise ValueError(f"Port {port} out of range (1024-65535).")
-                raw_files = str(data.get("files", "")).strip().replace("\n", ";")
-                playlist  = CSVManager.parse_files(raw_files)
-                if not playlist:
-                    raise ValueError("At least one valid file path is required.")
+
+                # Stream path — empty string means root mount (IP:Port/)
+                stream_path = str(data.get("stream_path", "")).strip()
+
+                # Playlist source: folder_source overrides file list
+                folder_source_raw = str(data.get("folder_source") or "").strip()
+                folder_source = None
+                playlist: "List[PlaylistItem]" = []
+                if folder_source_raw:
+                    from hc.folder_scanner import scan_folder, SortMode
+                    folder_source = Path(folder_source_raw)
+                    if not folder_source.is_dir():
+                        raise ValueError(f"Folder not found or not a directory: '{folder_source_raw}'")
+                    playlist, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
+                    for w in warnings:
+                        log.warning("create_stream folder scan: %s", w)
+                    if not playlist:
+                        raise ValueError(f"No supported media files found in '{folder_source_raw}'")
+                else:
+                    raw_files = str(data.get("files", "")).strip().replace("\n", ";")
+                    playlist  = CSVManager.parse_files(raw_files)
+                    if not playlist:
+                        raise ValueError("At least one valid file path is required.")
+
+                # Compliance
+                comp_start = CSVManager._sanitize_hms(
+                    str(data.get("compliance_start", "06:00:00")))
+
                 cfg = StreamConfig(
                     name=name_s,
                     port=port,
@@ -3212,20 +3432,22 @@ class WebHandler(BaseHTTPRequestHandler):
                     weekdays=CSVManager.parse_weekdays(str(data.get("weekdays", "all"))),
                     enabled=bool(data.get("enabled", True)),
                     shuffle=bool(data.get("shuffle", False)),
-                    stream_path=str(data.get("stream_path", "stream")).strip() or "stream",
+                    stream_path=stream_path,
                     video_bitrate=CSVManager._sanitize_bitrate(
                         str(data.get("video_bitrate", "2500k")), "2500k"),
                     audio_bitrate=CSVManager._sanitize_bitrate(
                         str(data.get("audio_bitrate", "128k")), "128k"),
                     hls_enabled=bool(data.get("hls_enabled", False)),
-                    compliance_enabled=False,
-                    compliance_start="06:00:00",
-                    compliance_loop=False,
+                    folder_source=folder_source,
+                    compliance_enabled=bool(data.get("compliance_enabled", False)),
+                    compliance_start=comp_start,
+                    compliance_loop=bool(data.get("compliance_loop", False)),
                 )
                 mgr.add_stream(cfg)
+                path_label = f"/{stream_path}" if stream_path else "/"
                 self._json({
                     "ok":  True,
-                    "msg": f"Stream '{name_s}' created on port {port}. "
+                    "msg": f"Stream '{name_s}' created on port {port} (path: {path_label}). "
                            "You can start it now from the Configure tab.",
                 })
             except Exception as exc:
@@ -3402,6 +3624,12 @@ class WebHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
+        elif action == "backup":
+            self._handle_backup(data)
+
+        elif action == "restore":
+            self._handle_restore(data)
+
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
 
@@ -3500,6 +3728,186 @@ class WebHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             log.error("Upload error: %s", exc)
             self._json({"ok": False, "msg": f"Upload error: {exc}"}, 500)
+
+    # ── Backup ───────────────────────────────────────────────────────────────
+    def _handle_backup(self, include: Dict[str, Any]) -> None:
+        """
+        Build a plain-JSON .hc backup and send it as a downloadable file.
+        *include* is a dict with boolean flags: streams, events, mail, resume.
+        """
+        import json as _json
+        from hc.constants import BASE_DIR, CONFIG_DIR
+
+        try:
+            payload: Dict[str, Any] = {
+                "format":  "hydracast_backup",
+                "version": APP_VER,
+                "created": datetime.now().isoformat(timespec="seconds"),
+            }
+
+            # ── Streams ─────────────────────────────────────────────────────
+            if include.get("streams", True):
+                p = CONFIG_DIR() / "streams.json"
+                try:
+                    payload["streams"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else []
+                except Exception:
+                    payload["streams"] = []
+
+            # ── Events ──────────────────────────────────────────────────────
+            if include.get("events", True):
+                p = CONFIG_DIR() / "events.json"
+                try:
+                    payload["events"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else []
+                except Exception:
+                    payload["events"] = []
+
+            # ── Mail config (password redacted for safety) ───────────────────
+            if include.get("mail", True):
+                p = BASE_DIR() / "mail_config.json"
+                try:
+                    if p.exists():
+                        mc = _json.loads(p.read_text(encoding="utf-8"))
+                        # Redact password — restore will leave it blank
+                        mc.pop("password", None)
+                        payload["mail_config"] = mc
+                    else:
+                        payload["mail_config"] = {}
+                except Exception:
+                    payload["mail_config"] = {}
+
+            # ── Resume positions ────────────────────────────────────────────
+            if include.get("resume", True):
+                p = BASE_DIR() / "resume_positions.json"
+                try:
+                    payload["resume_positions"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else {}
+                except Exception:
+                    payload["resume_positions"] = {}
+
+            body = _json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+            ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"hydracast_backup_{ts}.hc"
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            for k, v in _SEC_HEADERS.items():
+                self.send_header(k, v)
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            log.info("Backup downloaded: %s (%d bytes)", fname, len(body))
+
+        except Exception as exc:
+            log.error("Backup error: %s", exc)
+            self._json({"ok": False, "msg": f"Backup error: {exc}"}, 500)
+
+    # ── Restore ──────────────────────────────────────────────────────────────
+    def _handle_restore(self, payload: Dict[str, Any]) -> None:
+        """
+        Restore from a .hc backup payload.  Writes config files back to disk
+        then restarts all streams so changes take effect immediately.
+        """
+        import json as _json
+        from hc.constants import BASE_DIR, CONFIG_DIR
+
+        try:
+            if payload.get("format") != "hydracast_backup":
+                self._json({"ok": False, "msg": "Not a valid HydraCast backup file"})
+                return
+
+            restored: list[str] = []
+
+            # ── Streams ─────────────────────────────────────────────────────
+            if "streams" in payload:
+                p = CONFIG_DIR() / "streams.json"
+                p.write_text(
+                    _json.dumps(payload["streams"], indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                restored.append("streams")
+                log.info("restore: streams.json written (%d streams)",
+                         len(payload["streams"]) if isinstance(payload["streams"], list) else 0)
+
+            # ── Events ──────────────────────────────────────────────────────
+            if "events" in payload:
+                p = CONFIG_DIR() / "events.json"
+                p.write_text(
+                    _json.dumps(payload["events"], indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                restored.append("events")
+
+            # ── Mail config (password intentionally absent — user must re-enter) ──
+            if "mail_config" in payload:
+                p = BASE_DIR() / "mail_config.json"
+                existing: Dict[str, Any] = {}
+                try:
+                    if p.exists():
+                        existing = _json.loads(p.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+                mc = dict(payload["mail_config"])
+                # Preserve the stored password if restore doesn't include one
+                if "password" not in mc and "password" in existing:
+                    mc["password"] = existing["password"]
+                p.write_text(
+                    _json.dumps(mc, indent=4, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                restored.append("mail_config")
+
+            # ── Resume positions ────────────────────────────────────────────
+            if "resume_positions" in payload:
+                p = BASE_DIR() / "resume_positions.json"
+                p.write_text(
+                    _json.dumps(payload["resume_positions"], indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                restored.append("resume_positions")
+
+            # ── Reload manager state ─────────────────────────────────────────
+            mgr = _WEB_MANAGER
+            if mgr and "streams" in payload:
+                try:
+                    from hc.json_manager import JSONManager
+                    new_configs = JSONManager.load()
+                    mgr.reload_from_configs(new_configs)
+                    log.info("restore: manager reloaded with %d stream(s)", len(new_configs))
+                except AttributeError:
+                    # reload_from_configs may not exist in older manager; do
+                    # a best-effort restart_all instead.
+                    for st in list(mgr.states):
+                        try:
+                            mgr.restart(st.config.name)
+                        except Exception:
+                            pass
+                except Exception as exc:
+                    log.warning("restore: manager reload failed: %s — streams not restarted", exc)
+
+            if "events" in payload and mgr:
+                try:
+                    from hc.json_manager import JSONManager
+                    mgr.events = JSONManager.load_events()
+                except Exception:
+                    pass
+
+            log.info("restore: completed — restored: %s", ", ".join(restored))
+            self._json({
+                "ok":      True,
+                "msg":     f"Restored: {', '.join(restored)}. Streams reloaded.",
+                "restored": restored,
+            })
+
+        except Exception as exc:
+            log.error("Restore error: %s", exc)
+            self._json({"ok": False, "msg": f"Restore error: {exc}"}, 500)
 
 
 # =============================================================================
