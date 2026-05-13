@@ -317,13 +317,13 @@ a:hover{color:var(--accent)}
 }
 .logo-icon{
   width:36px;height:36px;
-  background:var(--accent-gradient);
+  background:#ffeec4;
   border-radius:10px;display:flex;align-items:center;justify-content:center;
   font-size:15px;font-weight:900;color:#fff;flex-shrink:0;
-  box-shadow:0 3px 10px rgba(184,115,51,0.35);
+  box-shadow:0 3px 10px rgba(255,238,196,0.45);
   transition:transform 0.2s,box-shadow 0.2s;
 }
-.logo-icon:hover{transform:scale(1.08);box-shadow:0 5px 16px rgba(184,115,51,0.45)}
+.logo-icon:hover{transform:scale(1.08);box-shadow:0 5px 16px rgba(255,238,196,0.55)}
 .logo sub{
   font-family:var(--font-mono);font-size:11px;color:var(--text3);
   font-weight:400;vertical-align:middle;margin-left:3px;
