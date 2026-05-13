@@ -569,6 +569,38 @@ class StreamManager:
         log.info("manager: stream '%s' removed.", name)
         return True
 
+    # ── One-shot event management (public) ───────────────────────────────────
+
+    def add_event(self, ev: OneShotEvent) -> None:
+        """
+        Append a pre-constructed OneShotEvent to the in-memory list and
+        persist it to config/events.json.
+        Called by web.py after it builds the OneShotEvent object.
+        """
+        with self._lock:
+            self._events.append(ev)
+        JSONManager._save_events(self._events)
+        log.info(
+            "manager: one-shot event '%s' scheduled for %s on stream '%s'.",
+            ev.event_id, ev.play_at.isoformat(), ev.stream_name,
+        )
+
+    def remove_event(self, event_id: str) -> bool:
+        """
+        Remove a one-shot event by its event_id.
+        Returns True if found and removed, False otherwise.
+        """
+        with self._lock:
+            before = len(self._events)
+            self._events = [e for e in self._events if e.event_id != event_id]
+            removed = len(self._events) < before
+        if removed:
+            JSONManager._save_events(self._events)
+            log.info("manager: one-shot event '%s' removed.", event_id)
+        else:
+            log.warning("manager: remove_event: event_id '%s' not found.", event_id)
+        return removed
+
     # ── String representation ─────────────────────────────────────────────────
 
     def __repr__(self) -> str:  # pragma: no cover
