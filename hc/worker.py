@@ -18,6 +18,7 @@ FIXES (v5.1.0):
 from __future__ import annotations
 
 import json
+import os
 import logging
 import random
 import re
@@ -700,32 +701,55 @@ class StreamWorker:
         self._log(f"Launching MediaMTX | config={cfg_file} | log={log_f}")
 
         try:
-            with open(log_f, "w") as lf:
-                kw: Dict[str, Any] = dict(stdout=lf, stderr=subprocess.PIPE)
-                if IS_WIN:
-                    kw["creationflags"] = subprocess.CREATE_NO_WINDOW
-                proc = subprocess.Popen(
-                    [str(MEDIAMTX_BIN()), str(cfg_file)], **kw)
+            # Open the log file OUTSIDE a with-block so the handle stays open
+            # for the lifetime of the MediaMTX process.  Using a with-block
+            # closes the fd before Popen returns on some Python/Windows versions,
+            # which causes MediaMTX to fail immediately when it tries to write
+            # its first log line — producing an empty log and a silent crash.
+            #
+            # We redirect BOTH stdout and stderr to the log file so that any
+            # crash output (including Go panic traces) is captured regardless
+            # of which stream MediaMTX uses.  On Windows especially, MediaMTX
+            # writes its startup errors to stderr, not the log file.
+            try:
+                lf = open(log_f, "w", buffering=1)   # line-buffered
+            except OSError as exc:
+                self._log(
+                    f"Cannot open MediaMTX log file '{log_f}': {exc} — "
+                    "falling back to DEVNULL",
+                    "WARN",
+                )
+                lf = open(os.devnull, "w")
+
+            kw: Dict[str, Any] = dict(stdout=lf, stderr=lf)
+            if IS_WIN:
+                kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+            proc = subprocess.Popen(
+                [str(MEDIAMTX_BIN()), str(cfg_file)], **kw
+            )
+            # Store the handle so we can close it when we kill MediaMTX.
+            proc._log_fh = lf   # type: ignore[attr-defined]
 
             self.state.mtx_proc = proc
             self._log(f"MediaMTX spawned PID={proc.pid} on :{port}")
 
-            deadline = time.time() + 1.5
+            # Wait up to 2 s for an early crash; stable processes survive this.
+            deadline = time.time() + 2.0
             while time.time() < deadline:
                 if proc.poll() is not None:
                     break
                 time.sleep(0.1)
 
             if proc.poll() is not None:
-                stderr_out = b""
+                # Flush and close the log handle so the file is readable.
                 try:
-                    stderr_out = proc.stderr.read() or b""
+                    lf.flush()
+                    lf.close()
                 except Exception:
                     pass
-                stderr_txt = stderr_out.decode(errors="replace").strip()
 
-                log_tail = _tail_log(log_f, 12)
-                detail = "\n".join(filter(None, [stderr_txt, log_tail])) or "(no output)"
+                log_tail = _tail_log(log_f, 20)
+                detail = log_tail or "(no output — MediaMTX may have crashed before opening its log)"
 
                 hints = []
                 dl = detail.lower()
@@ -746,31 +770,24 @@ class StreamWorker:
                         f"Port {port} (or its RTP/RTCP companion) is already in use. "
                         f"Check for another MediaMTX or RTSP service running on this port."
                     )
+                if not detail.strip() or detail.startswith("(no output"):
+                    hints.append(
+                        "MediaMTX produced no log output. "
+                        "Possible causes: log file path contains characters MediaMTX cannot open, "
+                        "or the binary is blocked by antivirus / Windows Defender. "
+                        f"Try running '{MEDIAMTX_BIN()} {cfg_file}' manually to see the error."
+                    )
 
                 hint_str = "  HINT: " + " | ".join(hints) if hints else ""
                 msg = (
                     f"MediaMTX exited immediately (code {proc.returncode}). "
-                    f"Output:\n{detail[:800]}"
+                    f"Log tail:\n{detail[:800]}"
                     f"\n{hint_str}"
                 )
                 self.state.status    = StreamStatus.ERROR
                 self.state.error_msg = msg
                 self._log(msg, "ERROR")
                 return False
-
-            def _drain(p: subprocess.Popen) -> None:
-                try:
-                    for raw in p.stderr:
-                        line = (
-                            raw.decode(errors="replace") if isinstance(raw, bytes) else raw
-                        ).strip()
-                        if line:
-                            log.warning("MTX stderr [PID %d]: %s", p.pid, line)
-                except Exception:
-                    pass
-
-            threading.Thread(target=_drain, args=(proc,), daemon=True,
-                             name=f"mtx-drain-{port}").start()
 
             self._log(f"MediaMTX running stably (PID={proc.pid})")
             return True
@@ -1287,6 +1304,15 @@ class StreamWorker:
                 proc.kill()
             except Exception as exc:
                 self._log(f"MediaMTX kill error: {exc}", "WARN")
+        # Close the log file handle that was kept open for MediaMTX's lifetime.
+        if proc is not None:
+            lf = getattr(proc, "_log_fh", None)
+            if lf is not None:
+                try:
+                    lf.flush()
+                    lf.close()
+                except Exception:
+                    pass
         self.state.mtx_proc = None
 
 
