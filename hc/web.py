@@ -445,6 +445,7 @@ a:hover{color:var(--accent)}
   overflow:hidden;transition:background 0.35s,border-color 0.35s,box-shadow 0.25s;
   box-shadow:0 1px 4px var(--shadow);
   animation:fadeIn 0.25s ease both;
+  flex-shrink:0;
 }
 .card:hover{box-shadow:0 4px 16px var(--shadow)}
 .card-hdr{
@@ -4019,6 +4020,8 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "loop_count":     st.loop_count,
                 "restart_count":  st.restart_count,
                 "bitrate":        st.bitrate,
+                "video_bitrate":  cfg.video_bitrate,
+                "audio_bitrate":  cfg.audio_bitrate,
                 "speed":          st.speed,
                 "app_ver":        APP_VER,
                 # current file being played (name only, safe fallback)
