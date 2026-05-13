@@ -760,6 +760,11 @@ class StreamWorker:
     def _start_ffmpeg(self, item: PlaylistItem, seek_pos: float) -> bool:
         cfg       = self.state.config
         loop_flag = ["-stream_loop", "-1"] if len(cfg.playlist) == 1 else []
+        # Build RTSP target URL — no trailing slash for root-mount streams
+        # (MediaMTX v1.9.1 returns 400 Bad Request if path is "/" vs "")
+        _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}"
+        if cfg.rtsp_path:
+            _rtsp_target += f"/{cfg.rtsp_path}"
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error",
             "-re",
@@ -771,7 +776,7 @@ class StreamWorker:
             "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
             "-progress", "pipe:1", "-nostats",
             "-f", "rtsp", "-rtsp_transport", "tcp",
-            f"rtsp://127.0.0.1:{cfg.port}/{cfg.rtsp_path}",
+            _rtsp_target,
         ]
 
         self.state.seek_start_pos = seek_pos  # type: ignore[attr-defined]
@@ -822,6 +827,10 @@ class StreamWorker:
     def _play_black(self) -> None:
         cfg = self.state.config
         self._log("Starting black-screen feed …")
+        # Build RTSP target URL — no trailing slash for root-mount streams
+        _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}"
+        if cfg.rtsp_path:
+            _rtsp_target += f"/{cfg.rtsp_path}"
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error", "-re",
             "-f", "lavfi", "-i", "color=black:size=1280x720:rate=25",
@@ -830,7 +839,7 @@ class StreamWorker:
             "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", cfg.audio_bitrate,
             "-f", "rtsp", "-rtsp_transport", "tcp",
-            f"rtsp://127.0.0.1:{cfg.port}/{cfg.rtsp_path}",
+            _rtsp_target,
         ]
         try:
             kw: Dict[str, Any] = dict(
