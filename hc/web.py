@@ -419,6 +419,7 @@ a:hover{color:var(--accent)}
 .tab-panel{display:none;flex:1;overflow:auto;padding:24px}
 .tab-panel.active{
   display:flex;flex-direction:column;gap:20px;
+  overflow-y:auto;
   animation:fadeSlideIn 0.28s ease both;
 }
 
@@ -1871,6 +1872,14 @@ function _rowCells(s,i,showRtsp){
       ${!s.enabled?`<span class="tag-dis">OFF</span>`:''}
       ${status==='ONESHOT'?`<span style="font-size:10px;font-weight:700;color:var(--purple);background:var(--purple-dim);border:1px solid rgba(154,138,176,0.4);border-radius:4px;padding:2px 7px;margin-left:4px">🎬 EVENT</span>`:''}
       ${s.playlist_count>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(${s.playlist_count} files)</span>`:''}
+      ${s.next_in_queue&&s.next_in_queue.length?`
+  <div style="margin-top:3px;display:flex;flex-direction:column;gap:1px">
+    ${s.next_in_queue.map((name,i)=>`
+      <div style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">
+        <span style="color:var(--accent-light);font-family:var(--font-mono);font-weight:600;flex-shrink:0">+${i+1}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis">${esc(name)}</span>
+      </div>`).join('')}
+  </div>`:''}
     </td>
     <td style="color:var(--accent-light)">:${s.port}</td>
     <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
@@ -3752,6 +3761,24 @@ def _notify_folder_upload(upload_dir: Path) -> None:
     except Exception as exc:
         log.debug("_notify_folder_upload error: %s", exc)
 
+def _get_next_in_queue(st: Any, cfg: Any, n: int = 2) -> list:
+    """Return the next *n* playlist file names after the currently playing item."""
+    playlist = cfg.playlist
+    if not playlist:
+        return []
+    order = getattr(st, "playlist_order", None) or list(range(len(playlist)))
+    idx   = getattr(st, "playlist_index", 0) or 0
+    result = []
+    for offset in range(1, n + 1):
+        next_ord_idx = (idx + offset) % len(order)
+        pl_idx = order[next_ord_idx]
+        try:
+            result.append(playlist[pl_idx].file_path.name)
+        except (IndexError, AttributeError):
+            pass
+    return result
+
+
 # =============================================================================
 # REQUEST HANDLER
 # =============================================================================
@@ -4002,6 +4029,8 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                      if ev.stream_name == cfg.name and not ev.played),
                     None
                 ),
+                # next 2 upcoming playlist items
+                "next_in_queue":  _get_next_in_queue(st, cfg, n=2),
             })
         self._json(result)
 
