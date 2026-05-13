@@ -76,7 +76,16 @@ def _bootstrap() -> None:
         "google_auth_oauthlib":  "google-auth-oauthlib>=1.0",
         "googleapiclient":       "google-api-python-client>=2.0",
     }
-    missing = [pkg for mod, pkg in needed.items() if not _ilu.find_spec(mod)]
+
+    def _is_available(mod: str) -> bool:
+        # find_spec raises ModuleNotFoundError for dotted names (e.g. "google.auth")
+        # when the parent package ("google") does not exist yet.
+        try:
+            return _ilu.find_spec(mod) is not None
+        except (ModuleNotFoundError, ValueError):
+            return False
+
+    missing = [pkg for mod, pkg in needed.items() if not _is_available(mod)]
     if not missing:
         return
     print(f"[HydraCast] Installing: {', '.join(missing)} …")
