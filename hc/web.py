@@ -1022,7 +1022,7 @@ select option{background:var(--bg3)}
             <th>FPS</th>
             <th>Loop</th>
             <th>Bitrate</th>
-            <th>RTSP URL</th>
+            <th>Stream URLs</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -1665,6 +1665,14 @@ function fmtSecs(s){
   return[Math.floor(s/3600),Math.floor((s%3600)/60),s%60]
     .map(n=>String(n).padStart(2,'0')).join(':');
 }
+function fmtRemaining(secs){
+  /* Convert raw seconds to compact human string: 1h 02m  /  45m 30s  /  58s */
+  const s=Math.max(0,Math.round(+secs||0));
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=s%60;
+  if(h>0) return h+'h '+String(m).padStart(2,'0')+'m';
+  if(m>0) return m+'m '+String(ss).padStart(2,'0')+'s';
+  return ss+'s';
+}
 function fmtBytes(n){
   if(n<1024)return n+' B';
   if(n<1048576)return(n/1024).toFixed(1)+' KB';
@@ -1816,14 +1824,17 @@ function _rowCells(s,i,showRtsp){
     <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
     <td style="min-width:140px">
       <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
-      <div class="prog-label">${pct}%${s.time_remaining?' · '+esc(s.time_remaining)+' left':''}</div>
+      <div class="prog-label">${pct}%${s.time_remaining?' · '+fmtRemaining(s.time_remaining)+' left':''}</div>
     </td>
     <td class="td-muted" style="white-space:nowrap">${esc(s.position||'--')}</td>
     <td class="td-muted">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
-    <td class="td-muted">${s.loop_count>0?'×'+s.loop_count:'--'}</td>
-    <td class="td-muted">${(s.bitrate&&s.bitrate!=='—')?esc(s.bitrate):'--'}</td>
+    <td class="td-muted">${s.loop_count!=null&&s.loop_count!==undefined?'×'+s.loop_count:'--'}</td>
+    <td class="td-muted">${(s.bitrate&&s.bitrate!=='—'&&s.bitrate!=='N/A'&&s.bitrate!=='n/a')?esc(s.bitrate):'--'}</td>
     <td>
-      ${s.rtsp_url?`<span class="chip" onclick="copyText('${esc(s.rtsp_url)}')" title="${esc(s.rtsp_url)}">📋 ${esc(s.rtsp_url)}</span>`:'<span class="td-muted">—</span>'}
+      <div style="display:flex;flex-direction:column;gap:4px">
+        ${s.rtsp_url?`<span class="chip" onclick="copyText('${esc(s.rtsp_url)}')" title="${esc(s.rtsp_url)}">📋 RTSP ${esc(s.rtsp_url)}</span>`:'<span class="td-muted">—</span>'}
+        ${s.hls_url?`<span class="chip" onclick="copyText('${esc(s.hls_url)}')" title="${esc(s.hls_url)}" style="color:var(--cyan)">📋 HLS ${esc(s.hls_url)}</span>`:''}
+      </div>
     </td>
     <td>
       <div class="btn-group">
@@ -1930,53 +1941,96 @@ function doSeek(){
 // ═══════════════════════════════════
 async function loadViewer(){
   const grid=document.getElementById('viewer-grid');
+  let data;
   try{
-    const data=await fetch('/api/streams').then(r=>r.json());
-    if(!data.length){
-      grid.innerHTML=`<div class="empty"><div class="empty-icon">📺</div>No streams available.</div>`;
-      return;
-    }
-    grid.innerHTML=data.map(s=>{
-      const status=s.status||'STOPPED';
-      const isLive=status==='LIVE';
-      return `<div class="stream-card ${isLive?'is-live':''}" id="vc-${esc(s.name)}">
+    data=await fetch('/api/streams').then(r=>r.json());
+  }catch(_){
+    if(!grid.querySelector('.stream-card'))
+      grid.innerHTML=`<div class="empty"><div class="empty-icon">⚠</div>Failed to load streams.</div>`;
+    return;
+  }
+  if(!data.length){
+    grid.innerHTML=`<div class="empty"><div class="empty-icon">📺</div>No streams available.</div>`;
+    return;
+  }
+
+  // Build map of existing cards so we don't rebuild playing video elements
+  const existing={};
+  grid.querySelectorAll('.stream-card[data-vname]').forEach(c=>existing[c.dataset.vname]=c);
+
+  // Remove cards for streams that no longer exist
+  const names=new Set(data.map(s=>s.name));
+  Object.keys(existing).forEach(n=>{ if(!names.has(n)){existing[n].remove();delete existing[n];} });
+
+  data.forEach((s,idx)=>{
+    const status=s.status||'STOPPED';
+    const isLive=status==='LIVE';
+    const pct=(+s.progress||0).toFixed(1);
+
+    if(!existing[s.name]){
+      // ── First render: create the full card ──
+      const div=document.createElement('div');
+      div.className='stream-card'+(isLive?' is-live':'');
+      div.dataset.vname=s.name;
+      div.innerHTML=`
         <div class="stream-card-header">
-          <span class="badge ${esc(status)}" style="font-size:9px">${esc(status)}</span>
+          <span class="badge vc-badge-${esc(s.name)}">${esc(status)}</span>
           <span class="stream-card-title">${esc(s.name)}</span>
           <span style="font-size:11px;color:var(--accent-light)">:${s.port}</span>
         </div>
         <div class="stream-preview" id="vp-${esc(s.name)}">
           <div class="stream-overlay" id="vo-${esc(s.name)}">
             ${isLive?`
-              <div class="stream-play-btn" onclick="loadHLSStream('${esc(s.name)}','${esc(s.hls_url||'')}','${esc(s.rtsp_url||'')}')" title="Click to load stream">
-                ▶
-              </div>
+              <div class="stream-play-btn" onclick="loadHLSStream('${esc(s.name)}','${esc(s.hls_url||'')}','${esc(s.rtsp_url||'')}')" title="Click to load stream">▶</div>
               <div style="font-size:10px;color:var(--text3)">Click to preview</div>
             `:`<div style="font-size:12px;color:var(--text3)">Stream offline</div>`}
           </div>
         </div>
         <div class="stream-card-footer">
           <div class="stream-stats">
-            <div class="stat-item">Progress <b>${(+s.progress||0).toFixed(1)}%</b></div>
-            <div class="stat-item">FPS <b>${s.fps>0?Math.round(s.fps)+'fps':'—'}</b></div>
-            <div class="stat-item">Pos <b>${esc(s.position||'—')}</b></div>
+            <div class="stat-item">Progress <b class="vc-pct-${esc(s.name)}">${pct}%</b></div>
+            <div class="stat-item">FPS <b class="vc-fps-${esc(s.name)}">${s.fps>0?Math.round(s.fps)+'fps':'—'}</b></div>
+            <div class="stat-item">Pos <b class="vc-pos-${esc(s.name)}">${esc(s.position||'—')}</b></div>
           </div>
           <div class="btn-group">
             ${isLive?`<button class="btn g" style="font-size:10px" onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>`:''}
             <button class="btn b" style="font-size:10px" onclick="copyText('${esc(s.rtsp_url||'')}')">📋</button>
           </div>
         </div>
-        ${s.rtsp_url?`<div style="padding:0 14px 10px">
-          <div class="info-row">
-            <span class="info-chip">RTSP <b>${esc(s.rtsp_url)}</b></span>
-            ${s.hls_url?`<span class="info-chip">HLS <b>enabled</b></span>`:''}
+        <div style="padding:0 14px 10px">
+          <div class="info-row" style="display:flex;flex-direction:column;gap:4px">
+            ${s.rtsp_url?`<span class="info-chip">RTSP <b>${esc(s.rtsp_url)}</b></span>`:''}
+            ${s.hls_url?`<span class="info-chip" style="color:var(--cyan)">HLS <b>${esc(s.hls_url)}</b></span>`:''}
           </div>
-        </div>`:''}
-      </div>`;
-    }).join('');
-  }catch(_){
-    grid.innerHTML=`<div class="empty"><div class="empty-icon">⚠</div>Failed to load streams.</div>`;
-  }
+        </div>`;
+      // Insert in correct order
+      const all=[...grid.querySelectorAll('.stream-card[data-vname]')];
+      if(idx>=all.length) grid.appendChild(div);
+      else grid.insertBefore(div,all[idx]);
+      existing[s.name]=div;
+    } else {
+      // ── Subsequent renders: only update text/status, leave preview untouched ──
+      const card=existing[s.name];
+      card.className='stream-card'+(isLive?' is-live':'');
+      const badge=card.querySelector('.vc-badge-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      if(badge){badge.className='badge '+esc(status);badge.textContent=status;}
+      const pctEl=card.querySelector('.vc-pct-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      if(pctEl)pctEl.textContent=pct+'%';
+      const fpsEl=card.querySelector('.vc-fps-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      if(fpsEl)fpsEl.textContent=s.fps>0?Math.round(s.fps)+'fps':'—';
+      const posEl=card.querySelector('.vc-pos-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      if(posEl)posEl.textContent=s.position||'—';
+      // Update offline overlay only if preview has no video playing
+      const preview=document.getElementById('vp-'+s.name);
+      const overlay=document.getElementById('vo-'+s.name);
+      if(overlay&&!preview?.querySelector('video')){
+        overlay.innerHTML=isLive?`
+          <div class="stream-play-btn" onclick="loadHLSStream('${esc(s.name)}','${esc(s.hls_url||'')}','${esc(s.rtsp_url||'')}')" title="Click to load stream">▶</div>
+          <div style="font-size:10px;color:var(--text3)">Click to preview</div>
+        `:`<div style="font-size:12px;color:var(--text3)">Stream offline</div>`;
+      }
+    }
+  });
 }
 
 function loadHLSStream(name,hlsUrl,rtspUrl){
