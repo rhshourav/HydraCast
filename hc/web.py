@@ -829,6 +829,17 @@ select option{background:var(--bg3)}
 .app-footer a{color:var(--accent-light);transition:color 0.2s}
 .app-footer a:hover{color:var(--accent)}
 .app-footer .footer-sep{opacity:0.35;margin:0 2px}
+.author-badge{
+  display:inline-flex;align-items:center;gap:7px;
+  background:var(--bg3);border:1px solid var(--border);border-radius:20px;
+  padding:3px 11px;transition:all 0.22s;text-decoration:none !important;
+}
+.author-badge:hover{border-color:var(--accent);background:rgba(184,115,51,0.07)}
+.author-ico{
+  width:18px;height:18px;border-radius:50%;object-fit:cover;
+  flex-shrink:0;border:1px solid var(--border2);
+}
+.author-name{font-size:11px;color:var(--text2);font-weight:500}
 
 /* ─────────── LOGO IMAGE SUPPORT ─────────── */
 .logo-icon{position:relative;overflow:hidden}
@@ -850,9 +861,27 @@ select option{background:var(--bg3)}
 <!-- ══ TOP BAR ══ -->
 <header class="topbar">
   <div class="logo">
-    <div class="logo-icon" id="logo-icon-wrap" title="Click to set custom logo" onclick="openLogoPanel()" style="cursor:pointer">
-      <img id="logo-img" src="" alt="" style="display:none">
-      <span class="logo-letter" id="logo-letter">H</span>
+    <!--
+      ╔══════════════════════════════════════════════════════╗
+      ║  LOGO PLACEHOLDER                                    ║
+      ║  To add your own logo image:                         ║
+      ║    document.getElementById('logo-img').src =         ║
+      ║      '/your-logo.png';                               ║
+      ║  The fallback "LOGO" text hides automatically when   ║
+      ║  the image loads.                                    ║
+      ╚══════════════════════════════════════════════════════╝
+    -->
+    <div class="logo-icon" id="logo-icon-wrap"
+         title="Add your logo — see HTML comment above"
+         style="cursor:default">
+      <img id="logo-img" src="" alt=""
+           style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:10px"
+           onload="this.style.display='block';document.getElementById('logo-letter').style.display='none'"
+           onerror="this.style.display='none';document.getElementById('logo-letter').style.display=''">
+      <span class="logo-letter" id="logo-letter"
+            style="font-size:8px;font-weight:700;letter-spacing:0.06em;color:rgba(255,255,255,0.75);text-transform:uppercase;pointer-events:none;user-select:none;position:relative;z-index:1">
+        LOGO
+      </span>
     </div>
     HydraCast
     <sub id="ver-badge">v—</sub>
@@ -1409,12 +1438,22 @@ select option{background:var(--bg3)}
 
 <!-- ══ FOOTER ══ -->
 <footer class="app-footer">
-  <span>©</span>
-  <a href="https://github.com/rhshourav/HydraCast" target="_blank" rel="noopener">rhshourav</a>
+  <span id="ft-app-name">HydraCast</span>
   <span class="footer-sep">·</span>
-  <span>HydraCast</span>
+  <span id="ft-ver">—</span>
   <span class="footer-sep">·</span>
-  <a href="https://github.com/rhshourav/HydraCast" target="_blank" rel="noopener">github.com/rhshourav/HydraCast</a>
+  <a href="https://github.com/rhshourav/HydraCast"
+     target="_blank" rel="noopener"
+     class="author-badge">
+    <img class="author-ico"
+         src="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/shourav.ico"
+         alt="rhshourav"
+         onerror="this.style.display='none'">
+    <span class="author-name">rhshourav</span>
+  </a>
+  <span class="footer-sep">·</span>
+  <a href="https://github.com/rhshourav/HydraCast" target="_blank" rel="noopener"
+     style="font-size:11px;color:var(--text3)">GitHub ↗</a>
 </footer>
 
 <!-- ══ SEEK MODAL ══ -->
@@ -1543,9 +1582,12 @@ async function loadStreams(){
     const live=data.filter(s=>s.status==='LIVE').length;
     document.getElementById('h-live').textContent=live;
     if(data[0]) {
-      document.getElementById('ver-badge').textContent='v'+data[0].app_ver;
+      const ver='v'+data[0].app_ver;
+      document.getElementById('ver-badge').textContent=ver;
       const sv=document.getElementById('sys-ver');
-      if(sv) sv.textContent='v'+data[0].app_ver;
+      if(sv) sv.textContent=ver;
+      const fv=document.getElementById('ft-ver');
+      if(fv) fv.textContent=ver;
     }
     renderStreams(data);
   }catch(_){}
