@@ -101,15 +101,15 @@ class StreamConfig:
 
     @property
     def rtsp_url(self) -> str:
-        path = f"/{self.rtsp_path}" if self.rtsp_path else ""
-        return f"rtsp://127.0.0.1:{self.port}{path}"
+        path = self.rtsp_path if self.rtsp_path else "stream"
+        return f"rtsp://127.0.0.1:{self.port}/{path}"
 
     @property
     def rtsp_url_external(self) -> str:
         from hc.utils import _local_ip
         ip = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
-        path = f"/{self.rtsp_path}" if self.rtsp_path else ""
-        return f"rtsp://{ip}:{self.port}{path}"
+        path = self.rtsp_path if self.rtsp_path else "stream"
+        return f"rtsp://{ip}:{self.port}/{path}"
 
     @property
     def hls_port(self) -> int:
