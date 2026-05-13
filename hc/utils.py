@@ -42,53 +42,89 @@ def _wait_for_port(port: int, host: str = "127.0.0.1",
 
 
 def _wait_for_rtsp(port: int, timeout: float = 20.0, interval: float = 0.25,
-                   path: str = "stream") -> bool:
+                   path: str = "stream",
+                   check_alive=None) -> bool:
     """
     Wait until MediaMTX RTSP handler is fully ready by sending a real
-    RTSP OPTIONS request and checking for a 200 OK response, then a
-    DESCRIBE on the target path to confirm the path handler is registered.
+    RTSP OPTIONS request, then a DESCRIBE on the target path.
 
     _wait_for_port() only checks TCP connectivity.  On Windows, MediaMTX
-    binds the TCP port 500-800 ms before its RTSP handler is initialised,
-    and the path handler is registered another 1-2 s after that.
+    binds the TCP port 500–800 ms before its RTSP handler is initialised,
+    and the path handler is registered another 1–2 s after that.
     FFmpeg connecting during either gap sends ANNOUNCE and gets 400 Bad
     Request because the publisher path is not registered yet.
 
-    Phase 1 — OPTIONS confirms the RTSP engine is alive (200 OK).
-    Phase 2 — DESCRIBE on the target path confirms the ~all route accepted
-               the path.  We accept both 200 and 404 as "path ready"
-               (404 means MediaMTX knows the path but has no publisher yet,
-               which is exactly the state we need before pushing).
+    Phase 1 — OPTIONS: any RTSP/1.0 response means the engine is alive.
+    Phase 2 — DESCRIBE: 200 or 404 means the path handler is registered.
+               400 = path not yet known — keep waiting.
+
+    Parameters
+    ----------
+    check_alive:
+        Optional zero-argument callable that returns False if the
+        MediaMTX process has died.  When provided, the probe exits
+        early rather than waiting out the full timeout.
     """
     import socket as _socket
+    from hc.constants import LISTEN_ADDR as _LISTEN_ADDR
 
-    options_req = (
-        b"OPTIONS rtsp://127.0.0.1:" + str(port).encode() +
-        b"/ RTSP/1.0\r\n"
-        b"CSeq: 1\r\n"
-        b"User-Agent: HydraCast-probe\r\n"
-        b"\r\n"
+    port_s  = str(port).encode()
+    path_b  = path.encode()
+
+    # Build probe requests for loopback …
+    options_req_lo = (
+        b"OPTIONS rtsp://127.0.0.1:" + port_s +
+        b"/ RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: HydraCast-probe\r\n\r\n"
+    )
+    describe_req_lo = (
+        b"DESCRIBE rtsp://127.0.0.1:" + port_s +
+        b"/" + path_b +
+        b" RTSP/1.0\r\nCSeq: 2\r\nUser-Agent: HydraCast-probe\r\n"
+        b"Accept: application/sdp\r\n\r\n"
     )
 
-    describe_req = (
-        b"DESCRIBE rtsp://127.0.0.1:" + str(port).encode() +
-        b"/" + path.encode() +
-        b" RTSP/1.0\r\n"
-        b"CSeq: 2\r\n"
-        b"User-Agent: HydraCast-probe\r\n"
-        b"Accept: application/sdp\r\n"
-        b"\r\n"
-    )
+    # … and also for the configured listen address when it is a specific IP
+    # (not 0.0.0.0).  If LISTEN_ADDR is a specific IP, MediaMTX only binds
+    # that interface and loopback probes will get "Connection refused".
+    _la = _LISTEN_ADDR()
+    _alt_host: str | None = _la if (_la and _la not in ("0.0.0.0", "127.0.0.1")) else None
 
-    def _probe(req: bytes) -> str:
+    def _build_req(verb: bytes, host: str, cseq: int, extra: bytes = b"") -> bytes:
+        h = host.encode()
+        return (
+            verb + b" rtsp://" + h + b":" + port_s + b"/" +
+            (path_b if verb == b"DESCRIBE" else b"") +
+            b" RTSP/1.0\r\nCSeq: " + str(cseq).encode() +
+            b"\r\nUser-Agent: HydraCast-probe\r\n" + extra + b"\r\n"
+        )
+
+    def _probe(req: bytes, host: str = "127.0.0.1") -> str:
+        """
+        Open a TCP connection, send *req*, collect the full response
+        (until headers end or socket times out), return it as str.
+        Uses a 3-second socket timeout (was 1.5 s) and a recv loop so
+        partial TCP deliveries on Windows are reassembled correctly.
+        """
         try:
             s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-            s.settimeout(1.5)
-            s.connect(("127.0.0.1", port))
+            s.settimeout(3.0)
+            s.connect((host, port))
             s.sendall(req)
-            resp = s.recv(256).decode(errors="replace")
+            chunks: list[bytes] = []
+            deadline_inner = time.time() + 3.0
+            while time.time() < deadline_inner:
+                try:
+                    chunk = s.recv(1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    # Stop once we have the end-of-headers marker.
+                    if b"\r\n\r\n" in b"".join(chunks):
+                        break
+                except _socket.timeout:
+                    break
             s.close()
-            return resp
+            return b"".join(chunks).decode(errors="replace")
         except Exception:
             return ""
 
@@ -96,19 +132,42 @@ def _wait_for_rtsp(port: int, timeout: float = 20.0, interval: float = 0.25,
     options_ok = False
 
     while time.time() < deadline:
+        # Early exit if the MediaMTX process has died.
+        if check_alive is not None and not check_alive():
+            return False
+
         if not options_ok:
-            resp = _probe(options_req)
-            if "RTSP/1.0 200" in resp:
+            # Phase 1: any RTSP/1.0 response means the engine is accepting
+            # connections (we no longer require exactly "200 OK" since some
+            # MediaMTX builds return "200 OK" while others may differ).
+            resp = _probe(options_req_lo)
+            if not resp and _alt_host:
+                resp = _probe(
+                    _build_req(b"OPTIONS", _alt_host, 1), _alt_host
+                )
+            if "RTSP/1.0" in resp:
                 options_ok = True
-                # Don't break immediately — fall through to DESCRIBE probe.
-        else:
+                # Fall through immediately to DESCRIBE in the same iteration.
+        
+        if options_ok:
             # Phase 2: verify path handler is registered.
             # 200 = publisher already present; 404 = path known, no publisher yet.
             # Both mean the path is registered and FFmpeg can ANNOUNCE.
             # 400 = path not yet known — keep waiting.
-            resp = _probe(describe_req)
+            # Any other RTSP response also means the path handler is alive.
+            resp = _probe(describe_req_lo)
+            if not resp and _alt_host:
+                resp = _probe(
+                    _build_req(b"DESCRIBE", _alt_host, 2,
+                               b"Accept: application/sdp\r\n"),
+                    _alt_host,
+                )
             if "RTSP/1.0 200" in resp or "RTSP/1.0 404" in resp:
                 return True
+            # Accept any non-400 RTSP response as "handler alive" too.
+            if "RTSP/1.0" in resp and "RTSP/1.0 400" not in resp:
+                return True
+
         time.sleep(interval)
 
     return False
