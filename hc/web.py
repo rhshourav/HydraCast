@@ -925,7 +925,7 @@ select option{background:var(--bg3)}
       ║  LOGO PLACEHOLDER                                    ║
       ║  To add your own logo image:                         ║
       ║    document.getElementById('logo-img').src =         ║
-      ║      '/your-logo.png';                               ║
+      ║      '/your-resources/logo.png';                               ║
       ║  The fallback "LOGO" text hides automatically when   ║
       ║  the image loads.                                    ║
       ╚══════════════════════════════════════════════════════╝
@@ -3367,6 +3367,49 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
     def _json(self, data: Any, code: int = 200) -> None:
         self._send(code, json.dumps(data, default=str), "application/json")
 
+    def _serve_static(self, url_path: str) -> None:
+        """
+        Serve a static file from <BASE_DIR>/static/ or BASE_DIR itself.
+        Supports: .png .jpg .jpeg .gif .webp .svg .ico .css .js
+        Place resources/logo.png at <BASE_DIR>/resources/logo.png  — it will be served as /resources/logo.png.
+        Any file under <BASE_DIR>/static/ is served as /static/<filename>.
+        """
+        _MIME = {
+            ".png":  "image/png",
+            ".jpg":  "image/jpeg", ".jpeg": "image/jpeg",
+            ".gif":  "image/gif",
+            ".webp": "image/webp",
+            ".svg":  "image/svg+xml",
+            ".ico":  "image/x-icon",
+            ".css":  "text/css",
+            ".js":   "application/javascript",
+        }
+        # Resolve file on disk
+        name = url_path.lstrip("/")                     # e.g. "resources/logo.png" or "static/x.png"
+        candidate = BASE_DIR() / name
+        if not candidate.exists() or not candidate.is_file():
+            self._send(404, b"Not Found", "text/plain")
+            return
+        # Safety: must stay inside BASE_DIR
+        try:
+            candidate.resolve().relative_to(BASE_DIR().resolve())
+        except ValueError:
+            self._send(403, b"Forbidden", "text/plain")
+            return
+        ext  = candidate.suffix.lower()
+        mime = _MIME.get(ext, "application/octet-stream")
+        body = candidate.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type",   mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control",  "public, max-age=86400")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def do_OPTIONS(self) -> None:
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin",  "*")
@@ -3406,6 +3449,8 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             except Exception as exc:
                 log.error("WebHandler GET %s: %s", path, exc)
                 self._json({"error": "internal server error"}, 500)
+        elif path.startswith("/static/") or path in ("/resources/logo.png", "/favicon.ico"):
+            self._serve_static(path)
         else:
             self._send(404, b"Not Found", "text/plain")
 
