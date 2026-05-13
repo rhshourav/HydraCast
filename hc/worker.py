@@ -928,8 +928,12 @@ class StreamWorker:
                 "WARN",
             )
 
-        # ── Advance playlist (multi-file) — with watchdog skip ────────────────
-        if (not self.state.oneshot_active
+        # ── Advance playlist (multi-file, clean exits only) ─────────────────
+        # Only advance on a clean exit (0 or 255).  On an error exit, let
+        # _auto_restart handle recovery via a full _do_start — advancing
+        # the playlist into a broken MediaMTX session just cascades failures.
+        if (ret in (0, 255)
+                and not self.state.oneshot_active
                 and len(self.state.config.playlist) > 1):
             self._advance_playlist()
             next_item = self._current_item()
@@ -955,9 +959,8 @@ class StreamWorker:
                     spos    = int(h) * 3600 + int(m) * 60 + float(s)
                 except Exception:
                     spos = 0.0
-                # Cycle MediaMTX so it clears the old publisher session before
-                # the next ffmpeg push; without this the new push is rejected
-                # with "Could not write header / 400 Bad Request".
+                # Cycle MediaMTX to clear the old publisher session; a direct
+                # _start_ffmpeg without cycling gets 400 Bad Request.
                 if not self._cycle_mediamtx():
                     self._log(
                         "Playlist advance: MediaMTX cycle failed — "
@@ -973,7 +976,7 @@ class StreamWorker:
             else:
                 if next_item:
                     self._log(
-                        f"All next playlist files are missing or unreadable.", "ERROR"
+                        "All next playlist files are missing or unreadable.", "ERROR"
                     )
 
         if ret in (0, 255):
