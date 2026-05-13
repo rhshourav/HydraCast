@@ -329,60 +329,63 @@ class StreamManager:
                     )
                 JSONManager.mark_event_played(self._events, ev.event_id)
                 continue
-            if not (delta <= (_SCHED_TICK + 10)):
-                state = self.get_state(ev.stream_name)
-                if state is None:
-                    log.warning(
-                        "manager: event '%s' target stream '%s' not found.",
-                        ev.event_id, ev.stream_name,
-                    )
-                    JSONManager.mark_event_played(self._events, ev.event_id)
-                    continue
-                try:
-                    log.info(
-                        "manager: firing one-shot event '%s' → '%s'.",
-                        ev.event_id, ev.stream_name,
-                    )
-                    state.log_add(
-                        f"🎬 One-shot event: playing '{ev.file_path.name}' "
-                        f"at {ev.play_at.strftime('%H:%M')}."
-                    )
-                    worker = self.get_worker(ev.stream_name)
-                    if worker:
-                        # If the stream is not live, start it first so
-                        # play_oneshot has a running ffmpeg pipeline to hand off to.
-                        if state.status not in (
-                            StreamStatus.LIVE, StreamStatus.STARTING
-                        ):
-                            log.info(
-                                "manager: stream '%s' not running — starting "
-                                "before one-shot event.",
-                                ev.stream_name,
-                            )
-                            state.log_add(
-                                "▶ Stream started automatically for one-shot event."
-                            )
-                            self._start_worker(state)
-                            # Give the worker a moment to reach LIVE before
-                            # injecting the one-shot clip.
-                            deadline = time.time() + 10.0
-                            while time.time() < deadline:
-                                if state.status == StreamStatus.LIVE:
-                                    break
-                                time.sleep(0.25)
-                        # play_oneshot is the correct method on StreamWorker
-                        # (inject_event does not exist).
-                        worker.play_oneshot(ev)
-                    JSONManager.mark_event_played(self._events, ev.event_id)
-                    self._glog.add(
-                        f"Event fired: '{ev.file_path.name}' → {ev.stream_name}",
-                        "INFO",
-                    )
-                except Exception as exc:
-                    log.error(
-                        "manager: event '%s' fire failed: %s",
-                        ev.event_id, exc,
-                    )
+            # Fire window: between now and (tick + 10 s) into the future.
+            if not (0 <= delta <= (_SCHED_TICK + 10)):
+                continue
+
+            state = self.get_state(ev.stream_name)
+            if state is None:
+                log.warning(
+                    "manager: event '%s' target stream '%s' not found.",
+                    ev.event_id, ev.stream_name,
+                )
+                JSONManager.mark_event_played(self._events, ev.event_id)
+                continue
+            try:
+                log.info(
+                    "manager: firing one-shot event '%s' → '%s'.",
+                    ev.event_id, ev.stream_name,
+                )
+                state.log_add(
+                    f"🎬 One-shot event: playing '{ev.file_path.name}' "
+                    f"at {ev.play_at.strftime('%H:%M')}."
+                )
+                worker = self.get_worker(ev.stream_name)
+                if worker:
+                    # If the stream is not live, start it first so
+                    # play_oneshot has a running ffmpeg pipeline to hand off to.
+                    if state.status not in (
+                        StreamStatus.LIVE, StreamStatus.STARTING
+                    ):
+                        log.info(
+                            "manager: stream '%s' not running — starting "
+                            "before one-shot event.",
+                            ev.stream_name,
+                        )
+                        state.log_add(
+                            "▶ Stream started automatically for one-shot event."
+                        )
+                        self._start_worker(state)
+                        # Give the worker a moment to reach LIVE before
+                        # injecting the one-shot clip.
+                        deadline = time.time() + 10.0
+                        while time.time() < deadline:
+                            if state.status == StreamStatus.LIVE:
+                                break
+                            time.sleep(0.25)
+                    # play_oneshot is the correct method on StreamWorker
+                    # (inject_event does not exist).
+                    worker.play_oneshot(ev)
+                JSONManager.mark_event_played(self._events, ev.event_id)
+                self._glog.add(
+                    f"Event fired: '{ev.file_path.name}' → {ev.stream_name}",
+                    "INFO",
+                )
+            except Exception as exc:
+                log.error(
+                    "manager: event '%s' fire failed: %s",
+                    ev.event_id, exc,
+                )
 
     def _check_compliance(self, now: datetime) -> None:
         """
