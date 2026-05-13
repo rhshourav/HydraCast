@@ -173,7 +173,7 @@ def grab_thumbnail(file_path: Path, seek_secs: float = 5.0) -> Optional[bytes]:
 class StreamWorker:
     MAX_AUTO_RESTARTS = 8
     BACKOFF           = [5, 10, 20, 40, 60, 120, 120, 120]
-    MTX_READY_TIMEOUT = 13.0
+    MTX_READY_TIMEOUT = 20.0   # increased: Windows binds TCP before path handler is ready
 
     _FFMPEG_PROGRESS_RE = re.compile(r"^(\w+)=(.+)$")
 
@@ -660,7 +660,8 @@ class StreamWorker:
         # connecting during that gap sends ANNOUNCE and gets 400 Bad Request.
         # _wait_for_rtsp() sends a real RTSP OPTIONS and waits for 200 OK.
         self._log(f"Waiting for MediaMTX RTSP handler :{cfg.port} (timeout {self.MTX_READY_TIMEOUT:.0f}s) ...")
-        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT):
+        _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
+        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT, path=_push_path):
             log_tail = _tail_log(LOGS_DIR() / f"mediamtx_{cfg.port}.log", 12)
             detail = log_tail or "No output in MediaMTX log file"
             self._log(
@@ -887,22 +888,20 @@ class StreamWorker:
 
     def _start_ffmpeg_with_retry(
         self, item: PlaylistItem, seek_pos: float,
-        max_retries: int = 4, retry_delay: float = 1.5,
+        max_retries: int = 6, retry_delay: float = 2.0,
     ) -> bool:
         """
         Launch FFmpeg and retry if MediaMTX returns 400 Bad Request.
 
-        MediaMTX registers YAML paths asynchronously after binding the RTSP
-        port.  Even after a successful RTSP OPTIONS probe, the publisher path
-        may not be ready for ANNOUNCE yet.  Rather than adding a fixed sleep,
-        we detect the 400 in stderr and retry with a short back-off — this
-        self-corrects in 1-2 retries without adding unnecessary latency when
-        MediaMTX is already ready.
+        On Windows, MediaMTX's path handler registration is async and can lag
+        behind the RTSP OPTIONS probe by 1-3 seconds.  We detect the 400 and
+        retry with exponential backoff (2 s, 3 s, 4 s …) rather than a fixed
+        delay, which self-corrects in 1-2 retries on Linux and 2-3 on Windows.
 
-        stderr is consumed by the drain thread started in _start_ffmpeg; we
-        read it from the attached _stderr_buf deque rather than from the pipe
-        directly (which would have been consumed and return empty).
+        stderr is captured by the drain thread in _start_ffmpeg into a deque
+        attached to the process; we read from there instead of the pipe.
         """
+        backoff = retry_delay
         for attempt in range(1, max_retries + 1):
             if not self._start_ffmpeg(item, seek_pos):
                 return False  # binary/launch error — no point retrying
@@ -911,15 +910,17 @@ class StreamWorker:
             if proc is None:
                 return False
 
-            # Give ffmpeg up to 3 s to either stabilise or fail fast with 400.
-            deadline = time.time() + 3.0
+            # Give FFmpeg up to 4 s to either stabilise or fail fast with 400.
+            # Using 4 s (up from 3) gives the path handler a bit more room on
+            # slower Windows systems before we declare it failed.
+            deadline = time.time() + 4.0
             while time.time() < deadline:
                 if proc.poll() is not None:
                     break
                 time.sleep(0.1)
 
             if proc.poll() is None:
-                # Still running after 3 s — MediaMTX accepted the push.
+                # Still running after 4 s — MediaMTX accepted the push.
                 return True
 
             # FFmpeg exited — wait briefly for the drain thread to capture stderr.
@@ -948,23 +949,23 @@ class StreamWorker:
                     self._log(
                         f"FFmpeg got 400 Bad Request from MediaMTX "
                         f"(attempt {attempt}/{max_retries}) — "
-                        f"retrying in {retry_delay:.1f}s …",
+                        f"retrying in {backoff:.1f}s …",
                         "WARN",
                     )
-                    time.sleep(retry_delay)
+                    time.sleep(backoff)
+                    backoff = min(backoff * 1.5, 10.0)   # exponential, cap at 10 s
                     continue
                 else:
                     self._log(
                         f"FFmpeg got 400 Bad Request after {max_retries} attempts — "
-                        "MediaMTX path not ready. Triggering auto-restart.",
+                        "MediaMTX path still not ready. Triggering auto-restart.",
                         "ERROR",
                     )
                     self.state.status    = StreamStatus.ERROR
                     self.state.error_msg = "MediaMTX 400 Bad Request (path not ready)"
                     return False
             else:
-                # Non-400 error: capture it in state and let _monitor / _auto_restart
-                # decide what to do.  Return False so the caller knows FFmpeg failed.
+                # Non-400 error: capture it and let the caller decide.
                 if proc.returncode not in (None, 0, 255):
                     self.state.status    = StreamStatus.ERROR
                     self.state.error_msg = (
@@ -973,7 +974,7 @@ class StreamWorker:
                     )
                     self._log(self.state.error_msg, "ERROR")
                     return False
-                # Code 0 / 255 on a fresh start means the file finished instantly
+                # Code 0 / 255 on a fresh start means the file ended instantly
                 # (e.g. seek beyond end).  Return True so the monitor can advance.
                 return True
 
@@ -1248,12 +1249,14 @@ class StreamWorker:
         if not self._start_mediamtx(mtx_cfg):
             self._log("_cycle_mediamtx: MediaMTX failed to restart.", "ERROR")
             return False
-        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT):
+        _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
+        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT, path=_push_path):
             self._log(
                 f"_cycle_mediamtx: MediaMTX RTSP handler not ready on :{cfg.port}.", "ERROR"
             )
             self._kill_mediamtx()
             return False
+        # Path probe confirmed — no extra settle delay needed.
         return True
 
     def _kill_ffmpeg(self) -> None:
