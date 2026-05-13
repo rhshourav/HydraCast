@@ -306,13 +306,30 @@ class StreamManager:
                     )
 
     def _check_events(self, now: datetime) -> None:
-        """Fire any pending OneShotEvent within the next scheduler tick window."""
+        """Fire any pending OneShotEvent within the scheduler tick window."""
         for ev in self._events:
             if ev.played:
                 continue
             delta = (ev.play_at - now).total_seconds()
-            # Fire if within ±(tick + 10 s) of the scheduled time.
-            if -(10) <= delta <= (_SCHED_TICK + 10):
+            # Fire window: up to (tick + 10 s) in the future, or overdue by
+            # up to 5 minutes (covers slow MediaMTX startup, busy scheduler).
+            # Events more than 5 minutes overdue are marked played (missed).
+            _PAST_CUTOFF = 300.0
+            if delta < -_PAST_CUTOFF:
+                log.warning(
+                    "manager: event '%s' missed (%.0fs overdue) — marking played.",
+                    ev.event_id, -delta,
+                )
+                state = self.get_state(ev.stream_name)
+                if state:
+                    state.log_add(
+                        f"⚠ One-shot event missed (scheduled "
+                        f"{ev.play_at.strftime('%H:%M')}, "
+                        f"{int(-delta)}s overdue)."
+                    )
+                JSONManager.mark_event_played(self._events, ev.event_id)
+                continue
+            if not (delta <= (_SCHED_TICK + 10)):
                 state = self.get_state(ev.stream_name)
                 if state is None:
                     log.warning(
