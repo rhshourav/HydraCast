@@ -42,6 +42,7 @@ class MediaMTXConfig:
     def write(state: StreamState) -> Path:
         cfg   = state.config
         port  = cfg.port
+        spath = cfg.rtsp_path if cfg.rtsp_path else "~all"
         addr  = LISTEN_ADDR()
         log_f = (LOGS_DIR() / f"mediamtx_{port}.log").resolve()
         cfg_f = CONFIGS_DIR() / f"mediamtx_{port}.yml"
@@ -102,14 +103,6 @@ class MediaMTXConfig:
                 f"webrtc: false\n"
                 f"hls: false\n"
             )
-
-        # spath: when stream_path is set use it as the named path.
-        # When empty, use "" (empty string key) which matches a publisher
-        # pushing to rtsp://host:port with NO path component.
-        # Do NOT use ~all here — ~all is a read-side catch-all for pulling;
-        # it does not reliably accept a publish with an empty path in v1.9.1,
-        # causing FFmpeg to get 400 Bad Request on the first ANNOUNCE.
-        spath = cfg.rtsp_path if cfg.rtsp_path else '""'
 
         paths_section = (
             f"\npaths:\n"
