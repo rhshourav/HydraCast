@@ -415,8 +415,8 @@ a:hover{color:var(--accent)}
 .hbtn.r:hover{background:rgba(194,120,120,0.25)}
 
 /* ─────────── MAIN AREA ─────────── */
-.main-area{flex:1;overflow:hidden;display:flex;flex-direction:column}
-.tab-panel{display:none;flex:1;overflow-y:auto;overflow-x:hidden;padding:24px}
+.main-area{flex:1;min-height:0;display:flex;flex-direction:column}
+.tab-panel{display:none;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:24px}
 .tab-panel.active{
   display:flex;flex-direction:column;gap:20px;
   overflow-y:auto;overflow-x:hidden;
@@ -442,13 +442,10 @@ a:hover{color:var(--accent)}
 /* ─────────── CARD ─────────── */
 .card{
   background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  overflow:visible;transition:background 0.35s,border-color 0.35s,box-shadow 0.25s;
+  overflow:hidden;transition:background 0.35s,border-color 0.35s,box-shadow 0.25s;
   box-shadow:0 1px 4px var(--shadow);
   animation:fadeIn 0.25s ease both;
 }
-/* preserve rounded corners on first/last card children */
-.card>.card-hdr:first-child{border-radius:var(--radius-lg) var(--radius-lg) 0 0}
-.card>.tbl-wrap:last-child,.card>.card-body:last-child{border-radius:0 0 var(--radius-lg) var(--radius-lg);overflow:hidden}
 .card:hover{box-shadow:0 4px 16px var(--shadow)}
 .card-hdr{
   padding:14px 20px;border-bottom:1px solid var(--border);
@@ -3764,7 +3761,7 @@ def _notify_folder_upload(upload_dir: Path) -> None:
     except Exception as exc:
         log.debug("_notify_folder_upload error: %s", exc)
 
-def _get_next_in_queue(st: Any, cfg: Any, n: int = 2) -> list:
+def _get_next_in_queue(st, cfg, n=2):
     """Return the next *n* playlist file names after the currently playing item."""
     playlist = cfg.playlist
     if not playlist:
