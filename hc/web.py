@@ -980,6 +980,7 @@ select option{background:var(--bg3)}
       Auto-refresh
     </label>
     <button class="btn b" onclick="loadStreams()">↻ Refresh</button>
+    <button class="btn" onclick="downloadUrlsCsv()" title="Download all stream URLs as a CSV file">⬇ URLs CSV</button>
   </div>
   <div class="card">
     <div class="tbl-wrap">
@@ -1686,6 +1687,19 @@ async function api(action,data){
     loadStreams();
     return j;
   }catch(e){toast('Request failed','err');}
+}
+
+// ═══════════════════════════════════
+// DOWNLOAD URLS CSV
+// ═══════════════════════════════════
+function downloadUrlsCsv(){
+  const a=document.createElement('a');
+  a.href='/api/urls_csv';
+  a.download='';           // filename comes from Content-Disposition
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('Downloading URLs CSV\u2026','info');
 }
 
 // ═══════════════════════════════════
@@ -3343,6 +3357,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
             "/api/stream_view":    lambda: self._get_stream_view(qs),
+            "/api/urls_csv":               self._get_urls_csv,
             "/api/mail_config":              self._get_mail_config,
             "/api/gmail_oauth2_status":      self._get_gmail_oauth2_status,
             "/api/microsoft_oauth2_status":  self._get_ms_oauth2_status,
@@ -3461,6 +3476,54 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "compliance_loop":      cfg.compliance_loop,
             })
         self._json(result)
+
+    def _get_urls_csv(self) -> None:
+        """
+        Generate and download a CSV file containing all stream URLs.
+        Columns: name, port, stream_path, rtsp_url, hls_url, status, enabled
+        """
+        import io, csv as _csv
+        mgr = _WEB_MANAGER
+        rows = []
+        if mgr:
+            for st in mgr.states:
+                cfg = st.config
+                rows.append({
+                    "name":        cfg.name,
+                    "port":        cfg.port,
+                    "stream_path": cfg.stream_path or "",
+                    "rtsp_url":    cfg.rtsp_url_external,
+                    "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
+                    "status":      st.status.label,
+                    "enabled":     "yes" if cfg.enabled else "no",
+                })
+
+        buf = io.StringIO()
+        writer = _csv.DictWriter(
+            buf,
+            fieldnames=["name", "port", "stream_path", "rtsp_url", "hls_url", "status", "enabled"],
+            lineterminator="\r\n",
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+        body = buf.getvalue().encode("utf-8")
+
+        ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"hydracast_urls_{ts}.csv"
+
+        self.send_response(200)
+        self.send_header("Content-Type",        "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+        self.send_header("Content-Length",      str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        for k, v in _SEC_HEADERS.items():
+            self.send_header(k, v)
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        log.info("URL CSV downloaded: %s (%d stream(s))", fname, len(rows))
 
     def _get_library(self) -> None:
         self._json(_get_library_cached())
