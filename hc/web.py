@@ -852,6 +852,49 @@ select option{background:var(--bg3)}
   position:relative;z-index:1;
 }
 
+/* ── FILE MANAGER ── */
+.fm-layout{display:grid;grid-template-columns:220px 1fr;gap:16px;height:100%;min-height:0}
+.fm-sidebar{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;display:flex;flex-direction:column;transition:background 0.35s,border-color 0.35s}
+.fm-sidebar-hdr{padding:12px 16px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);font-family:var(--font-display)}
+.fm-dir-list{flex:1;overflow-y:auto;padding:6px 0}
+.fm-dir-item{padding:9px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;transition:background 0.15s;font-family:var(--font-sans);color:var(--text2)}
+.fm-dir-item:hover{background:var(--bg3)}
+.fm-dir-item.active{background:rgba(184,115,51,0.09);color:var(--accent);border-left:2px solid var(--accent);padding-left:14px}
+.fm-dir-icon{font-size:14px;flex-shrink:0;opacity:0.65}
+.fm-main{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;display:flex;flex-direction:column;transition:background 0.35s,border-color 0.35s}
+.fm-main-hdr{padding:11px 16px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fm-breadcrumb{display:flex;align-items:center;gap:3px;font-size:12px;flex:1;flex-wrap:wrap;min-width:0}
+.fm-breadcrumb span{color:var(--text3);cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.15s,background 0.15s;white-space:nowrap}
+.fm-breadcrumb span:hover{color:var(--accent);background:rgba(184,115,51,0.08)}
+.fm-breadcrumb .fm-sep{color:var(--text3);opacity:0.4;font-size:10px;cursor:default;padding:0 2px}
+.fm-breadcrumb span.fm-cur{color:var(--text);font-weight:600;cursor:default}
+.fm-toolbar{display:flex;gap:6px;flex-shrink:0}
+.fm-body{flex:1;overflow-y:auto}
+.fm-empty{padding:56px 24px;text-align:center;color:var(--text3);display:flex;flex-direction:column;align-items:center;gap:10px}
+.fm-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);transition:background 0.12s;font-size:13px;font-family:var(--font-sans);position:relative}
+.fm-row:last-child{border-bottom:none}
+.fm-row:hover{background:rgba(184,115,51,0.04)}
+.fm-row-icon{font-size:16px;flex-shrink:0;width:22px;text-align:center}
+.fm-row-name{flex:1;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+.fm-row-name.is-dir{cursor:pointer;color:var(--text)}
+.fm-row-name.is-dir:hover{color:var(--accent)}
+.fm-row-meta{font-size:11px;color:var(--text3);white-space:nowrap;font-family:var(--font-mono);flex-shrink:0}
+.fm-row-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.15s;flex-shrink:0}
+.fm-row:hover .fm-row-actions{opacity:1}
+.fm-action-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text3);cursor:pointer;font-size:11px;padding:3px 9px;border-radius:6px;transition:all 0.15s;white-space:nowrap;font-family:var(--font-sans)}
+.fm-action-btn:hover{color:var(--accent);border-color:var(--accent);background:rgba(184,115,51,0.09)}
+.fm-action-btn.del:hover{color:var(--red);border-color:var(--red);background:var(--red-dim)}
+.fm-action-btn.cp:hover{color:var(--blue);border-color:var(--blue);background:var(--blue-dim)}
+.fm-action-btn.mv:hover{color:var(--yellow);border-color:var(--yellow);background:var(--yellow-dim)}
+.fm-status-bar{padding:7px 16px;font-size:11px;color:var(--text3);border-top:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:10px;font-family:var(--font-sans);flex-shrink:0}
+.fm-status-bar b{color:var(--text2)}
+/* FM Dialogs */
+.fm-dialog-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(5px)}
+.fm-dialog-overlay.open{display:flex;animation:fadeIn 0.18s ease both}
+.fm-dialog{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:440px;max-width:92vw;box-shadow:0 24px 70px var(--shadow);animation:slideUp 0.22s ease both;transition:background 0.35s,border-color 0.35s}
+.fm-dialog h4{font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text)}
+.fm-dialog-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
 </style>
 </head>
 <body>
@@ -899,6 +942,9 @@ select option{background:var(--bg3)}
     </button>
     <button class="nav-tab" onclick="switchTab('upload',this)">
       <span class="tab-dot"></span>Upload
+    </button>
+    <button class="nav-tab" onclick="switchTab('files',this);if(!_fmLoaded){_fmLoaded=true;loadFiles('');}">
+      <span class="tab-dot"></span>Files
     </button>
     <button class="nav-tab" onclick="switchTab('events',this)">
       <span class="tab-dot"></span>Events
@@ -1016,6 +1062,97 @@ select option{background:var(--bg3)}
     </div>
     <input type="file" id="fpick" multiple accept="video/*,audio/*" style="display:none" onchange="doUpload(this.files)">
     <ul id="uplist"></ul>
+  </div>
+</div>
+
+<!-- ══ FILES TAB ══ -->
+<div id="tab-files" class="tab-panel">
+  <div class="section-hdr">
+    <h2>File Manager</h2><span class="sep"></span>
+    <button class="btn b" onclick="loadFiles(_fmCurrentPath)">↻ Refresh</button>
+    <button class="btn g" onclick="fmNewFolder()">＋ New Folder</button>
+  </div>
+  <div class="fm-layout" style="flex:1;min-height:0">
+
+    <!-- Sidebar -->
+    <div class="fm-sidebar">
+      <div class="fm-sidebar-hdr">Folders</div>
+      <div class="fm-dir-list" id="fm-dir-list">
+        <div class="fm-dir-item active" onclick="loadFiles('')">
+          <span class="fm-dir-icon">📁</span> Media (root)
+        </div>
+      </div>
+    </div>
+
+    <!-- Main panel -->
+    <div class="fm-main">
+      <div class="fm-main-hdr">
+        <div class="fm-breadcrumb" id="fm-breadcrumb">
+          <span onclick="loadFiles('')">Media</span>
+        </div>
+        <div class="fm-toolbar">
+          <button class="btn b" style="font-size:11px" onclick="loadFiles(_fmCurrentPath)">↻</button>
+          <button class="btn g" style="font-size:11px" onclick="fmNewFolder()">＋ Folder</button>
+        </div>
+      </div>
+      <div class="fm-body" id="fm-body">
+        <div class="fm-empty">
+          <div class="empty-icon">📂</div>
+          <div>Switch to the Files tab to browse your media library.</div>
+        </div>
+      </div>
+      <div class="fm-status-bar" id="fm-status">Ready</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- FM: Rename dialog -->
+<div class="fm-dialog-overlay" id="fm-rename-overlay">
+  <div class="fm-dialog">
+    <h4>✏ Rename</h4>
+    <div class="fg"><label>New name</label>
+      <input type="text" id="fm-rename-input" placeholder="new name"
+             onkeydown="if(event.key==='Enter')fmDoRename()">
+    </div>
+    <div class="fm-dialog-footer">
+      <button class="btn" onclick="fmCloseDialogs()">Cancel</button>
+      <button class="btn g" onclick="fmDoRename()">Rename</button>
+    </div>
+  </div>
+</div>
+
+<!-- FM: Move dialog -->
+<div class="fm-dialog-overlay" id="fm-move-overlay">
+  <div class="fm-dialog">
+    <h4>↗ Move to folder</h4>
+    <div class="fg" style="margin-bottom:10px">
+      <label>Destination folder</label>
+      <select id="fm-move-dest" style="width:100%"><option value="">Media (root)</option></select>
+    </div>
+    <div class="fm-dialog-footer">
+      <button class="btn" onclick="fmCloseDialogs()">Cancel</button>
+      <button class="btn y" onclick="fmDoMove()">Move</button>
+    </div>
+  </div>
+</div>
+
+<!-- FM: Copy dialog -->
+<div class="fm-dialog-overlay" id="fm-copy-overlay">
+  <div class="fm-dialog">
+    <h4>⎘ Copy to folder</h4>
+    <div class="fg" style="margin-bottom:10px">
+      <label>Destination folder</label>
+      <select id="fm-copy-dest" style="width:100%"><option value="">Media (root)</option></select>
+    </div>
+    <div class="fg">
+      <label>New filename <span style="color:var(--text3);font-weight:400">(optional — leave blank to keep same name)</span></label>
+      <input type="text" id="fm-copy-name" placeholder="same as source">
+    </div>
+    <div class="fm-dialog-footer">
+      <button class="btn" onclick="fmCloseDialogs()">Cancel</button>
+      <button class="btn b" onclick="fmDoCopy()">Copy</button>
+    </div>
   </div>
 </div>
 
@@ -2814,11 +2951,203 @@ function toggleTheme(){
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT')return;
   if((e.key==='r'||e.key==='R')&&!e.ctrlKey&&!e.metaKey){loadStreams();toast('Refreshed','info');}
-  if(e.key==='Escape'){closeSeek();}
+  if(e.key==='Escape'){closeSeek();fmCloseDialogs();}
 });
 document.getElementById('seek-modal').addEventListener('click',e=>{
   if(e.target===e.currentTarget)closeSeek();
 });
+
+// ═══════════════════════════════════════════════════════════════
+// FILE MANAGER
+// ═══════════════════════════════════════════════════════════════
+let _fmCurrentPath = '';
+let _fmLoaded      = false;
+let _fmOp          = null;   // {action, path, name, isDir}
+let _fmAllDirs     = [];     // flat list of all subdir paths for move/copy selects
+
+async function loadFiles(path) {
+  _fmCurrentPath = path || '';
+  const body   = document.getElementById('fm-body');
+  const status = document.getElementById('fm-status');
+  body.innerHTML = '<div class="fm-empty"><div class="empty-icon" style="animation:spin 1.2s linear infinite">⟳</div></div>';
+  status.textContent = 'Loading…';
+  try {
+    const d = await fetch('/api/files?path=' + encodeURIComponent(_fmCurrentPath)).then(r => r.json());
+    if (d.error) {
+      body.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>${d.error}</div></div>`;
+      status.textContent = 'Error';
+      return;
+    }
+
+    // ── Breadcrumb ──────────────────────────────────────────────
+    const bc = document.getElementById('fm-breadcrumb');
+    bc.innerHTML = d.breadcrumb.map((crumb, i) => {
+      const isLast = i === d.breadcrumb.length - 1;
+      return (i > 0 ? '<span class="fm-sep">›</span>' : '') +
+        `<span onclick="loadFiles('${crumb.path}')"
+               class="${isLast ? 'fm-cur' : ''}">${crumb.name}</span>`;
+    }).join('');
+
+    // ── Sidebar rebuild (root dirs only) ────────────────────────
+    _fmAllDirs = [''];
+    const sidebar = document.getElementById('fm-dir-list');
+    sidebar.innerHTML =
+      `<div class="fm-dir-item${_fmCurrentPath===''?' active':''}" onclick="loadFiles('')">` +
+      `<span class="fm-dir-icon">📁</span> Media (root)</div>`;
+    try {
+      const root = await fetch('/api/files?path=').then(r => r.json());
+      (root.dirs || []).forEach(dir => {
+        _fmAllDirs.push(dir.path);
+        sidebar.insertAdjacentHTML('beforeend',
+          `<div class="fm-dir-item${dir.path===_fmCurrentPath?' active':''}"
+                onclick="loadFiles('${dir.path}')">` +
+          `<span class="fm-dir-icon">📂</span> ${dir.name}</div>`);
+      });
+    } catch(_) {}
+
+    // ── Body rows ───────────────────────────────────────────────
+    const rows = [];
+
+    // Folders first
+    d.dirs.forEach(dir => {
+      rows.push(`
+        <div class="fm-row">
+          <span class="fm-row-icon">📁</span>
+          <span class="fm-row-name is-dir" ondblclick="loadFiles('${dir.path}')"
+                onclick="loadFiles('${dir.path}')">${dir.name}</span>
+          <span class="fm-row-meta">${dir.items} item${dir.items!==1?'s':''}</span>
+          <div class="fm-row-actions">
+            <button class="fm-action-btn"
+                    onclick="fmStartRename('${dir.path}','${dir.name}',true)">✏ Rename</button>
+            <button class="fm-action-btn mv"
+                    onclick="fmStartMove('${dir.path}','${dir.name}',true)">↗ Move</button>
+            <button class="fm-action-btn del"
+                    onclick="fmDeleteDir('${dir.path}','${dir.name}')">🗑 Delete</button>
+          </div>
+        </div>`);
+    });
+
+    // Files
+    d.files.forEach(f => {
+      const ico = f.ext.match(/\.(mp3|aac|flac|wav|ogg|m4a)$/i) ? '🎵' : '🎬';
+      const sup = f.supported
+        ? `<span style="font-size:10px;color:var(--green);margin-left:4px">✓</span>`
+        : `<span style="font-size:10px;color:var(--text3);margin-left:4px" title="Unsupported format">—</span>`;
+      rows.push(`
+        <div class="fm-row">
+          <span class="fm-row-icon">${ico}</span>
+          <span class="fm-row-name">${f.name}${sup}</span>
+          <span class="fm-row-meta">${f.size}</span>
+          <div class="fm-row-actions">
+            <button class="fm-action-btn"
+                    onclick="fmStartRename('${f.path}','${f.name}',false)">✏ Rename</button>
+            <button class="fm-action-btn mv"
+                    onclick="fmStartMove('${f.path}','${f.name}',false)">↗ Move</button>
+            <button class="fm-action-btn cp"
+                    onclick="fmStartCopy('${f.path}','${f.name}')">⎘ Copy</button>
+            <button class="fm-action-btn del"
+                    onclick="fmDelete('${f.path}','${f.name}')">🗑 Delete</button>
+          </div>
+        </div>`);
+    });
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="fm-empty"><div class="empty-icon">📂</div><div>This folder is empty.</div></div>';
+    } else {
+      body.innerHTML = rows.join('');
+    }
+
+    const total = d.dirs.length + d.files.length;
+    status.innerHTML =
+      `<b>${d.dirs.length}</b> folder${d.dirs.length!==1?'s':''}&nbsp;&nbsp;` +
+      `<b>${d.files.length}</b> file${d.files.length!==1?'s':''}&ensp;·&ensp;` +
+      `<span style="color:var(--accent-light)">${_fmCurrentPath||'Media (root)'}</span>`;
+
+  } catch(e) {
+    body.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>Load failed: ${e.message}</div></div>`;
+    status.textContent = 'Error';
+  }
+}
+
+// ── New folder ────────────────────────────────────────────────
+async function fmNewFolder() {
+  const name = prompt('New folder name:');
+  if (!name || !name.trim()) return;
+  const fullName = _fmCurrentPath ? _fmCurrentPath + '/' + name.trim() : name.trim();
+  const r = await api('create_subdir', {name: fullName});
+  if (r.ok) { loadFiles(_fmCurrentPath); loadSubdirs(); }
+}
+
+// ── Rename ────────────────────────────────────────────────────
+function fmStartRename(path, name, isDir) {
+  _fmOp = {action:'rename', path, name, isDir};
+  const inp = document.getElementById('fm-rename-input');
+  inp.value = name;
+  document.getElementById('fm-rename-overlay').classList.add('open');
+  setTimeout(() => { inp.select(); }, 80);
+}
+async function fmDoRename() {
+  const newName = document.getElementById('fm-rename-input').value.trim();
+  if (!newName) { toast('Enter a name','err'); return; }
+  const r = await api('file_rename', {path:_fmOp.path, new_name:newName});
+  if (r.ok) { fmCloseDialogs(); loadFiles(_fmCurrentPath); }
+}
+
+// ── Delete file ───────────────────────────────────────────────
+async function fmDelete(path, name) {
+  if (!confirm(`Delete file:\n"${name}"\n\nThis cannot be undone. Any stream playlist entries for this file will be removed automatically.`)) return;
+  const r = await api('file_delete', {path});
+  if (r.ok) loadFiles(_fmCurrentPath);
+}
+
+// ── Delete directory ──────────────────────────────────────────
+async function fmDeleteDir(path, name) {
+  if (!confirm(`Delete folder:\n"${name}"\n\nAll contents will be permanently deleted and playlist entries removed. Cannot be undone.`)) return;
+  const r = await api('file_delete_dir', {path});
+  if (r.ok) loadFiles(_fmCurrentPath);
+}
+
+// ── Move ──────────────────────────────────────────────────────
+function fmStartMove(path, name, isDir) {
+  _fmOp = {action:'move', path, name, isDir};
+  _fmPopulateDirSelect('fm-move-dest', path);
+  document.getElementById('fm-move-overlay').classList.add('open');
+}
+async function fmDoMove() {
+  const dest = document.getElementById('fm-move-dest').value;
+  const r = await api('file_move', {path:_fmOp.path, dest_dir:dest});
+  if (r.ok) { fmCloseDialogs(); loadFiles(_fmCurrentPath); }
+}
+
+// ── Copy ──────────────────────────────────────────────────────
+function fmStartCopy(path, name) {
+  _fmOp = {action:'copy', path, name};
+  _fmPopulateDirSelect('fm-copy-dest', path);
+  document.getElementById('fm-copy-name').value = '';
+  document.getElementById('fm-copy-overlay').classList.add('open');
+}
+async function fmDoCopy() {
+  const dest    = document.getElementById('fm-copy-dest').value;
+  const newName = document.getElementById('fm-copy-name').value.trim();
+  const r = await api('file_copy', {path:_fmOp.path, dest_dir:dest, new_name:newName});
+  if (r.ok) { fmCloseDialogs(); loadFiles(_fmCurrentPath); }
+}
+
+// ── Dir select helper ─────────────────────────────────────────
+function _fmPopulateDirSelect(selectId, excludePath) {
+  const sel = document.getElementById(selectId);
+  sel.innerHTML = '<option value="">Media (root)</option>';
+  _fmAllDirs
+    .filter(d => d && d !== excludePath)
+    .forEach(d => sel.insertAdjacentHTML('beforeend',
+      `<option value="${d}">${d}</option>`));
+}
+
+// ── Close all FM dialogs ──────────────────────────────────────
+function fmCloseDialogs() {
+  document.querySelectorAll('.fm-dialog-overlay').forEach(el => el.classList.remove('open'));
+  _fmOp = null;
+}
 </script>
 </body>
 </html>
