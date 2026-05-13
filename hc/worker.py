@@ -317,7 +317,7 @@ class StreamWorker:
             self._seeking.clear()
             return
         self.state.duration = probe_duration(item.file_path)
-        self._start_ffmpeg(item, max(0.0, seconds))
+        self._start_ffmpeg_with_retry(item, max(0.0, seconds))
         self._seeking.clear()
         self.state.status = StreamStatus.LIVE
         threading.Thread(target=self._monitor, daemon=True,
@@ -341,7 +341,7 @@ class StreamWorker:
         except Exception:
             spos = 0.0
         self._log(f"Skipping to: {item.file_path.name} @ {_fmt_duration(spos)}")
-        self._start_ffmpeg(item, spos)
+        self._start_ffmpeg_with_retry(item, spos)
         self._seeking.clear()
         self.state.status = StreamStatus.LIVE
         threading.Thread(target=self._monitor, daemon=True,
@@ -367,7 +367,7 @@ class StreamWorker:
 
         item = PlaylistItem(file_path=event.file_path, start_position=event.start_pos)
         self.state.duration = probe_duration(item.file_path)
-        self._start_ffmpeg(item, seek_secs)
+        self._start_ffmpeg_with_retry(item, seek_secs)
 
         def _after() -> None:
             proc = self.state.ffmpeg_proc
@@ -390,7 +390,7 @@ class StreamWorker:
                     self._log(f"Resuming playlist: {item2.file_path.name}")
                     # Cycle MediaMTX again before resuming the playlist.
                     if self._cycle_mediamtx():
-                        self._start_ffmpeg(item2, 0.0)
+                        self._start_ffmpeg_with_retry(item2, 0.0)
                         threading.Thread(target=self._monitor, daemon=True,
                                          name=f"mon-{self.state.config.port}").start()
                     else:
@@ -659,7 +659,7 @@ class StreamWorker:
         self._log(f"MediaMTX RTSP handler ready on :{cfg.port}")
 
         # ── Launch FFmpeg ─────────────────────────────────────────────────────
-        if not self._start_ffmpeg(item, seek_pos):
+        if not self._start_ffmpeg_with_retry(item, seek_pos):
             self._kill_mediamtx()
             return False
 
@@ -841,6 +841,71 @@ class StreamWorker:
             self._log(self.state.error_msg, "ERROR")
             return False
 
+    def _start_ffmpeg_with_retry(
+        self, item: PlaylistItem, seek_pos: float,
+        max_retries: int = 4, retry_delay: float = 1.5,
+    ) -> bool:
+        """
+        Launch FFmpeg and retry if MediaMTX returns 400 Bad Request.
+
+        MediaMTX registers YAML paths asynchronously after binding the RTSP
+        port.  Even after a successful RTSP OPTIONS probe, the publisher path
+        may not be ready for ANNOUNCE yet.  Rather than adding a fixed sleep,
+        we detect the 400 in stderr and retry with a short back-off — this
+        self-corrects in 1-2 retries without adding unnecessary latency when
+        MediaMTX is already ready.
+        """
+        for attempt in range(1, max_retries + 1):
+            if not self._start_ffmpeg(item, seek_pos):
+                return False  # binary/launch error — no point retrying
+
+            proc = self.state.ffmpeg_proc
+            if proc is None:
+                return False
+
+            # Give ffmpeg up to 3 s to either stabilise or fail fast with 400.
+            deadline = time.time() + 3.0
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.1)
+
+            if proc.poll() is None:
+                # Still running after 3 s — MediaMTX accepted the push.
+                return True
+
+            # FFmpeg exited — check whether it was a 400 Bad Request.
+            stderr_txt = ""
+            try:
+                stderr_txt = proc.stderr.read(800) if proc.stderr else ""
+            except Exception:
+                pass
+
+            if "400 Bad Request" in stderr_txt or "400 bad request" in stderr_txt.lower():
+                if attempt < max_retries:
+                    self._log(
+                        f"FFmpeg got 400 Bad Request from MediaMTX "
+                        f"(attempt {attempt}/{max_retries}) — "
+                        f"retrying in {retry_delay:.1f}s …",
+                        "WARN",
+                    )
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    self._log(
+                        f"FFmpeg got 400 Bad Request after {max_retries} attempts — "
+                        "MediaMTX path not ready. Triggering auto-restart.",
+                        "ERROR",
+                    )
+                    self.state.status    = StreamStatus.ERROR
+                    self.state.error_msg = "MediaMTX 400 Bad Request (path not ready)"
+                    return False
+            else:
+                # Some other error — let the normal monitor/auto-restart handle it.
+                return True
+
+        return False
+
     def _play_black(self) -> None:
         cfg = self.state.config
         self._log("Starting black-screen feed …")
@@ -973,7 +1038,7 @@ class StreamWorker:
                     )
                     self._auto_restart()
                     return
-                self._start_ffmpeg(next_item, spos)
+                self._start_ffmpeg_with_retry(next_item, spos)
                 threading.Thread(target=self._monitor, daemon=True,
                                  name=f"mon-{self.state.config.port}").start()
                 return
