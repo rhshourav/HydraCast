@@ -177,6 +177,13 @@ class StreamState:
             if len(self.log) > 400:
                 self.log.pop(0)
 
+    def clear_error(self) -> None:
+        """Reset error state and auto-restart counter (e.g. after operator intervention)."""
+        self.error_msg     = ""
+        self.restart_count = 0
+        if self.status == StreamStatus.ERROR:
+            self.status = StreamStatus.STOPPED
+
     def format_pos(self) -> str:
         def _f(s: float) -> str:
             s = int(max(0, s))
