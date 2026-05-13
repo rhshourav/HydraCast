@@ -2995,6 +2995,7 @@ function toggleTheme(){
 // INIT
 // ═══════════════════════════════════
 (async function init(){
+  document.getElementById('logo-img').src = '/resources/logo.png';
   loadStreams();
   updateStats();
   toggleAuto(true);
