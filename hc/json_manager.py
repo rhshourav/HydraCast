@@ -7,23 +7,52 @@ directory (resolved relative to the HydraCast base directory):
     config/streams.json   — stream definitions  (was streams.csv)
     config/events.json    — one-shot events      (was events.csv)
 
-The public API is intentionally identical to the old CSVManager so that every
-call-site in manager.py / hydracast.py only needs its import line updated.
+Fixes vs original
+─────────────────
+• _config_dir() uses CONFIG_DIR() (→ <base>/config/) not CONFIGS_DIR()
+  (→ <base>/configs/ — the MediaMTX YAML folder).
+• load() returns [] on first run instead of raising FileNotFoundError.
+• weekdays always normalised to List[int] (0=Mon…6=Sun).
+• compliance_loop default fixed from "" to False.
+• stream_path defaults to "" so root-mount streams work correctly.
 """
 from __future__ import annotations
 
 import json
 import logging
+import re as _re
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hc.constants import CONFIGS_DIR, WEEKDAY_MAP
+from hc.constants import CONFIG_DIR, WEEKDAY_MAP
 from hc.folder_scanner import SortMode, scan_folder
 from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Config-directory helpers
+# ---------------------------------------------------------------------------
+
+def _config_dir() -> Path:
+    """
+    Return (and create if absent) <base>/config/ — user-facing JSON files.
+    NOTE: CONFIGS_DIR() points to <base>/configs/ (MediaMTX YAMLs) — different!
+    """
+    d = CONFIG_DIR()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _streams_path() -> Path:
+    return _config_dir() / "streams.json"
+
+
+def _events_path() -> Path:
+    return _config_dir() / "events.json"
 
 
 # ---------------------------------------------------------------------------
@@ -32,13 +61,13 @@ log = logging.getLogger(__name__)
 
 def _normalise_weekdays(raw) -> List[int]:
     """
-    Accept weekdays in any form and always return List[int] (0=Mon … 6=Sun):
-      - List[int]  already correct   e.g. [0, 2, 4]
-      - List[str]  abbreviations     e.g. ["mon", "wed", "fri"]
-      - str        pipe/comma-sep    e.g. "mon|wed|fri" | "all" | "weekdays"
-      - empty / None                 → all 7 days
+    Accept weekdays in any form; always return List[int] (0=Mon...6=Sun).
+      List[int]  -> unchanged
+      List[str]  -> ["mon","wed"] -> [0, 2]
+      str        -> "mon|wed" / "all" / "weekdays" / "weekends"
+      empty/None -> all 7 days
     """
-    if not raw:
+    if not raw and raw != 0:
         return list(range(7))
 
     if isinstance(raw, list):
@@ -64,9 +93,8 @@ def _normalise_weekdays(raw) -> List[int]:
     if raw_s == "weekends":
         return [5, 6]
 
-    import re as _re
     result2: List[int] = []
-    for part in _re.split(r"[|,\\s]+", raw_s):
+    for part in _re.split(r"[|,\s]+", raw_s):
         part = part.strip()
         val = WEEKDAY_MAP.get(part)
         if isinstance(val, list):
@@ -74,30 +102,8 @@ def _normalise_weekdays(raw) -> List[int]:
         elif isinstance(val, int):
             result2.append(val)
     seen2: set = set()
-    return [x for x in result2 if not (x in seen2 or seen2.add(x))]
-
-# ---------------------------------------------------------------------------
-# Config-directory helpers
-# ---------------------------------------------------------------------------
-
-def _config_dir() -> Path:
-    """
-    Return (and create if absent) the /config sub-directory that lives next to
-    the hc package.  CONFIGS_DIR() points to  <base>/config/  which already
-    stores the per-stream MediaMTX YAML fragments, so we reuse the same root
-    but keep our JSON files at the top level of that directory.
-    """
-    d = CONFIGS_DIR()
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _streams_path() -> Path:
-    return _config_dir() / "streams.json"
-
-
-def _events_path() -> Path:
-    return _config_dir() / "events.json"
+    deduped = [x for x in result2 if not (x in seen2 or seen2.add(x))]
+    return deduped if deduped else list(range(7))
 
 
 # ---------------------------------------------------------------------------
@@ -135,19 +141,18 @@ def _config_to_dict(cfg: StreamConfig) -> Dict[str, Any]:
     return {
         "name":               cfg.name,
         "port":               cfg.port,
-        "stream_path":        cfg.stream_path,
+        "stream_path":        cfg.stream_path or "",
         "enabled":            cfg.enabled,
-        "weekdays":           _normalise_weekdays(cfg.weekdays),  # always List[int]
+        "weekdays":           _normalise_weekdays(cfg.weekdays),
         "shuffle":            cfg.shuffle,
         "video_bitrate":      cfg.video_bitrate,
         "audio_bitrate":      cfg.audio_bitrate,
         "hls_enabled":        cfg.hls_enabled,
         "compliance_enabled": cfg.compliance_enabled,
         "compliance_start":   cfg.compliance_start,
-        "compliance_loop":    cfg.compliance_loop,
+        "compliance_loop":    bool(cfg.compliance_loop),
         "folder_source":      str(cfg.folder_source) if cfg.folder_source else None,
-        # Inline playlist only when there is no folder_source.
-        "playlist":           (
+        "playlist": (
             _playlist_to_json(cfg.playlist) if not cfg.folder_source else []
         ),
     }
@@ -156,11 +161,10 @@ def _config_to_dict(cfg: StreamConfig) -> Dict[str, Any]:
 def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
     try:
         folder_source: Optional[Path] = None
-        playlist:      List[PlaylistItem] = []
+        playlist: List[PlaylistItem] = []
 
         if d.get("folder_source"):
             folder_source = Path(d["folder_source"])
-            # Scan the folder immediately so the playlist is populated on load.
             items, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
             for w in warnings:
                 log.warning("json_manager: %s", w)
@@ -178,7 +182,7 @@ def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
             enabled            = bool(d.get("enabled", True)),
             weekdays           = _normalise_weekdays(d.get("weekdays", [])),
             shuffle            = bool(d.get("shuffle", False)),
-            video_bitrate      = d.get("video_bitrate", "2000k"),
+            video_bitrate      = d.get("video_bitrate", "2500k"),
             audio_bitrate      = d.get("audio_bitrate", "128k"),
             hls_enabled        = bool(d.get("hls_enabled", False)),
             compliance_enabled = bool(d.get("compliance_enabled", False)),
@@ -188,37 +192,29 @@ def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
             playlist           = playlist,
         )
     except Exception as exc:
-        log.error("json_manager: cannot parse stream entry %s — %s", d.get("name", "?"), exc)
+        log.error(
+            "json_manager: cannot parse stream entry %s — %s",
+            d.get("name", "?"), exc,
+        )
         return None
 
 
 # ---------------------------------------------------------------------------
-# Public API  (drop-in replacement for CSVManager)
+# Public API
 # ---------------------------------------------------------------------------
 
 class JSONManager:
-    """
-    Static helper class — all methods are classmethods so call-sites need no
-    instance:  JSONManager.load(),  JSONManager.save(configs), …
-    """
-
-    # ── Streams ───────────────────────────────────────────────────────────────
 
     @classmethod
     def load(cls) -> List[StreamConfig]:
         """
-        Load stream configurations from  config/streams.json.
-
-        Raises FileNotFoundError when the file does not exist yet (first run),
-        so the caller can show a friendly "no config" message.
+        Load stream configs from config/streams.json.
+        Returns [] on first run (no file yet) so the app starts in web-only mode.
         """
         p = _streams_path()
         if not p.exists():
-            raise FileNotFoundError(
-                f"No streams configuration found at '{p}'.\n"
-                "Open the Web UI → Configure tab to create your first stream,\n"
-                "or copy an existing streams.json into the config/ directory."
-            )
+            log.info("json_manager: no streams.json yet — starting with empty config.")
+            return []
 
         try:
             raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
@@ -236,21 +232,16 @@ class JSONManager:
 
     @classmethod
     def save(cls, configs: List[StreamConfig]) -> None:
-        """Persist *configs* to  config/streams.json  (pretty-printed)."""
         p = _streams_path()
         data = [_config_to_dict(c) for c in configs]
         p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         log.info("json_manager: saved %d stream(s) to '%s'", len(configs), p)
 
-    # ── One-shot events ───────────────────────────────────────────────────────
-
     @classmethod
     def load_events(cls) -> List[OneShotEvent]:
-        """Load one-shot events from  config/events.json.  Returns [] if absent."""
         p = _events_path()
         if not p.exists():
             return []
-
         try:
             raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -270,8 +261,7 @@ class JSONManager:
                     )
                 )
             except Exception as exc:
-                log.warning("json_manager: skipping bad event entry %s — %s", r, exc)
-
+                log.warning("json_manager: skipping bad event %s — %s", r, exc)
         return events
 
     @classmethod
@@ -291,7 +281,6 @@ class JSONManager:
 
     @classmethod
     def mark_event_played(cls, events: List[OneShotEvent], event_id: str) -> None:
-        """Mark *event_id* as played in both memory and  config/events.json."""
         for ev in events:
             if ev.event_id == event_id:
                 ev.played = True
@@ -306,7 +295,6 @@ class JSONManager:
         file_path: Path,
         play_at: datetime,
     ) -> OneShotEvent:
-        """Create a new one-shot event, append it, and persist."""
         ev = OneShotEvent(
             event_id    = str(uuid.uuid4()),
             stream_name = stream_name,
