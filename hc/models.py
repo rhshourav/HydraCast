@@ -1,5 +1,23 @@
 """
 hc/models.py  —  Core dataclasses and enums.
+
+v6.0 fixes vs new broken version
+──────────────────────────────────
+• rtsp_path   restored to return "stream" when stream_path is empty (old behaviour).
+              The new version returned "" which caused FFmpeg to push to
+              rtsp://127.0.0.1:<port>/  (empty path) while rtsp_url / rtsp_url_external
+              still showed /stream — a silent mismatch that broke all streams.
+• rtsp_url / rtsp_url_external / hls_url now all derive from rtsp_path so they
+  are always consistent with the URL FFmpeg actually pushes to.
+• mediamtx_cfg.py companion fix: spath = cfg.rtsp_path (no "~all" fallback needed
+  because rtsp_path is always non-empty).
+
+Kept from new version
+─────────────────────
+• WEEKDAY_MAP import + _int_weekdays() for robust weekday normalisation
+• clear_error() helper on StreamState
+• OneShotEvent.post_action has a default value of "" (backward-compatible)
+• All compliance fields, folder_source, initial_offset retained
 """
 from __future__ import annotations
 
@@ -42,7 +60,7 @@ class OneShotEvent:
     stream_name: str
     file_path:   Path
     play_at:     datetime
-    post_action: str  = ""
+    post_action: str  = ""      # default "" makes it optional (was required in v5)
     played:      bool = False
     start_pos:   str  = "00:00:00"
 
@@ -52,7 +70,7 @@ class PlaylistItem:
     file_path:      Path
     start_position: str = "00:00:00"
     weight:         int = 1
-    priority:       int = 999
+    priority:       int = 999   # lower = plays earlier
 
 
 @dataclass
@@ -73,12 +91,12 @@ class StreamConfig:
     compliance_start:   str  = "06:00:00"
     compliance_loop:    bool = False
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # ── Weekday helpers ───────────────────────────────────────────────────────
 
     def _int_weekdays(self) -> List[int]:
         """
-        Always return weekdays as List[int] regardless of how they are stored.
-        Handles legacy str abbreviations (e.g. "mon") transparently.
+        Always return weekdays as List[int] regardless of stored format.
+        Handles legacy str abbreviations ("mon", "tue" …) transparently.
         """
         result: List[int] = []
         for d in self.weekdays:
@@ -96,20 +114,39 @@ class StreamConfig:
 
     @property
     def rtsp_path(self) -> str:
-        """Stream path segment; empty string means root mount (rtsp://ip:port/)."""
-        return self.stream_path.strip("/") if self.stream_path else ""
+        """
+        RTSP stream path segment — always non-empty.
+
+        • If stream_path is configured (e.g. "news") → returns "news"
+          (leading/trailing slashes stripped so the caller never gets "//news").
+        • If stream_path is empty / unset → returns "stream" (legacy default).
+
+        This value is used verbatim in the FFmpeg push URL:
+            rtsp://127.0.0.1:<port>/<rtsp_path>
+        and in the MediaMTX YAML paths block:
+            paths:
+              <rtsp_path>: {}
+
+        IMPORTANT: do NOT return "" here.  worker.py line 774 inlines this
+        directly into the FFmpeg command.  An empty string produces
+        rtsp://127.0.0.1:<port>/  which MediaMTX v1.9.1 does not accept
+        reliably (its ~all wildcard does not catch the bare root path).
+        """
+        if self.stream_path:
+            return self.stream_path.strip("/")
+        return "stream"
 
     @property
     def rtsp_url(self) -> str:
-        path = self.rtsp_path if self.rtsp_path else "stream"
-        return f"rtsp://127.0.0.1:{self.port}/{path}"
+        """Internal RTSP URL (loopback) — what FFmpeg pushes to."""
+        return f"rtsp://127.0.0.1:{self.port}/{self.rtsp_path}"
 
     @property
     def rtsp_url_external(self) -> str:
+        """External RTSP URL shown to the operator / web UI."""
         from hc.utils import _local_ip
         ip = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
-        path = self.rtsp_path if self.rtsp_path else "stream"
-        return f"rtsp://{ip}:{self.port}/{path}"
+        return f"rtsp://{ip}:{self.port}/{self.rtsp_path}"
 
     @property
     def hls_port(self) -> int:
@@ -119,8 +156,7 @@ class StreamConfig:
     def hls_url(self) -> str:
         from hc.utils import _local_ip
         ip = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
-        path = f"/{self.rtsp_path}" if self.rtsp_path else ""
-        return f"http://{ip}:{self.hls_port}{path}/index.m3u8"
+        return f"http://{ip}:{self.hls_port}/{self.rtsp_path}/index.m3u8"
 
     # ── Schedule helpers ──────────────────────────────────────────────────────
 
@@ -150,8 +186,8 @@ class StreamConfig:
 class StreamState:
     config:           StreamConfig
     status:           StreamStatus               = StreamStatus.STOPPED
-    mtx_proc:         object                     = None
-    ffmpeg_proc:      object                     = None
+    mtx_proc:         object                     = None   # subprocess.Popen
+    ffmpeg_proc:      object                     = None   # subprocess.Popen
     progress:         float                      = 0.0
     current_pos:      float                      = 0.0
     duration:         float                      = 0.0
