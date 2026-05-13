@@ -42,7 +42,7 @@ class MediaMTXConfig:
     def write(state: StreamState) -> Path:
         cfg   = state.config
         port  = cfg.port
-        spath = cfg.rtsp_path
+        spath = cfg.rtsp_path if cfg.rtsp_path else "~all"
         addr  = LISTEN_ADDR()
         log_f = (LOGS_DIR() / f"mediamtx_{port}.log").resolve()
         cfg_f = CONFIGS_DIR() / f"mediamtx_{port}.yml"
