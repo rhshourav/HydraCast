@@ -625,6 +625,55 @@ class StreamManager:
             ev.event_id, ev.play_at.isoformat(), ev.stream_name,
         )
 
+    def fire_event_now(self, event_id: str) -> bool:
+        """
+        Immediately fire a pending one-shot event by its event_id.
+        Called by the web UI "Play Now" button.
+        Returns True if the event was found, not yet played, and fired.
+        """
+        with self._lock:
+            ev = next((e for e in self._events if e.event_id == event_id), None)
+        if ev is None:
+            log.warning("manager.fire_event_now: event_id '%s' not found.", event_id)
+            return False
+        if ev.played:
+            log.warning("manager.fire_event_now: event_id '%s' already played.", event_id)
+            return False
+        state = self.get_state(ev.stream_name)
+        if state is None:
+            log.warning(
+                "manager.fire_event_now: stream '%s' not found.", ev.stream_name
+            )
+            return False
+        worker = self.get_worker(ev.stream_name)
+        if worker is None:
+            log.warning(
+                "manager.fire_event_now: no worker for stream '%s'.", ev.stream_name
+            )
+            return False
+        if state.status not in (StreamStatus.LIVE, StreamStatus.STARTING):
+            log.info(
+                "manager.fire_event_now: stream '%s' not running — starting first.",
+                ev.stream_name,
+            )
+            state.log_add("▶ Stream started automatically for manual event fire.")
+            self._start_worker(state)
+            deadline = time.time() + 10.0
+            while time.time() < deadline:
+                if state.status == StreamStatus.LIVE:
+                    break
+                time.sleep(0.25)
+        log.info(
+            "manager.fire_event_now: firing event '%s' on '%s'.",
+            event_id, ev.stream_name,
+        )
+        state.log_add(
+            f"▶ Manual fire: playing '{ev.file_path.name}'."
+        )
+        worker.play_oneshot(ev)
+        JSONManager.mark_event_played(self._events, event_id)
+        return True
+
     def remove_event(self, event_id: str) -> bool:
         """
         Remove a one-shot event by its event_id.
