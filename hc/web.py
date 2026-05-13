@@ -737,6 +737,34 @@ select option{background:var(--bg3)}
   display:flex;gap:10px;justify-content:flex-end;
 }
 
+/* ─────────── PLAYLIST EDITOR ─────────── */
+.pl-editor{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-top:8px}
+.pl-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg4);flex-wrap:wrap}
+.pl-toolbar-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);flex:1;min-width:0}
+.pl-table{width:100%;border-collapse:collapse}
+.pl-table th{padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);border-bottom:1px solid var(--border);background:var(--bg4);text-align:left;white-space:nowrap}
+.pl-table td{padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
+.pl-table tr:last-child td{border-bottom:none}
+.pl-table tr:hover td{background:rgba(184,115,51,0.04)}
+.pl-path{font-family:var(--font-mono);font-size:11px;color:var(--text2)}
+.pl-channel-tag{font-size:10px;color:var(--blue);background:var(--blue-dim);border:1px solid rgba(122,159,194,0.3);border-radius:20px;padding:1px 8px;white-space:nowrap;font-family:var(--font-sans);font-weight:500;display:inline-block}
+.pl-table input[type=text]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 7px;border-radius:5px;font-size:11px;font-family:var(--font-mono);width:100%;transition:border-color 0.2s;box-sizing:border-box}
+.pl-table input[type=number]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 5px;border-radius:5px;font-size:11px;font-family:var(--font-mono);transition:border-color 0.2s;box-sizing:border-box;text-align:center}
+.pl-table input:focus{outline:none;border-color:var(--accent)}
+.pl-add-row{display:flex;align-items:center;gap:8px;padding:9px 12px;border-top:1px solid var(--border);background:var(--bg3)}
+.pl-add-row input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:6px;font-size:11px;font-family:var(--font-mono);min-width:0}
+.pl-add-row input:focus{outline:none;border-color:var(--accent)}
+.pl-empty{padding:24px;text-align:center;color:var(--text3);font-size:12px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.pl-priority-badge{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;border-radius:5px;font-size:10px;font-weight:700;font-family:var(--font-mono);padding:0 5px;margin-bottom:2px}
+.pl-priority-badge.high{background:rgba(107,142,107,0.18);color:var(--green);border:1px solid rgba(107,142,107,0.3)}
+.pl-priority-badge.mid{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(201,168,120,0.3)}
+.pl-priority-badge.low{background:var(--bg4);color:var(--text3);border:1px solid var(--border)}
+/* Dirty / unsaved indicator */
+.dirty-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--yellow);background:var(--yellow-dim);border:1px solid rgba(201,168,120,0.4);border-radius:20px;padding:2px 9px;margin-right:auto;animation:pulse 2s infinite}
+/* Unsaved modal */
+.unsaved-modal-body{font-size:13px;color:var(--text2);line-height:1.65;margin-bottom:20px}
+.unsaved-modal-body strong{color:var(--yellow)}
+
 /* ─────────── SETTINGS ─────────── */
 .settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
 .setting-card{
@@ -1257,13 +1285,13 @@ select option{background:var(--bg3)}
   <div class="section-hdr">
     <h2>Stream Configuration</h2>
     <span class="sep"></span>
-    <button class="btn b" onclick="loadConfig()">↻ Reload</button>
+    <button class="btn b" onclick="_guardNav(loadConfig)">&#x21BB; Reload</button>
   </div>
   <div class="config-layout">
     <div class="config-sidebar">
       <div class="config-sidebar-hdr" style="display:flex;align-items:center;justify-content:space-between">
         <span>Streams</span>
-        <button class="btn g" style="padding:2px 8px;font-size:10px;border-radius:5px" onclick="showNewStreamForm()">＋ New</button>
+        <button class="btn g" style="padding:2px 8px;font-size:10px;border-radius:5px" onclick="_guardNav(showNewStreamForm)">&#xFF0B; New</button>
       </div>
       <div id="config-stream-list"></div>
     </div>
@@ -1648,6 +1676,22 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ══ UNSAVED CHANGES MODAL ══ -->
+<div class="modal-bg" id="unsaved-modal">
+  <div class="modal">
+    <h3>&#x26A0;&#xFE0F; Unsaved Changes</h3>
+    <div class="unsaved-modal-body">
+      You have <strong>unsaved changes</strong> in the current configuration.<br>
+      What would you like to do?
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="handleUnsaved('cancel')">Stay Here</button>
+      <button class="btn r" onclick="handleUnsaved('discard')">Discard Changes</button>
+      <button class="btn g" onclick="handleUnsaved('save')">Save &amp; Continue</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ TOAST ══ -->
 <div id="toast"></div>
 
@@ -1694,6 +1738,13 @@ function toast(msg,type='ok'){
 // TABS
 // ═══════════════════════════════════
 function switchTab(name,btn){
+  if(name!=='config'&&_configDirty){
+    _guardNav(()=>_doSwitchTab(name,btn));
+    return;
+  }
+  _doSwitchTab(name,btn);
+}
+function _doSwitchTab(name,btn){
   document.querySelectorAll('.tab-panel').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
@@ -2445,10 +2496,12 @@ function renderConfigSidebar(){
 }
 
 function selectConfigStream(name){
-  _configSelected=name;
-  renderConfigSidebar();
-  const s=_configStreams.find(s=>s.name===name);
-  if(s)renderConfigEditor(s);
+  _guardNav(()=>{
+    _configSelected=name;
+    renderConfigSidebar();
+    const s=_configStreams.find(s=>s.name===name);
+    if(s)renderConfigEditor(s);
+  });
 }
 
 function renderConfigEditor(s){
@@ -2525,8 +2578,7 @@ function renderConfigEditor(s){
     </div>
     <div class="config-section">
       <div class="config-section-title">Playlist Files</div>
-      <textarea id="cfg-files" rows="6" style="font-size:11px;font-family:var(--font-mono)">${esc(s.files||'')}</textarea>
-      <div style="font-size:10px;color:var(--text3);margin-top:6px">One file per line (or semicolon-separated). Format: path@HH:MM:SS#priority</div>
+      <div id="cfg-pl-wrap"></div>
     </div>
     <div class="config-section">
       <div class="config-section-title">Stream Actions</div>
@@ -2539,6 +2591,9 @@ function renderConfigEditor(s){
     </div>`;
 
   document.getElementById('config-main-footer').style.display='flex';
+  _clearDirty();
+  renderPlaylistEditor('cfg-pl-wrap', s.files||'');
+  setTimeout(_attachDirtyListeners, 0);
 }
 
 function _restoreFooter(){
@@ -2548,6 +2603,7 @@ function _restoreFooter(){
 }
 
 function cancelConfig(){
+  _clearDirty();
   _configSelected=null;
   _configMode='edit';
   renderConfigSidebar();
@@ -2572,20 +2628,216 @@ async function saveConfig(){
     shuffle:document.getElementById('cfg-shuffle')?.checked||false,
     enabled:document.getElementById('cfg-enabled')?.checked!==false,
     hls_enabled:document.getElementById('cfg-hls')?.checked||false,
-    files:document.getElementById('cfg-files')?.value||'',
+    files:_plGetStr('cfg-pl-wrap'),
     weekdays:weekdaysStr,
     compliance_enabled:document.getElementById('cfg-comp-en')?.checked||false,
     compliance_start:document.getElementById('cfg-comp-start')?.value||'06:00:00',
     compliance_loop:document.getElementById('cfg-comp-loop')?.checked||false,
   };
   const r=await api('update_config',payload);
-  if(r?.ok)loadConfig();
+  if(r?.ok){_clearDirty();loadConfig();}
 }
 
 // ═══════════════════════════════════
 // NEW STREAM / DELETE STREAM
 // ═══════════════════════════════════
 let _configMode='edit'; // 'edit' | 'create'
+
+// ── Dirty / Unsaved state ────────────────────────────────────────────────────
+let _configDirty=false;
+let _pendingNav=null;
+let _playlistItems=[];
+
+function _markDirty(){
+  if(_configDirty)return;
+  _configDirty=true;
+  const ftr=document.getElementById('config-main-footer');
+  if(ftr&&!document.getElementById('_dirty-badge')){
+    const b=document.createElement('span');
+    b.id='_dirty-badge';b.className='dirty-badge';b.textContent='● Unsaved';
+    ftr.insertBefore(b,ftr.firstChild);
+  }
+}
+function _clearDirty(){
+  _configDirty=false;
+  const b=document.getElementById('_dirty-badge');if(b)b.remove();
+}
+function _guardNav(cb){
+  if(!_configDirty){cb();return;}
+  _pendingNav=cb;
+  document.getElementById('unsaved-modal').classList.add('open');
+}
+function handleUnsaved(action){
+  document.getElementById('unsaved-modal').classList.remove('open');
+  if(action==='cancel'){_pendingNav=null;return;}
+  const cb=_pendingNav;_pendingNav=null;
+  if(action==='discard'){_clearDirty();if(cb)cb();}
+  else if(action==='save'){
+    const fn=_configMode==='create'?submitNewStream:saveConfig;
+    fn().then(()=>{if(cb)cb();});
+  }
+}
+function _attachDirtyListeners(){
+  const body=document.getElementById('config-main-body');if(!body)return;
+  body.querySelectorAll('input,select,textarea').forEach(el=>{
+    el.addEventListener('change',_markDirty);
+    if(el.type==='text'||el.type==='number')el.addEventListener('input',_markDirty);
+  });
+}
+
+// ── Playlist editor helpers ──────────────────────────────────────────────────
+function _parsePL(raw){
+  const items=[];
+  for(let part of (raw||'').split(/[;\n]+/)){
+    part=part.trim();if(!part)continue;
+    let priority=0,start='00:00:00';
+    if(part.includes('#')){const idx=part.lastIndexOf('#');const n=parseInt(part.slice(idx+1));if(!isNaN(n))priority=n;part=part.slice(0,idx).trim();}
+    if(part.includes('@')){const idx=part.lastIndexOf('@');const s=part.slice(idx+1).trim();if(/^\d{1,2}:\d{2}:\d{2}$/.test(s))start=s;part=part.slice(0,idx).trim();}
+    if(part)items.push({path:part,start,priority});
+  }
+  return items;
+}
+function _plToStr(items){
+  return items.map(item=>{
+    let s=item.path;
+    if(item.start&&item.start!=='00:00:00')s+='@'+item.start;
+    if(item.priority!==0)s+='#'+item.priority;
+    return s;
+  }).join('\n');
+}
+function _plChannel(path){
+  const p=(path||'').replace(/\\/g,'/').split('/').filter(Boolean);
+  return p.length>=2?p[p.length-2]:'';
+}
+function _plPriBadge(n){
+  const cls=n>=10?'high':n>0?'mid':'low';
+  return '<span class="pl-priority-badge '+cls+'">'+n+'</span>';
+}
+function _plGetStr(cid){
+  const ta=document.querySelector('#'+cid+' textarea');
+  if(ta)return ta.value;
+  document.querySelectorAll('#'+cid+' .pl-table tbody tr').forEach((tr,i)=>{
+    const pi=tr.querySelector('input[type=number]'),si=tr.querySelector('input[type=text]');
+    if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
+    if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
+  });
+  return _plToStr(_playlistItems);
+}
+function renderPlaylistEditor(cid,raw){
+  _playlistItems=_parsePL(raw);
+  _playlistItems.sort((a,b)=>b.priority-a.priority);
+  _renderPLTable(cid);
+}
+function _renderPLTable(cid){
+  const wrap=document.getElementById(cid);if(!wrap)return;
+  const rows=_playlistItems.map((item,i)=>{
+    const ch=_plChannel(item.path);
+    const fname=(item.path||'').replace(/\\/g,'/').split('/').pop()||item.path;
+    return '<tr>'
+      +'<td style="width:82px;text-align:center;vertical-align:top;padding-top:8px">'
+        +_plPriBadge(item.priority)
+        +'<div style="margin-top:4px"><input type="number" value="'+item.priority+'" min="0" max="999"'
+        +' oninput="_plUpd('+i+','p',this.value)" style="width:54px;text-align:center"></div>'
+      +'</td>'
+      +'<td style="width:100px">'+(ch?'<span class="pl-channel-tag">'+esc(ch)+'</span>':'<span style="color:var(--text3);font-size:10px">—</span>')+'</td>'
+      +'<td><div class="pl-path" title="'+esc(item.path)+'" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">'+esc(fname)+'</div>'
+        +'<div style="font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">'+esc(item.path)+'</div></td>'
+      +'<td style="width:106px"><input type="text" value="'+esc(item.start)+'" placeholder="00:00:00"'
+        +' oninput="_plUpd('+i+','s',this.value)" style="width:94px;font-family:var(--font-mono);font-size:11px"></td>'
+      +'<td style="width:40px;text-align:right"><button class="btn r" style="padding:2px 7px;font-size:10px"'
+        +' onclick="_plRemove('+i+',''+cid+'')">&#x2715;</button></td>'
+      +'</tr>';
+  }).join('');
+
+  wrap.innerHTML=
+    '<div class="pl-editor">'
+      +'<div class="pl-toolbar">'
+        +'<span class="pl-toolbar-label"><i class="fa fa-list-ol" style="margin-right:5px;opacity:0.65"></i>'
+        +_playlistItems.length+' file'+(_playlistItems.length!==1?'s':'')+'</span>'
+        +'<button class="btn b" style="padding:3px 10px;font-size:10px" onclick="_plSort(''+cid+'')">'
+          +'<i class="fa fa-sort-numeric-down" style="margin-right:4px"></i>Sort by Priority</button>'
+        +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plRawView(''+cid+'')">'
+          +'<i class="fa fa-code" style="margin-right:4px"></i>Raw</button>'
+      +'</div>'
+      +(_playlistItems.length>0
+        ?'<div style="overflow-x:auto"><table class="pl-table">'
+          +'<thead><tr>'
+            +'<th style="width:82px;text-align:center">Priority</th>'
+            +'<th style="width:100px">Channel</th>'
+            +'<th>File</th>'
+            +'<th style="width:106px">Start At</th>'
+            +'<th style="width:40px"></th>'
+          +'</tr></thead>'
+          +'<tbody>'+rows+'</tbody>'
+          +'</table></div>'
+        :'<div class="pl-empty"><i class="fa fa-film" style="font-size:22px;opacity:0.25;margin-bottom:6px;display:block"></i>'
+          +'No files yet — add one below</div>')
+      +'<div class="pl-add-row">'
+        +'<input type="text" id="'+cid+'-new" placeholder="/path/to/video.mp4  (optional: path@HH:MM:SS#priority)"'
+          +' onkeydown="if(event.key==='Enter')_plAdd(''+cid+'')">'
+        +'<button class="btn g" style="padding:5px 12px;font-size:11px;white-space:nowrap"'
+          +' onclick="_plAdd(''+cid+'')"><i class="fa fa-plus"></i> Add</button>'
+      +'</div>'
+    +'</div>';
+}
+function _plUpd(i,field,v){
+  if(!_playlistItems[i])return;
+  if(field==='p')_playlistItems[i].priority=parseInt(v)||0;
+  else _playlistItems[i].start=v||'00:00:00';
+  _markDirty();
+}
+function _plRemove(i,cid){
+  _playlistItems.splice(i,1);
+  _markDirty();
+  _renderPLTable(cid);
+}
+function _plSort(cid){
+  document.querySelectorAll('#'+cid+' .pl-table tbody tr').forEach((tr,i)=>{
+    const pi=tr.querySelector('input[type=number]'),si=tr.querySelector('input[type=text]');
+    if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
+    if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
+  });
+  _playlistItems.sort((a,b)=>b.priority-a.priority);
+  _renderPLTable(cid);
+}
+function _plAdd(cid){
+  const inp=document.getElementById(cid+'-new');if(!inp)return;
+  const raw=inp.value.trim();if(!raw){toast('Enter a file path','err');return;}
+  const parsed=_parsePL(raw);if(!parsed.length){toast('Invalid path','err');return;}
+  _playlistItems.push(...parsed);
+  _playlistItems.sort((a,b)=>b.priority-a.priority);
+  inp.value='';_markDirty();_renderPLTable(cid);
+}
+function _plRawView(cid){
+  document.querySelectorAll('#'+cid+' .pl-table tbody tr').forEach((tr,i)=>{
+    const pi=tr.querySelector('input[type=number]'),si=tr.querySelector('input[type=text]');
+    if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
+    if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
+  });
+  const raw=_plToStr(_playlistItems);
+  const wrap=document.getElementById(cid);if(!wrap)return;
+  wrap.innerHTML=
+    '<div class="pl-editor">'
+      +'<div class="pl-toolbar">'
+        +'<span class="pl-toolbar-label"><i class="fa fa-code" style="margin-right:5px;opacity:0.65"></i>Raw edit</span>'
+        +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plTableView(''+cid+'')">'
+          +'<i class="fa fa-table" style="margin-right:4px"></i>Back to Table</button>'
+      +'</div>'
+      +'<div style="padding:12px">'
+        +'<textarea rows="8" style="width:100%;font-size:11px;font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);'
+          +'border-radius:var(--radius);padding:10px;color:var(--text);resize:vertical;box-sizing:border-box"'
+          +' oninput="_markDirty()">'+esc(raw)+'</textarea>'
+        +'<div style="font-size:10px;color:var(--text3);margin-top:5px">Format: '
+          +'<code style="color:var(--accent-light)">/path/to/file.mp4@00:00:00#10</code>'
+          +' — one per line or semicolon-separated</div>'
+      +'</div>'
+    +'</div>';
+}
+function _plTableView(cid){
+  const ta=document.querySelector('#'+cid+' textarea');
+  if(ta){_playlistItems=_parsePL(ta.value);_playlistItems.sort((a,b)=>b.priority-a.priority);_markDirty();}
+  _renderPLTable(cid);
+}
 
 function showNewStreamForm(){
   _configSelected=null;
@@ -2612,9 +2864,7 @@ function showNewStreamForm(){
         <button id="new-src-tab-folder" class="nav-tab" onclick="switchNewSrcTab('folder')" style="padding:7px 16px;font-size:12px"><span class="tab-dot"></span>Folder Source</button>
       </div>
       <div id="new-src-files">
-        <textarea id="new-files" rows="6" style="font-size:11px;font-family:var(--font-mono)"
-          placeholder="/path/to/video.mp4\n/path/to/video2.mkv\n\nOptional format:  /path@HH:MM:SS#priority"></textarea>
-        <div style="font-size:10px;color:var(--text3);margin-top:6px">One path per line (or semicolon-separated). Omit @position and #priority for defaults.</div>
+        <div id="new-pl-wrap"></div>
       </div>
       <div id="new-src-folder" style="display:none">
         <div class="fg">
@@ -2695,6 +2945,9 @@ function showNewStreamForm(){
     <button class="btn" onclick="cancelConfig()">Cancel</button>
     <button class="btn g" onclick="submitNewStream()">&#x2713; Create Stream</button>`;
   document.getElementById('config-main-footer').style.display='flex';
+  _clearDirty();
+  renderPlaylistEditor('new-pl-wrap', '');
+  setTimeout(_attachDirtyListeners, 0);
 }
 
 function switchNewSrcTab(mode){
@@ -2709,7 +2962,7 @@ async function submitNewStream(){
   const port=parseInt(document.getElementById('new-port')?.value||0);
   // Detect source mode
   const isFolderMode=document.getElementById('new-src-folder')?.style.display!=='none';
-  const files=isFolderMode?'':(document.getElementById('new-files')?.value||'').trim();
+  const files=isFolderMode?'':_plGetStr('new-pl-wrap');
   const folderPath=isFolderMode?(document.getElementById('new-folder')?.value||'').trim():'';
   if(!name){toast('Stream name is required','err');return;}
   if(!/^[\w\-. ]+$/.test(name)){toast('Name: letters, numbers, spaces, hyphens, dots, underscores only','err');return;}
