@@ -350,22 +350,25 @@ def _preflight(console: Console) -> List[StreamConfig]:
         sys.exit(1)
 
     # ── FFmpeg ────────────────────────────────────────────────────────────────
-    ffmpeg_path = DependencyManager.check_ffmpeg()
+    # ensure_ffmpeg prints its own ✔ / ⚠ / ✘ lines and auto-downloads if needed.
+    ffmpeg_path = DependencyManager.ensure_ffmpeg(console)
     if not ffmpeg_path:
         console.print(
-            f"[{CR}]✘  FFmpeg not found in PATH or bin/[/]\n"
-            f"[{CY}]   Linux  : sudo apt install ffmpeg\n"
+            f"[{CR}]✘  FFmpeg could not be found or downloaded automatically.[/]\n"
+            f"[{CY}]   Install it manually then re-run HydraCast:\n"
+            f"   Linux  : sudo apt install ffmpeg\n"
             f"   Windows: https://www.gyan.dev/ffmpeg/builds/\n"
             f"   macOS  : brew install ffmpeg[/]"
         )
         sys.exit(1)
     set_ffmpeg(ffmpeg_path)
-    console.print(f"[{CG}]✔  FFmpeg  : {ffmpeg_path}[/]")
 
-    ffprobe_path = DependencyManager.check_ffprobe()
+    # ensure_ffprobe is non-fatal; it also auto-downloads when possible.
+    ffprobe_path = DependencyManager.ensure_ffprobe(console)
     if ffprobe_path:
         set_ffprobe(ffprobe_path)
-    console.print(f"[{CG}]✔  FFprobe : {ffprobe_path or 'ffprobe (system PATH)'}[/]")
+    else:
+        console.print(f"[{CY}]⚠  FFprobe not available (optional — some probing features disabled).[/]")
 
     # ── config/streams.json ───────────────────────────────────────────────────
     try:
