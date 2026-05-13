@@ -106,7 +106,7 @@ from hc.constants import (
     APP_NAME, APP_VER, APP_AUTHOR,
     CC, CD, CG, CR, CY,
     CPU_COUNT, IS_LINUX, IS_MAC, IS_WIN, WEB_PORT,
-    CONFIGS_DIR, LOGS_DIR,
+    CONFIG_DIR, CONFIGS_DIR, LOGS_DIR,
     set_base_dir,
     set_ffmpeg, set_ffprobe,
     set_no_firewall, set_listen_addr, set_web_port,
@@ -341,7 +341,7 @@ def _preflight(console: Console) -> List[StreamConfig]:
     console.print(f"[{CD}]  Bind addr : {LISTEN_ADDR()}[/]")
     console.print(f"[{CD}]  Base dir  : {BASE_DIR()}[/]")
     console.print(f"[{CD}]  Media dir : {MEDIA_DIR()}[/]")
-    console.print(f"[{CD}]  Config dir: {CONFIGS_DIR()}[/]")
+    console.print(f"[{CD}]  Config dir: {CONFIG_DIR()}[/]")
     console.print()
 
     # ── MediaMTX ──────────────────────────────────────────────────────────────
@@ -370,9 +370,6 @@ def _preflight(console: Console) -> List[StreamConfig]:
     # ── config/streams.json ───────────────────────────────────────────────────
     try:
         configs = JSONManager.load()
-    except FileNotFoundError as exc:
-        console.print(f"\n[{CY}]⚠  {exc}[/]")
-        sys.exit(0)
     except Exception as exc:
         console.print(f"[{CR}]✘  Config error: {exc}[/]")
         sys.exit(1)
