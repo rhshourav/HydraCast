@@ -103,34 +103,11 @@ class CSVManager:
     @staticmethod
     def parse_weekdays(raw: str):
         """
-        Convert a weekday string to a list of abbreviations, e.g.
-        'mon|wed|fri' → ['mon','wed','fri'],  'all' → ['mon','tue',…,'sun'].
+        Convert a weekday string to a list of ints (0=Mon … 6=Sun).
+        Delegates to json_manager._normalise_weekdays for consistency.
         """
-        from hc.constants import WEEKDAY_MAP, DAY_ABBR
-        raw = raw.strip().lower()
-        if raw in ("all", "everyday", ""):
-            return [d.lower() for d in DAY_ABBR]
-        if raw == "weekdays":
-            return ["mon", "tue", "wed", "thu", "fri"]
-        if raw == "weekends":
-            return ["sat", "sun"]
-        result = []
-        for part in _re.split(r"[|,\s]+", raw):
-            part = part.strip()
-            if part in WEEKDAY_MAP:
-                idx = WEEKDAY_MAP[part]
-                if isinstance(idx, list):
-                    result.extend(DAY_ABBR[i].lower() for i in idx)
-                else:
-                    result.append(DAY_ABBR[idx].lower())
-        # deduplicate while preserving order
-        seen = set()
-        deduped = []
-        for d in result:
-            if d not in seen:
-                seen.add(d)
-                deduped.append(d)
-        return deduped or [d.lower() for d in DAY_ABBR]
+        from hc.json_manager import _normalise_weekdays
+        return _normalise_weekdays(raw)
 
     @staticmethod
     def _sanitize_bitrate(value: str, fallback: str) -> str:
