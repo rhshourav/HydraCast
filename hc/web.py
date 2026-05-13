@@ -103,11 +103,34 @@ class CSVManager:
     @staticmethod
     def parse_weekdays(raw: str):
         """
-        Convert a weekday string to a list of ints (0=Mon … 6=Sun).
-        Delegates to json_manager._normalise_weekdays for consistency.
+        Convert a weekday string to a list of abbreviations, e.g.
+        'mon|wed|fri' → ['mon','wed','fri'],  'all' → ['mon','tue',…,'sun'].
         """
-        from hc.json_manager import _normalise_weekdays
-        return _normalise_weekdays(raw)
+        from hc.constants import WEEKDAY_MAP, DAY_ABBR
+        raw = raw.strip().lower()
+        if raw in ("all", "everyday", ""):
+            return [d.lower() for d in DAY_ABBR]
+        if raw == "weekdays":
+            return ["mon", "tue", "wed", "thu", "fri"]
+        if raw == "weekends":
+            return ["sat", "sun"]
+        result = []
+        for part in _re.split(r"[|,\s]+", raw):
+            part = part.strip()
+            if part in WEEKDAY_MAP:
+                idx = WEEKDAY_MAP[part]
+                if isinstance(idx, list):
+                    result.extend(DAY_ABBR[i].lower() for i in idx)
+                else:
+                    result.append(DAY_ABBR[idx].lower())
+        # deduplicate while preserving order
+        seen = set()
+        deduped = []
+        for d in result:
+            if d not in seen:
+                seen.add(d)
+                deduped.append(d)
+        return deduped or [d.lower() for d in DAY_ABBR]
 
     @staticmethod
     def _sanitize_bitrate(value: str, fallback: str) -> str:
@@ -2694,7 +2717,7 @@ class WebHandler(BaseHTTPRequestHandler):
             "status":    "ok",
             "ready":     True,
             "timestamp": datetime.now().isoformat(),
-            "streams":   mgr.health_summary(),
+            "streams":   [{"name": s.config.name, "status": s.status.label} for s in mgr.states],
         })
 
     def _get_streams(self) -> None:
@@ -2961,7 +2984,7 @@ class WebHandler(BaseHTTPRequestHandler):
         if action == "start":
             st = mgr.get_state(str(data.get("name", "")))
             if st:
-                mgr.start_stream(st)
+                mgr.start(st.config.name)
                 self._json({"ok": True, "msg": f"Starting {st.config.name}"})
             else:
                 self._json({"ok": False, "msg": "Stream not found"})
@@ -2969,7 +2992,7 @@ class WebHandler(BaseHTTPRequestHandler):
         elif action == "stop":
             st = mgr.get_state(str(data.get("name", "")))
             if st:
-                mgr.stop_stream(st)
+                mgr.stop(st.config.name)
                 self._json({"ok": True, "msg": f"Stopping {st.config.name}"})
             else:
                 self._json({"ok": False, "msg": "Stream not found"})
@@ -2977,7 +3000,7 @@ class WebHandler(BaseHTTPRequestHandler):
         elif action == "restart":
             st = mgr.get_state(str(data.get("name", "")))
             if st:
-                mgr.restart_stream(st)
+                mgr.restart(st.config.name)
                 self._json({"ok": True, "msg": f"Restarting {st.config.name}"})
             else:
                 self._json({"ok": False, "msg": "Stream not found"})
@@ -2987,13 +3010,17 @@ class WebHandler(BaseHTTPRequestHandler):
             self._json({"ok": True, "msg": "Starting all streams"})
 
         elif action == "stop_all":
-            mgr.stop_all()
+            for _st in mgr.states:
+                try:
+                    mgr.stop(_st.config.name)
+                except Exception:
+                    pass
             self._json({"ok": True, "msg": "Stopped all streams"})
 
         elif action == "restart_all":
             for st in mgr.states:
                 try:
-                    mgr.restart_stream(st)
+                    mgr.restart(st.config.name)
                 except Exception:
                     pass
             self._json({"ok": True, "msg": "Restarting all streams"})
@@ -3001,7 +3028,8 @@ class WebHandler(BaseHTTPRequestHandler):
         elif action == "skip_next":
             st = mgr.get_state(str(data.get("name", "")))
             if st:
-                mgr.skip_next(st)
+                _w = mgr.get_worker(st.config.name)
+                if _w: _w.skip_to_next()
                 self._json({"ok": True, "msg": f"Skipping in {st.config.name}"})
             else:
                 self._json({"ok": False, "msg": "Stream not found"})
@@ -3016,7 +3044,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "Invalid seek position"})
                 return
             if st:
-                mgr.seek_stream(st, secs)
+                _w = mgr.get_worker(st.config.name)
+                if _w: _w.seek(secs)
                 self._json({"ok": True, "msg": f"Seeking to {_fmt_duration(secs)}"})
             else:
                 self._json({"ok": False, "msg": "Stream not found"})
