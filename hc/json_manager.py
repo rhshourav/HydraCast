@@ -217,9 +217,34 @@ class JSONManager:
             return []
 
         try:
-            raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
+            text = p.read_text(encoding="utf-8").strip()
+            if not text:
+                # File exists but is empty — likely a crash-truncated write.
+                # Rename it so the user keeps a copy, then start fresh.
+                _backup = p.with_suffix(".json.bak")
+                try:
+                    p.rename(_backup)
+                except Exception:
+                    p.unlink(missing_ok=True)
+                log.warning(
+                    "json_manager: streams.json was empty (crash-truncated?). "
+                    "Renamed to streams.json.bak and starting with empty config."
+                )
+                return []
+            raw: List[Dict[str, Any]] = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"streams.json is not valid JSON: {exc}") from exc
+            # File is non-empty but not valid JSON — back it up and continue.
+            _backup = p.with_suffix(".json.bak")
+            try:
+                p.rename(_backup)
+            except Exception:
+                p.unlink(missing_ok=True)
+            log.warning(
+                "json_manager: streams.json contained invalid JSON (%s). "
+                "Renamed to streams.json.bak and starting with empty config.",
+                exc,
+            )
+            return []
 
         configs: List[StreamConfig] = []
         for entry in raw:
@@ -234,7 +259,16 @@ class JSONManager:
     def save(cls, configs: List[StreamConfig]) -> None:
         p = _streams_path()
         data = [_config_to_dict(c) for c in configs]
-        p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        text = json.dumps(data, indent=2, ensure_ascii=False)
+        # Atomic write: write to a sibling temp file then rename so a crash
+        # mid-write never leaves streams.json empty or partially written.
+        tmp = p.with_suffix(".json.tmp")
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(p)          # atomic on POSIX; near-atomic on Windows
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
         log.info("json_manager: saved %d stream(s) to '%s'", len(configs), p)
 
     @classmethod
