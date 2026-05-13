@@ -1,8 +1,20 @@
 """
 hc/mediamtx_cfg.py  —  Generate per-stream MediaMTX YAML config files.
 
-FIX (v5.0.6):
-  • hlsAllowOrigin: '*'  — singular, plain string.
+FIX (v5.0.6 / v6.0):
+  • spath = cfg.rtsp_path  (no "~all" fallback).
+    The new version used  spath = cfg.rtsp_path if cfg.rtsp_path else "~all"
+    because models.py was returning "" for empty stream_path.  models.py is
+    now fixed to always return "stream" as the default, so rtsp_path is never
+    empty and the ~all wildcard is not needed.
+
+    Using ~all caused two problems:
+      1. MediaMTX v1.9.1 does not reliably match the bare root path "/" under
+         ~all, so FFmpeg's push to rtsp://127.0.0.1:<port>/ was rejected.
+      2. All streams on the same server shared one wildcard path block, which
+         broke multi-stream isolation.
+
+  • hlsAllowOrigin: '*'  — singular, plain string (unchanged from v5.0.6).
     v1.9.1 uses the OLD singular key. The plural `hlsAllowOrigins` with a
     list was introduced in a later release; using it in v1.9.1 raises
     ERR: json: unknown field "hlsAllowOrigins".
@@ -42,7 +54,9 @@ class MediaMTXConfig:
     def write(state: StreamState) -> Path:
         cfg   = state.config
         port  = cfg.port
-        spath = cfg.rtsp_path if cfg.rtsp_path else "~all"
+        # rtsp_path is always non-empty ("stream" is the fallback when
+        # stream_path is not configured) — no "~all" needed.
+        spath = cfg.rtsp_path
         addr  = LISTEN_ADDR()
         log_f = (LOGS_DIR() / f"mediamtx_{port}.log").resolve()
         cfg_f = CONFIGS_DIR() / f"mediamtx_{port}.yml"
@@ -93,7 +107,6 @@ class MediaMTXConfig:
                 f"hlsVariant: fmp4\n"
                 f"hlsSegmentCount: 6\n"
                 f"hlsSegmentDuration: 4s\n"
-                f""
                 f"hlsAllowOrigin: '*'\n"
             )
         else:
@@ -111,6 +124,7 @@ class MediaMTXConfig:
 
         yaml_text = (
             f"# HydraCast v{APP_VER} — {cfg.name} (:{port})\n"
+            f"# Stream path: /{spath}   RTSP push → rtsp://127.0.0.1:{port}/{spath}\n"
             f"# RTP port {rtp_base} (even ✓)  RTCP port {rtp_base+1} (odd ✓)\n"
             f"# rtmp/srt/webrtc: false prevents port-1935/8890/8889 collisions\n"
             f"logLevel: error\n"
