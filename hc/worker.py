@@ -760,12 +760,12 @@ class StreamWorker:
     def _start_ffmpeg(self, item: PlaylistItem, seek_pos: float) -> bool:
         cfg       = self.state.config
         loop_flag = ["-stream_loop", "-1"] if len(cfg.playlist) == 1 else []
-        # Build RTSP push URL: no trailing slash when stream_path is empty.
-        # rtsp://host:port/  (path="/") ≠ rtsp://host:port  (path="")
-        # MediaMTX v1.9.1 returns 400 Bad Request if the path doesn't match
-        # what is declared in its YAML, so both sides must be consistent.
-        _rtsp_base = f"rtsp://127.0.0.1:{cfg.port}"
-        _rtsp_target = f"{_rtsp_base}/{cfg.rtsp_path}" if cfg.rtsp_path else _rtsp_base
+        # When stream_path is empty, push to the concrete path "stream".
+        # Never use a bare rtsp://host:port/ (trailing slash = path "/") —
+        # MediaMTX v1.9.1 treats "/" differently from a named path and returns
+        # 400 Bad Request. The YAML uses "~all" which accepts any named path.
+        _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
+        _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error",
             "-re",
@@ -828,8 +828,8 @@ class StreamWorker:
     def _play_black(self) -> None:
         cfg = self.state.config
         self._log("Starting black-screen feed …")
-        _rtsp_base = f"rtsp://127.0.0.1:{cfg.port}"
-        _rtsp_target = f"{_rtsp_base}/{cfg.rtsp_path}" if cfg.rtsp_path else _rtsp_base
+        _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
+        _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error", "-re",
             "-f", "lavfi", "-i", "color=black:size=1280x720:rate=25",
