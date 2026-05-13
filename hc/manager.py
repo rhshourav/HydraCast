@@ -332,7 +332,30 @@ class StreamManager:
                     )
                     worker = self.get_worker(ev.stream_name)
                     if worker:
-                        worker.inject_event(ev)
+                        # If the stream is not live, start it first so
+                        # play_oneshot has a running ffmpeg pipeline to hand off to.
+                        if state.status not in (
+                            StreamStatus.LIVE, StreamStatus.STARTING
+                        ):
+                            log.info(
+                                "manager: stream '%s' not running — starting "
+                                "before one-shot event.",
+                                ev.stream_name,
+                            )
+                            state.log_add(
+                                "▶ Stream started automatically for one-shot event."
+                            )
+                            self._start_worker(state)
+                            # Give the worker a moment to reach LIVE before
+                            # injecting the one-shot clip.
+                            deadline = time.time() + 10.0
+                            while time.time() < deadline:
+                                if state.status == StreamStatus.LIVE:
+                                    break
+                                time.sleep(0.25)
+                        # play_oneshot is the correct method on StreamWorker
+                        # (inject_event does not exist).
+                        worker.play_oneshot(ev)
                     JSONManager.mark_event_played(self._events, ev.event_id)
                     self._glog.add(
                         f"Event fired: '{ev.file_path.name}' → {ev.stream_name}",
