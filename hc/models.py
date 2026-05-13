@@ -1,10 +1,5 @@
 """
 hc/models.py  —  Core dataclasses and enums.
-
-Changes vs v5.0.0:
-  • StreamConfig: three new compliance fields (compliance_enabled,
-    compliance_start, compliance_loop).
-  • StreamState:  initial_offset field for per-start ±offset feature.
 """
 from __future__ import annotations
 
@@ -13,9 +8,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
-from hc.constants import DAY_ABBR, LISTEN_ADDR
+from hc.constants import DAY_ABBR, LISTEN_ADDR, WEEKDAY_MAP
 
 
 # =============================================================================
@@ -47,7 +42,7 @@ class OneShotEvent:
     stream_name: str
     file_path:   Path
     play_at:     datetime
-    post_action: str
+    post_action: str  = ""
     played:      bool = False
     start_pos:   str  = "00:00:00"
 
@@ -57,7 +52,7 @@ class PlaylistItem:
     file_path:      Path
     start_position: str = "00:00:00"
     weight:         int = 1
-    priority:       int = 999   # lower = plays earlier
+    priority:       int = 999
 
 
 @dataclass
@@ -73,24 +68,35 @@ class StreamConfig:
     audio_bitrate:  str   = "128k"
     hls_enabled:    bool  = False
     row_index:      int   = 0
-
-    # ── Folder-source tracking ───────────────────────────────────────────────
-    # Set when the CSV entry points to a directory.  Preserved across restarts
-    # so the folder is always re-scanned for new/removed files on every start.
-    folder_source: Optional[Path] = None
-
-    # ── Compliance / broadcast-sync fields ────────────────────────────────────
-    # When compliance_enabled is True the stream calculates the correct seek
-    # offset so it matches a continuous linear broadcast that started at
-    # compliance_start each day.
+    folder_source:  Optional[Path] = None
     compliance_enabled: bool = False
-    compliance_start:   str  = "06:00:00"   # HH:MM:SS wall-clock broadcast start
-    compliance_loop:    bool = False         # seek within loops for short videos
+    compliance_start:   str  = "06:00:00"
+    compliance_loop:    bool = False
 
-    # ── Derived properties ────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _int_weekdays(self) -> List[int]:
+        """
+        Always return weekdays as List[int] regardless of how they are stored.
+        Handles legacy str abbreviations (e.g. "mon") transparently.
+        """
+        result: List[int] = []
+        for d in self.weekdays:
+            if isinstance(d, int):
+                result.append(d)
+            else:
+                val = WEEKDAY_MAP.get(str(d).strip().lower())
+                if isinstance(val, list):
+                    result.extend(val)
+                elif isinstance(val, int):
+                    result.append(val)
+        return result
+
+    # ── URL / path properties ─────────────────────────────────────────────────
+
     @property
     def rtsp_path(self) -> str:
-        """Return the stream path segment, or empty string if none (root mount)."""
+        """Stream path segment; empty string means root mount (rtsp://ip:port/)."""
         return self.stream_path.strip("/") if self.stream_path else ""
 
     @property
@@ -116,14 +122,19 @@ class StreamConfig:
         path = f"/{self.rtsp_path}" if self.rtsp_path else ""
         return f"http://{ip}:{self.hls_port}{path}/index.m3u8"
 
+    # ── Schedule helpers ──────────────────────────────────────────────────────
+
     def is_scheduled_today(self) -> bool:
-        return datetime.now().weekday() in self.weekdays
+        return datetime.now().weekday() in self._int_weekdays()
 
     def weekdays_display(self) -> str:
-        if set(self.weekdays) == set(range(7)):  return "ALL"
-        if set(self.weekdays) == set(range(5)):  return "Weekdays"
-        if set(self.weekdays) == {5, 6}:         return "Weekends"
-        return "|".join(DAY_ABBR[d] for d in sorted(self.weekdays))
+        days = self._int_weekdays()
+        day_set = set(days)
+        if day_set == set(range(7)): return "ALL"
+        if day_set == set(range(5)): return "Weekdays"
+        if day_set == {5, 6}:        return "Weekends"
+        if not days:                 return "—"
+        return "|".join(DAY_ABBR[d] for d in sorted(day_set))
 
     def playlist_display(self) -> str:
         n = len(self.playlist)
@@ -139,8 +150,8 @@ class StreamConfig:
 class StreamState:
     config:           StreamConfig
     status:           StreamStatus               = StreamStatus.STOPPED
-    mtx_proc:         object                     = None   # subprocess.Popen
-    ffmpeg_proc:      object                     = None   # subprocess.Popen
+    mtx_proc:         object                     = None
+    ffmpeg_proc:      object                     = None
     progress:         float                      = 0.0
     current_pos:      float                      = 0.0
     duration:         float                      = 0.0
@@ -155,7 +166,6 @@ class StreamState:
     playlist_order:   List[int]                  = field(default_factory=list)
     seek_target:      Optional[float]            = None
     oneshot_active:   bool                       = False
-    # Per-start ±time offset applied once at the very next start (cleared after use)
     initial_offset:   float                      = 0.0
     log:              List[str]                  = field(default_factory=list)
     _lock:            threading.Lock             = field(default_factory=threading.Lock)
@@ -176,7 +186,6 @@ class StreamState:
         return "—"
 
     def time_remaining(self) -> float:
-        """Returns remaining seconds; 0 if duration unknown."""
         if self.duration > 0 and self.current_pos > 0:
             return max(0.0, self.duration - self.current_pos)
         return 0.0
