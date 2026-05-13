@@ -350,15 +350,7 @@ class StreamWorker:
     def play_oneshot(self, event: OneShotEvent) -> None:
         self._log(f"One-shot event starting: {event.file_path.name}", "INFO")
         self.state.oneshot_active = True
-
-        # Kill ffmpeg first, then MediaMTX.  If we only kill ffmpeg and
-        # immediately push a new stream, MediaMTX rejects it with
-        # "Could not write header / 400 Bad Request" because it still holds
-        # session state from the previous push (codec parameters, SPS/PPS).
-        # Cycling MediaMTX forces a clean session so the new clip is accepted.
         self._kill_ffmpeg()
-        self._kill_mediamtx()
-        time.sleep(0.3)
 
         try:
             h, m, s = event.start_pos.split(":")
@@ -366,25 +358,10 @@ class StreamWorker:
         except Exception:
             seek_secs = 0.0
 
-        # Re-write the MediaMTX YAML (state/config unchanged) and relaunch.
-        cfg = self.state.config
-        try:
-            mtx_cfg = MediaMTXConfig.write(self.state)
-        except Exception as exc:
-            self._log(f"One-shot: failed to write MediaMTX config: {exc}", "ERROR")
-            self.state.oneshot_active = False
-            return
-
-        if not self._start_mediamtx(mtx_cfg):
-            self._log("One-shot: MediaMTX failed to start.", "ERROR")
-            self.state.oneshot_active = False
-            return
-
-        if not _wait_for_port(cfg.port, timeout=self.MTX_READY_TIMEOUT):
-            self._log(
-                f"One-shot: MediaMTX did not bind :{cfg.port} in time.", "ERROR"
-            )
-            self._kill_mediamtx()
+        # Cycle MediaMTX to clear old publisher session; same reason as
+        # playlist advance — without this the new push gets 400 Bad Request.
+        if not self._cycle_mediamtx():
+            self._log("One-shot: MediaMTX cycle failed — aborting.", "ERROR")
             self.state.oneshot_active = False
             return
 
@@ -411,9 +388,13 @@ class StreamWorker:
                 item2 = self._current_item()
                 if item2:
                     self._log(f"Resuming playlist: {item2.file_path.name}")
-                    self._start_ffmpeg(item2, 0.0)
-                    threading.Thread(target=self._monitor, daemon=True,
-                                     name=f"mon-{self.state.config.port}").start()
+                    # Cycle MediaMTX again before resuming the playlist.
+                    if self._cycle_mediamtx():
+                        self._start_ffmpeg(item2, 0.0)
+                        threading.Thread(target=self._monitor, daemon=True,
+                                         name=f"mon-{self.state.config.port}").start()
+                    else:
+                        self._log("One-shot resume: MediaMTX cycle failed.", "ERROR")
 
         threading.Thread(target=_after, daemon=True,
                          name=f"oneshot-{self.state.config.port}").start()
@@ -974,7 +955,17 @@ class StreamWorker:
                     spos    = int(h) * 3600 + int(m) * 60 + float(s)
                 except Exception:
                     spos = 0.0
-                time.sleep(0.2)
+                # Cycle MediaMTX so it clears the old publisher session before
+                # the next ffmpeg push; without this the new push is rejected
+                # with "Could not write header / 400 Bad Request".
+                if not self._cycle_mediamtx():
+                    self._log(
+                        "Playlist advance: MediaMTX cycle failed — "
+                        "triggering auto-restart.",
+                        "ERROR",
+                    )
+                    self._auto_restart()
+                    return
                 self._start_ffmpeg(next_item, spos)
                 threading.Thread(target=self._monitor, daemon=True,
                                  name=f"mon-{self.state.config.port}").start()
@@ -1085,6 +1076,37 @@ class StreamWorker:
                 self._start_lock.release()
         else:
             self._log("Auto-restart: could not acquire start lock — skipping.", "WARN")
+
+    def _cycle_mediamtx(self) -> bool:
+        """
+        Kill MediaMTX, rewrite its YAML, and restart it, then wait for the
+        port to bind.  Returns True on success.
+
+        This must be called every time ffmpeg switches to a new source file
+        (playlist advance, one-shot events, seek).  MediaMTX holds publisher
+        session state — SPS/PPS, codec parameters — tied to the previous push.
+        If a new ffmpeg process connects without cycling MediaMTX first, it
+        gets "Could not write header / 400 Bad Request" because the server
+        rejects mismatched codec parameters from the new publisher.
+        """
+        cfg = self.state.config
+        self._kill_mediamtx()
+        time.sleep(0.2)
+        try:
+            mtx_cfg = MediaMTXConfig.write(self.state)
+        except Exception as exc:
+            self._log(f"_cycle_mediamtx: failed to write MediaMTX config: {exc}", "ERROR")
+            return False
+        if not self._start_mediamtx(mtx_cfg):
+            self._log("_cycle_mediamtx: MediaMTX failed to restart.", "ERROR")
+            return False
+        if not _wait_for_port(cfg.port, timeout=self.MTX_READY_TIMEOUT):
+            self._log(
+                f"_cycle_mediamtx: MediaMTX did not bind :{cfg.port} in time.", "ERROR"
+            )
+            self._kill_mediamtx()
+            return False
+        return True
 
     def _kill_ffmpeg(self) -> None:
         proc = self.state.ffmpeg_proc
