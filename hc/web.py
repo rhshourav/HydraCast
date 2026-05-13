@@ -2737,15 +2737,15 @@ function _renderPLTable(cid){
       +'<td style="width:82px;text-align:center;vertical-align:top;padding-top:8px">'
         +_plPriBadge(item.priority)
         +'<div style="margin-top:4px"><input type="number" value="'+item.priority+'" min="0" max="999"'
-        +' oninput="_plUpd('+i+','p',this.value)" style="width:54px;text-align:center"></div>'
+        +' oninput="_plUpd('+i+',&apos;p&apos;,this.value)" style="width:54px;text-align:center"></div>'
       +'</td>'
       +'<td style="width:100px">'+(ch?'<span class="pl-channel-tag">'+esc(ch)+'</span>':'<span style="color:var(--text3);font-size:10px">—</span>')+'</td>'
       +'<td><div class="pl-path" title="'+esc(item.path)+'" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">'+esc(fname)+'</div>'
         +'<div style="font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">'+esc(item.path)+'</div></td>'
       +'<td style="width:106px"><input type="text" value="'+esc(item.start)+'" placeholder="00:00:00"'
-        +' oninput="_plUpd('+i+','s',this.value)" style="width:94px;font-family:var(--font-mono);font-size:11px"></td>'
+        +' oninput="_plUpd('+i+',&apos;s&apos;,this.value)" style="width:94px;font-family:var(--font-mono);font-size:11px"></td>'
       +'<td style="width:40px;text-align:right"><button class="btn r" style="padding:2px 7px;font-size:10px"'
-        +' onclick="_plRemove('+i+',''+cid+'')">&#x2715;</button></td>'
+        +' onclick="_plRemove('+i+',&apos;'+cid+'&apos;)">&#x2715;</button></td>'
       +'</tr>';
   }).join('');
 
@@ -2754,9 +2754,9 @@ function _renderPLTable(cid){
       +'<div class="pl-toolbar">'
         +'<span class="pl-toolbar-label"><i class="fa fa-list-ol" style="margin-right:5px;opacity:0.65"></i>'
         +_playlistItems.length+' file'+(_playlistItems.length!==1?'s':'')+'</span>'
-        +'<button class="btn b" style="padding:3px 10px;font-size:10px" onclick="_plSort(''+cid+'')">'
+        +'<button class="btn b" style="padding:3px 10px;font-size:10px" onclick="_plSort(&apos;'+cid+'&apos;)">'
           +'<i class="fa fa-sort-numeric-down" style="margin-right:4px"></i>Sort by Priority</button>'
-        +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plRawView(''+cid+'')">'
+        +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plRawView(&apos;'+cid+'&apos;)">'
           +'<i class="fa fa-code" style="margin-right:4px"></i>Raw</button>'
       +'</div>'
       +(_playlistItems.length>0
@@ -2774,9 +2774,9 @@ function _renderPLTable(cid){
           +'No files yet — add one below</div>')
       +'<div class="pl-add-row">'
         +'<input type="text" id="'+cid+'-new" placeholder="/path/to/video.mp4  (optional: path@HH:MM:SS#priority)"'
-          +' onkeydown="if(event.key==='Enter')_plAdd(''+cid+'')">'
+          +' onkeydown="if(event.key===&apos;Enter&apos;)_plAdd(&apos;'+cid+'&apos;)">'
         +'<button class="btn g" style="padding:5px 12px;font-size:11px;white-space:nowrap"'
-          +' onclick="_plAdd(''+cid+'')"><i class="fa fa-plus"></i> Add</button>'
+          +' onclick="_plAdd(&apos;'+cid+'&apos;)"><i class="fa fa-plus"></i> Add</button>'
       +'</div>'
     +'</div>';
 }
@@ -2820,7 +2820,7 @@ function _plRawView(cid){
     '<div class="pl-editor">'
       +'<div class="pl-toolbar">'
         +'<span class="pl-toolbar-label"><i class="fa fa-code" style="margin-right:5px;opacity:0.65"></i>Raw edit</span>'
-        +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plTableView(''+cid+'')">'
+        +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plTableView(&apos;'+cid+'&apos;)">'
           +'<i class="fa fa-table" style="margin-right:4px"></i>Back to Table</button>'
       +'</div>'
       +'<div style="padding:12px">'
