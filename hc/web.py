@@ -925,7 +925,7 @@ select option{background:var(--bg3)}
       ║  LOGO PLACEHOLDER                                    ║
       ║  To add your own logo image:                         ║
       ║    document.getElementById('logo-img').src =         ║
-      ║      '/your-resources/logo.png';                               ║
+      ║      '/your-logo.png';                               ║
       ║  The fallback "LOGO" text hides automatically when   ║
       ║  the image loads.                                    ║
       ╚══════════════════════════════════════════════════════╝
@@ -1831,9 +1831,19 @@ function _rowCells(s,i,showRtsp){
     <td class="td-muted">${s.loop_count!=null&&s.loop_count!==undefined?'×'+s.loop_count:'--'}</td>
     <td class="td-muted">${(s.bitrate&&s.bitrate!=='—'&&s.bitrate!=='N/A'&&s.bitrate!=='n/a')?esc(s.bitrate):'--'}</td>
     <td>
-      <div style="display:flex;flex-direction:column;gap:4px">
-        ${s.rtsp_url?`<span class="chip" onclick="copyText('${esc(s.rtsp_url)}')" title="${esc(s.rtsp_url)}">📋 RTSP ${esc(s.rtsp_url)}</span>`:'<span class="td-muted">—</span>'}
-        ${s.hls_url?`<span class="chip" onclick="copyText('${esc(s.hls_url)}')" title="${esc(s.hls_url)}" style="color:var(--cyan)">📋 HLS ${esc(s.hls_url)}</span>`:''}
+      <div style="display:flex;flex-direction:column;gap:5px;min-width:220px">
+        ${s.rtsp_url?`
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:10px;font-weight:700;color:var(--accent-light);font-family:var(--font-mono);white-space:nowrap">RTSP</span>
+            <span style="flex:1;font-size:11px;font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:3px 8px" title="${esc(s.rtsp_url)}">${esc(s.rtsp_url)}</span>
+            <button class="btn" style="padding:3px 8px;font-size:11px;flex-shrink:0" onclick="copyText('${esc(s.rtsp_url)}')">📋</button>
+          </div>`:'<span class="td-muted">—</span>'}
+        ${s.hls_url?`
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:10px;font-weight:700;color:var(--cyan);font-family:var(--font-mono);white-space:nowrap">HLS</span>
+            <span style="flex:1;font-size:11px;font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:3px 8px" title="${esc(s.hls_url)}">${esc(s.hls_url)}</span>
+            <button class="btn" style="padding:3px 8px;font-size:11px;flex-shrink:0;color:var(--cyan)" onclick="copyText('${esc(s.hls_url)}')">📋</button>
+          </div>`:``}
       </div>
     </td>
     <td>
@@ -1905,7 +1915,28 @@ function renderStreams(data){
 }
 
 function copyText(url){
-  navigator.clipboard.writeText(url).then(()=>toast('Copied to clipboard','ok'));
+  if(navigator.clipboard&&window.isSecureContext){
+    navigator.clipboard.writeText(url)
+      .then(()=>toast('Copied!','ok'))
+      .catch(()=>_copyFallback(url));
+  } else {
+    _copyFallback(url);
+  }
+}
+function _copyFallback(url){
+  /* Works on HTTP (non-secure) pages where clipboard API is blocked */
+  const ta=document.createElement('textarea');
+  ta.value=url;
+  ta.style.cssText='position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(ta);
+  ta.focus();ta.select();
+  try{
+    document.execCommand('copy');
+    toast('Copied!','ok');
+  }catch(_){
+    toast('Copy failed — select manually','err');
+  }
+  document.body.removeChild(ta);
 }
 
 // ═══════════════════════════════════
@@ -3049,7 +3080,7 @@ function toggleTheme(){
 // INIT
 // ═══════════════════════════════════
 (async function init(){
-  document.getElementById('logo-img').src = '/resources/logo.png';
+  document.getElementById('logo-img').src = '/logo.png';
   loadStreams();
   updateStats();
   toggleAuto(true);
@@ -3425,7 +3456,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
         """
         Serve a static file from <BASE_DIR>/static/ or BASE_DIR itself.
         Supports: .png .jpg .jpeg .gif .webp .svg .ico .css .js
-        Place resources/logo.png at <BASE_DIR>/resources/logo.png  — it will be served as /resources/logo.png.
+        Place logo.png at <BASE_DIR>/logo.png  — it will be served as /logo.png.
         Any file under <BASE_DIR>/static/ is served as /static/<filename>.
         """
         _MIME = {
@@ -3439,7 +3470,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             ".js":   "application/javascript",
         }
         # Resolve file on disk
-        name = url_path.lstrip("/")                     # e.g. "resources/logo.png" or "static/x.png"
+        name = url_path.lstrip("/")                     # e.g. "logo.png" or "static/x.png"
         candidate = BASE_DIR() / name
         if not candidate.exists() or not candidate.is_file():
             self._send(404, b"Not Found", "text/plain")
@@ -3503,7 +3534,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             except Exception as exc:
                 log.error("WebHandler GET %s: %s", path, exc)
                 self._json({"error": "internal server error"}, 500)
-        elif path.startswith("/static/") or path in ("/resources/logo.png", "/favicon.ico"):
+        elif path.startswith("/static/") or path in ("/logo.png", "/favicon.ico"):
             self._serve_static(path)
         else:
             self._send(404, b"Not Found", "text/plain")
