@@ -2048,6 +2048,9 @@ async function loadViewer(){
   const existing={};
   grid.querySelectorAll('.stream-card[data-vname]').forEach(c=>existing[c.dataset.vname]=c);
 
+  // Clear any placeholder/empty message if cards are about to be added
+  if(!Object.keys(existing).length) grid.innerHTML='';
+
   // Remove cards for streams that no longer exist
   const names=new Set(data.map(s=>s.name));
   Object.keys(existing).forEach(n=>{ if(!names.has(n)){existing[n].remove();delete existing[n];} });
@@ -2078,19 +2081,17 @@ async function loadViewer(){
         </div>
         <div class="stream-card-footer">
           <div class="stream-stats">
-            <div class="stat-item">Progress <b class="vc-pct-${esc(s.name)}">${pct}%</b></div>
             <div class="stat-item">FPS <b class="vc-fps-${esc(s.name)}">${s.fps>0?Math.round(s.fps)+'fps':'—'}</b></div>
             <div class="stat-item">Pos <b class="vc-pos-${esc(s.name)}">${esc(s.position||'—')}</b></div>
+            <div class="stat-item"><b class="vc-pct-${esc(s.name)}">${pct}%</b></div>
           </div>
           <div class="btn-group">
-            ${isLive?`<button class="btn g" style="font-size:10px" onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>`:''}
-            <button class="btn b" style="font-size:10px" onclick="copyText('${esc(s.rtsp_url||'')}')">📋</button>
+            <button class="btn b" style="font-size:10px;padding:3px 8px" onclick="copyText('${esc(s.rtsp_url||s.hls_url||'')}')">📋</button>
           </div>
         </div>
         <div style="padding:0 14px 10px">
-          <div class="info-row" style="display:flex;flex-direction:column;gap:4px">
-            ${s.rtsp_url?`<span class="info-chip">RTSP <b>${esc(s.rtsp_url)}</b></span>`:''}
-            ${s.hls_url?`<span class="info-chip" style="color:var(--cyan)">HLS <b>${esc(s.hls_url)}</b></span>`:''}
+          <div class="prog vc-prog-${esc(s.name)}" style="height:5px;border-radius:3px">
+            <div class="prog-fill vc-progfill-${esc(s.name)}" style="width:${pct}%;background:${+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)'}"></div>
           </div>
         </div>`;
       // Insert in correct order
@@ -2110,6 +2111,8 @@ async function loadViewer(){
       if(fpsEl)fpsEl.textContent=s.fps>0?Math.round(s.fps)+'fps':'—';
       const posEl=card.querySelector('.vc-pos-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
       if(posEl)posEl.textContent=s.position||'—';
+      const pfill=card.querySelector('.vc-progfill-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      if(pfill){pfill.style.width=pct+'%';pfill.style.background=+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)';}
       // Update offline overlay only if preview has no video playing
       const preview=document.getElementById('vp-'+s.name);
       const overlay=document.getElementById('vo-'+s.name);
