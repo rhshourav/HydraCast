@@ -2086,7 +2086,7 @@ async function loadViewer(){
             <div class="stat-item"><b class="vc-pct-${esc(s.name)}">${pct}%</b></div>
           </div>
           <div class="btn-group">
-            <button class="btn b" style="font-size:10px;padding:3px 8px" onclick="copyText('${esc(s.hls_url||s.rtsp_url||'')}')">📋</button>
+            <button class="btn b vc-copy-${esc(s.name)}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.hls||this.dataset.rtsp)">📋</button>
           </div>
         </div>
         <div style="padding:0 14px 10px">
@@ -2113,6 +2113,8 @@ async function loadViewer(){
       if(posEl)posEl.textContent=s.position||'—';
       const pfill=card.querySelector('.vc-progfill-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
       if(pfill){pfill.style.width=pct+'%';pfill.style.background=+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)';}
+      const copyBtn=card.querySelector('.vc-copy-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      if(copyBtn){if(s.hls_url)copyBtn.dataset.hls=s.hls_url;if(s.rtsp_url)copyBtn.dataset.rtsp=s.rtsp_url;}
       // Update offline overlay only if preview has no video playing
       const preview=document.getElementById('vp-'+s.name);
       const overlay=document.getElementById('vo-'+s.name);
