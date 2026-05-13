@@ -466,25 +466,41 @@ class StreamWorker:
                     )
                     self._log(self.state.error_msg, "ERROR")
                     return False
+
                 # Persist folder_source so every future restart re-scans.
                 cfg.folder_source = folder_root
-                # Replace the in-memory playlist and rebuild order from scratch
-                # so newly added/removed files are reflected immediately.
+
+                # Update in-memory playlist.  Preserve the current playlist
+                # index so a restart after an error doesn't always replay the
+                # first file — only reset to 0 on the very first start
+                # (playlist_order is empty) or when the playlist shrank to
+                # fewer items than the current index.
+                old_count = len(cfg.playlist)
                 cfg.playlist = scanned_items
-                self.state.playlist_index = 0
-                self.state.playlist_order = self._build_order()
+                if not self.state.playlist_order:
+                    # First start: build order fresh.
+                    self.state.playlist_index = 0
+                    self.state.playlist_order = self._build_order()
+                else:
+                    # Rebuild order (handles shuffle + new file count).
+                    self.state.playlist_order = self._build_order()
+                    # Clamp index to valid range.
+                    self.state.playlist_index = (
+                        self.state.playlist_index % len(self.state.playlist_order)
+                    )
+
                 item = self._current_item()
                 if item is None:
                     self.state.status    = StreamStatus.ERROR
                     self.state.error_msg = (
-                        "Folder scan succeeded but could not pick first item"
+                        "Folder scan succeeded but could not pick current item"
                     )
                     self._log(self.state.error_msg, "ERROR")
                     return False
                 resolved_path = item.file_path
                 self._log(
-                    f"Folder scan complete: {len(scanned_items)} file(s) found. "
-                    f"Starting with: {resolved_path.name}"
+                    f"Folder scan: {len(scanned_items)} file(s) found "
+                    f"(was {old_count}). Resuming with: {resolved_path.name}"
                 )
             except Exception as exc:
                 self.state.status    = StreamStatus.ERROR
@@ -815,6 +831,34 @@ class StreamWorker:
             proc = subprocess.Popen(cmd, **kw)
             self.state.ffmpeg_proc = proc
 
+            # ── Drain stderr into a thread-safe buffer ────────────────────────
+            # Without draining, the stderr pipe buffer fills up (~64 KB on Linux)
+            # and FFmpeg blocks waiting to write its error output, causing hangs.
+            # We store the last 2 KB so _start_ffmpeg_with_retry and _monitor
+            # can both read it after the process exits.
+            import collections
+            stderr_buf: "collections.deque[str]" = collections.deque(maxlen=50)
+
+            def _drain_stderr(p: subprocess.Popen, buf: "collections.deque[str]") -> None:
+                try:
+                    for raw in p.stderr:
+                        line = (raw.decode(errors="replace") if isinstance(raw, bytes) else raw).rstrip()
+                        if line:
+                            buf.append(line)
+                            log.debug("[%s] ffmpeg stderr: %s", cfg.name, line)
+                except Exception:
+                    pass
+
+            drain_t = threading.Thread(
+                target=_drain_stderr, args=(proc, stderr_buf),
+                daemon=True, name=f"ffmpeg-err-{cfg.port}",
+            )
+            drain_t.start()
+            # Attach buffer to proc so _start_ffmpeg_with_retry and _monitor
+            # can retrieve the captured stderr text.
+            proc._stderr_buf  = stderr_buf   # type: ignore[attr-defined]
+            proc._stderr_drain = drain_t     # type: ignore[attr-defined]
+
             if IS_LINUX and CPU_COUNT > 1:
                 try:
                     core = cfg.row_index % CPU_COUNT
@@ -854,6 +898,10 @@ class StreamWorker:
         we detect the 400 in stderr and retry with a short back-off — this
         self-corrects in 1-2 retries without adding unnecessary latency when
         MediaMTX is already ready.
+
+        stderr is consumed by the drain thread started in _start_ffmpeg; we
+        read it from the attached _stderr_buf deque rather than from the pipe
+        directly (which would have been consumed and return empty).
         """
         for attempt in range(1, max_retries + 1):
             if not self._start_ffmpeg(item, seek_pos):
@@ -874,14 +922,28 @@ class StreamWorker:
                 # Still running after 3 s — MediaMTX accepted the push.
                 return True
 
-            # FFmpeg exited — check whether it was a 400 Bad Request.
-            stderr_txt = ""
-            try:
-                stderr_txt = proc.stderr.read(800) if proc.stderr else ""
-            except Exception:
-                pass
+            # FFmpeg exited — wait briefly for the drain thread to capture stderr.
+            drain = getattr(proc, "_stderr_drain", None)
+            if drain is not None:
+                drain.join(timeout=1.0)
 
-            if "400 Bad Request" in stderr_txt or "400 bad request" in stderr_txt.lower():
+            # Read from the attached buffer filled by the drain thread.
+            buf = getattr(proc, "_stderr_buf", None)
+            stderr_txt = "\n".join(buf) if buf else ""
+
+            self._log(
+                f"FFmpeg exited early (attempt {attempt}/{max_retries}, "
+                f"code={proc.returncode})"
+                + (f": {stderr_txt[:200]}" if stderr_txt else ""),
+                "WARN",
+            )
+
+            is_400 = (
+                "400 Bad Request" in stderr_txt
+                or "400 bad request" in stderr_txt.lower()
+            )
+
+            if is_400:
                 if attempt < max_retries:
                     self._log(
                         f"FFmpeg got 400 Bad Request from MediaMTX "
@@ -901,7 +963,18 @@ class StreamWorker:
                     self.state.error_msg = "MediaMTX 400 Bad Request (path not ready)"
                     return False
             else:
-                # Some other error — let the normal monitor/auto-restart handle it.
+                # Non-400 error: capture it in state and let _monitor / _auto_restart
+                # decide what to do.  Return False so the caller knows FFmpeg failed.
+                if proc.returncode not in (None, 0, 255):
+                    self.state.status    = StreamStatus.ERROR
+                    self.state.error_msg = (
+                        stderr_txt[:300].strip()
+                        or f"FFmpeg exited with code {proc.returncode}"
+                    )
+                    self._log(self.state.error_msg, "ERROR")
+                    return False
+                # Code 0 / 255 on a fresh start means the file finished instantly
+                # (e.g. seek beyond end).  Return True so the monitor can advance.
                 return True
 
         return False
@@ -976,12 +1049,15 @@ class StreamWorker:
             return
 
         ret = my_proc.returncode if my_proc.returncode is not None else -1
-        stderr_txt = ""
-        try:
-            if my_proc.stderr:
-                stderr_txt = my_proc.stderr.read(800)
-        except Exception:
-            pass
+
+        # stderr is drained by the thread started in _start_ffmpeg into a
+        # deque attached to the proc object.  Reading the pipe directly here
+        # would return empty because the drain thread already consumed it.
+        drain = getattr(my_proc, "_stderr_drain", None)
+        if drain is not None:
+            drain.join(timeout=1.0)
+        buf = getattr(my_proc, "_stderr_buf", None)
+        stderr_txt = "\n".join(buf) if buf else ""
 
         self._log(f"FFmpeg process exited with code {ret}.")
         if stderr_txt:
