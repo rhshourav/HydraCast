@@ -925,7 +925,7 @@ select option{background:var(--bg3)}
       ║  LOGO PLACEHOLDER                                    ║
       ║  To add your own logo image:                         ║
       ║    document.getElementById('logo-img').src =         ║
-      ║      '/your-logo.png';                               ║
+      ║      '/your-resources/logo.png';                               ║
       ║  The fallback "LOGO" text hides automatically when   ║
       ║  the image loads.                                    ║
       ╚══════════════════════════════════════════════════════╝
@@ -3080,7 +3080,7 @@ function toggleTheme(){
 // INIT
 // ═══════════════════════════════════
 (async function init(){
-  document.getElementById('logo-img').src = '/logo.png';
+  document.getElementById('logo-img').src = '/resources/logo.png';
   loadStreams();
   updateStats();
   toggleAuto(true);
@@ -3456,7 +3456,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
         """
         Serve a static file from <BASE_DIR>/static/ or BASE_DIR itself.
         Supports: .png .jpg .jpeg .gif .webp .svg .ico .css .js
-        Place logo.png at <BASE_DIR>/logo.png  — it will be served as /logo.png.
+        Place resources/logo.png at <BASE_DIR>/resources/logo.png  — it will be served as /resources/logo.png.
         Any file under <BASE_DIR>/static/ is served as /static/<filename>.
         """
         _MIME = {
@@ -3470,7 +3470,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             ".js":   "application/javascript",
         }
         # Resolve file on disk
-        name = url_path.lstrip("/")                     # e.g. "logo.png" or "static/x.png"
+        name = url_path.lstrip("/")                     # e.g. "resources/logo.png" or "static/x.png"
         candidate = BASE_DIR() / name
         if not candidate.exists() or not candidate.is_file():
             self._send(404, b"Not Found", "text/plain")
@@ -3534,7 +3534,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             except Exception as exc:
                 log.error("WebHandler GET %s: %s", path, exc)
                 self._json({"error": "internal server error"}, 500)
-        elif path.startswith("/static/") or path in ("/logo.png", "/favicon.ico"):
+        elif path.startswith("/static/") or path in ("/resources/logo.png", "/favicon.ico"):
             self._serve_static(path)
         else:
             self._send(404, b"Not Found", "text/plain")
