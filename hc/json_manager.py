@@ -19,11 +19,62 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hc.constants import CONFIGS_DIR
+from hc.constants import CONFIGS_DIR, WEEKDAY_MAP
 from hc.folder_scanner import SortMode, scan_folder
 from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Weekday normalisation
+# ---------------------------------------------------------------------------
+
+def _normalise_weekdays(raw) -> List[int]:
+    """
+    Accept weekdays in any form and always return List[int] (0=Mon … 6=Sun):
+      - List[int]  already correct   e.g. [0, 2, 4]
+      - List[str]  abbreviations     e.g. ["mon", "wed", "fri"]
+      - str        pipe/comma-sep    e.g. "mon|wed|fri" | "all" | "weekdays"
+      - empty / None                 → all 7 days
+    """
+    if not raw:
+        return list(range(7))
+
+    if isinstance(raw, list):
+        result: List[int] = []
+        for item in raw:
+            if isinstance(item, int):
+                result.append(item)
+            else:
+                key = str(item).strip().lower()
+                val = WEEKDAY_MAP.get(key)
+                if isinstance(val, list):
+                    result.extend(val)
+                elif isinstance(val, int):
+                    result.append(val)
+        seen: set = set()
+        return [x for x in result if not (x in seen or seen.add(x))]
+
+    raw_s = str(raw).strip().lower()
+    if raw_s in ("all", "everyday", ""):
+        return list(range(7))
+    if raw_s == "weekdays":
+        return list(range(5))
+    if raw_s == "weekends":
+        return [5, 6]
+
+    import re as _re
+    result2: List[int] = []
+    for part in _re.split(r"[|,\\s]+", raw_s):
+        part = part.strip()
+        val = WEEKDAY_MAP.get(part)
+        if isinstance(val, list):
+            result2.extend(val)
+        elif isinstance(val, int):
+            result2.append(val)
+    seen2: set = set()
+    return [x for x in result2 if not (x in seen2 or seen2.add(x))]
 
 # ---------------------------------------------------------------------------
 # Config-directory helpers
@@ -86,7 +137,7 @@ def _config_to_dict(cfg: StreamConfig) -> Dict[str, Any]:
         "port":               cfg.port,
         "stream_path":        cfg.stream_path,
         "enabled":            cfg.enabled,
-        "weekdays":           cfg.weekdays,          # e.g. ["mon","wed","fri"]
+        "weekdays":           _normalise_weekdays(cfg.weekdays),  # always List[int]
         "shuffle":            cfg.shuffle,
         "video_bitrate":      cfg.video_bitrate,
         "audio_bitrate":      cfg.audio_bitrate,
@@ -117,19 +168,22 @@ def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
         elif d.get("playlist"):
             playlist = _playlist_from_json(d["playlist"])
 
+        raw_loop = d.get("compliance_loop", False)
+        compliance_loop = bool(raw_loop) if raw_loop != "" else False
+
         return StreamConfig(
             name               = d["name"],
             port               = int(d["port"]),
-            stream_path        = d.get("stream_path", d["name"]),
+            stream_path        = d.get("stream_path", "") or "",
             enabled            = bool(d.get("enabled", True)),
-            weekdays           = d.get("weekdays", []),
+            weekdays           = _normalise_weekdays(d.get("weekdays", [])),
             shuffle            = bool(d.get("shuffle", False)),
             video_bitrate      = d.get("video_bitrate", "2000k"),
             audio_bitrate      = d.get("audio_bitrate", "128k"),
             hls_enabled        = bool(d.get("hls_enabled", False)),
             compliance_enabled = bool(d.get("compliance_enabled", False)),
-            compliance_start   = d.get("compliance_start", "00:00:00"),
-            compliance_loop    = d.get("compliance_loop", ""),
+            compliance_start   = d.get("compliance_start", "06:00:00"),
+            compliance_loop    = compliance_loop,
             folder_source      = folder_source,
             playlist           = playlist,
         )
@@ -155,13 +209,16 @@ class JSONManager:
         """
         Load stream configurations from  config/streams.json.
 
-        Returns an empty list on first run (file absent) so the app starts
-        normally and streams can be added via the Web UI.
+        Raises FileNotFoundError when the file does not exist yet (first run),
+        so the caller can show a friendly "no config" message.
         """
         p = _streams_path()
         if not p.exists():
-            log.info("json_manager: no streams.json yet — starting with empty config.")
-            return []
+            raise FileNotFoundError(
+                f"No streams configuration found at '{p}'.\n"
+                "Open the Web UI → Configure tab to create your first stream,\n"
+                "or copy an existing streams.json into the config/ directory."
+            )
 
         try:
             raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
