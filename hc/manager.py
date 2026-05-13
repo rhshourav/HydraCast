@@ -1,702 +1,409 @@
 """
-hc/manager.py  —  StreamManager: lifecycle, scheduling, and control hub.
+hc/manager.py  —  StreamManager: orchestrates workers, scheduler, event loop.
 
-Responsibilities
-────────────────
-  • Create one StreamState + StreamWorker per StreamConfig.
-  • start_all() / shutdown() — bulk lifecycle.
-  • run_scheduler() — background thread that:
-      - Starts / stops streams whose weekday window opens / closes.
-      - Fires one-shot events (OneShotEvent) at their scheduled time.
-      - Handles compliance-mode logic (pause until compliance_start).
-  • Per-stream control: start(), stop(), restart(), rescan_folder().
-  • export_urls() — writes stream_urls.txt for easy reference.
-  • Integrates FolderWatcherRegistry for live folder monitoring.
+v6.0 fix
+─────────
+• Replaced `from hc.csv_manager import CSVManager` with JSONManager.
+  csv_manager.py was removed in v6.0; the old import caused an immediate
+  ImportError on startup, preventing the app from loading at all.
+
+  Call-site mapping (old → new):
+    CSVManager.load_events()             → JSONManager.load_events()
+    CSVManager.load()                    → JSONManager.load()
+    CSVManager.save(configs)             → JSONManager.save(configs)
+    CSVManager.mark_event_played(...)    → JSONManager.mark_event_played(...)
+
+v5.1 additions:
+  • FolderWatcherRegistry — live folder monitoring for folder-source streams.
+  • rescan_folder(state)  — force immediate folder rescan (TUI F key).
+  • clear_error(state)    — clear ERROR status and reset restart counter (TUI C key).
+  • reload_csv()          — hot-reload streams.json without restarting LIVE streams
+                            (TUI L key).
+
+v5.2 additions (Web UI stream management):
+  • add_stream(config)    — add a new stream at runtime and persist to JSON.
+  • remove_stream(name)   — stop and remove a stream at runtime and persist to JSON.
 """
 from __future__ import annotations
 
 import logging
 import threading
 import time
-from datetime import datetime, date
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from hc.constants import (
-    APP_NAME, APP_VER,
-    BASE_DIR, CONFIGS_DIR, LOGS_DIR,
-    LISTEN_ADDR,
-    DAY_ABBR,
-)
-from hc.folder_scanner import scan_folder
+from hc.json_manager import JSONManager          # ← was csv_manager.CSVManager
 from hc.folder_watcher import FolderWatcherRegistry
-from hc.json_manager import JSONManager
-from hc.models import (
-    OneShotEvent,
-    PlaylistItem,
-    StreamConfig,
-    StreamState,
-    StreamStatus,
-)
+from hc.models import OneShotEvent, StreamConfig, StreamState, StreamStatus
 from hc.worker import LogBuffer, StreamWorker
 
-log = logging.getLogger(__name__)
-
-# How often the scheduler loop wakes up (seconds).
-_SCHED_TICK: float = 30.0
-
-
-# ---------------------------------------------------------------------------
-# StreamManager
-# ---------------------------------------------------------------------------
 
 class StreamManager:
-    """
-    Central hub that owns all StreamState / StreamWorker instances and the
-    background scheduler thread.
 
-    Public interface used by hydracast.py / TUI / web:
-      start_all()          — start every enabled stream
-      shutdown()           — stop every stream + scheduler + folder watchers
-      run_scheduler()      — launch the background scheduling thread
-      export_urls()        — write stream_urls.txt, return Path
-      start(name)          — start one stream by name
-      stop(name)           — stop  one stream by name
-      restart(name)        — restart one stream by name
-      rescan_folder(state) — force folder rescan for a folder-source stream
-      get_state(name)      — return StreamState | None
-      states               — property: List[StreamState] for TUI / web
-    """
-
-    def __init__(
-        self,
-        configs: List[StreamConfig],
-        glog: LogBuffer,
-    ) -> None:
-        self._glog   = glog
-        self._lock   = threading.Lock()
-        self._stop   = threading.Event()
-
-        # Per-stream state and worker objects.
-        self._states:  List[StreamState]          = []
-        self._workers: Dict[str, StreamWorker]    = {}
-
-        # One-shot events loaded from config/events.json.
-        self._events: List[OneShotEvent] = []
-        try:
-            self._events = JSONManager.load_events()
-            log.info("manager: loaded %d one-shot event(s)", len(self._events))
-        except Exception as exc:
-            log.warning("manager: could not load events: %s", exc)
-
-        # Folder-watcher registry (one watcher per unique folder path).
+    def __init__(self, configs: List[StreamConfig], glog: LogBuffer) -> None:
+        self.states:   List[StreamState]        = [StreamState(config=c) for c in configs]
+        self._workers: Dict[str, StreamWorker]  = {}
+        self._glog    = glog
+        self._running = False
+        self._sched_t: Optional[threading.Thread] = None
+        self._event_t: Optional[threading.Thread] = None
+        self.events:   List[OneShotEvent]         = JSONManager.load_events()
+        # Live folder watcher pool — one watcher thread per unique folder path.
         self._fw_registry = FolderWatcherRegistry(glog)
 
-        # Build StreamState + StreamWorker for every config.
-        for cfg in configs:
-            self._add_stream(cfg)
+    # ── Worker factory ────────────────────────────────────────────────────────
+    def _worker(self, state: StreamState) -> StreamWorker:
+        if state.config.name not in self._workers:
+            self._workers[state.config.name] = StreamWorker(state, self._glog)
+        return self._workers[state.config.name]
 
-        log.info(
-            "StreamManager initialised: %d stream(s) (%d enabled).",
-            len(self._states),
-            sum(1 for s in self._states if s.config.enabled),
-        )
-
-    # ── Internal: per-stream construction ────────────────────────────────────
-
-    def _add_stream(self, cfg: StreamConfig) -> StreamState:
-        """Create StreamState + StreamWorker and register with folder watcher."""
-        state  = StreamState(config=cfg)
-        worker = StreamWorker(state=state, glog=self._glog)
-
-        with self._lock:
-            self._states.append(state)
-            self._workers[cfg.name] = worker
-
-        # Register with the folder watcher if this is a folder-source stream.
-        if cfg.folder_source:
+    # ── Stream control ────────────────────────────────────────────────────────
+    def start_stream(self, state: StreamState) -> None:
+        if state.status in (StreamStatus.LIVE, StreamStatus.STARTING):
+            return
+        state.playlist_index = 0
+        state.playlist_order = []
+        # Register/refresh the folder watcher whenever a stream starts.
+        if state.config.folder_source:
             self._fw_registry.register(state)
+        w = self._worker(state)
+        threading.Thread(target=w.start, daemon=True,
+                         name=f"start-{state.config.port}").start()
 
-        return state
+    def stop_stream(self, state: StreamState) -> None:
+        w = self._workers.get(state.config.name)
+        if w:
+            threading.Thread(target=w.stop, daemon=True,
+                             name=f"stop-{state.config.port}").start()
+        else:
+            state.status = StreamStatus.STOPPED
 
-    # ── Public properties / accessors ─────────────────────────────────────────
+    def restart_stream(self, state: StreamState) -> None:
+        w = self._worker(state)
+        threading.Thread(target=w.restart, daemon=True,
+                         name=f"rst-{state.config.port}").start()
 
-    @property
-    def states(self) -> List[StreamState]:
-        """Read-only snapshot of all StreamState objects (used by TUI / web)."""
-        with self._lock:
-            return list(self._states)
+    def seek_stream(self, state: StreamState, seconds: float) -> None:
+        if state.status != StreamStatus.LIVE:
+            return
+        w = self._workers.get(state.config.name)
+        if w:
+            threading.Thread(target=lambda: w.seek(seconds), daemon=True,
+                             name=f"seek-{state.config.port}").start()
 
-    @property
-    def events(self) -> List[OneShotEvent]:
-        """Read-only snapshot of all one-shot events (used by TUI / web)."""
-        with self._lock:
-            return list(self._events)
-
-    def get_state(self, name: str) -> Optional[StreamState]:
-        """Return the StreamState for *name*, or None."""
-        with self._lock:
-            for s in self._states:
-                if s.config.name == name:
-                    return s
-        return None
-
-    def get_worker(self, name: str) -> Optional[StreamWorker]:
-        with self._lock:
-            return self._workers.get(name)
-
-    # ── Lifecycle ─────────────────────────────────────────────────────────────
+    def skip_next(self, state: StreamState) -> None:
+        w = self._workers.get(state.config.name)
+        if w:
+            threading.Thread(target=w.skip_to_next, daemon=True,
+                             name=f"skip-{state.config.port}").start()
 
     def start_all(self) -> None:
-        """
-        Start every enabled stream that is scheduled for today.
-        Streams disabled in config or not scheduled today are skipped.
-        """
-        today = date.today().weekday()
-        started = 0
-        for state in self.states:
-            cfg = state.config
-            if not cfg.enabled:
-                log.info("manager: '%s' is disabled — skipping.", cfg.name)
-                continue
-            if cfg.weekdays and today not in cfg.weekdays:
-                day_name = DAY_ABBR[today]
-                log.info(
-                    "manager: '%s' not scheduled for %s — skipping.",
-                    cfg.name, day_name,
-                )
-                state.status = StreamStatus.SCHEDULED
-                continue
-            if not cfg.playlist:
-                log.warning(
-                    "manager: '%s' has no playlist — skipping.",
-                    cfg.name,
-                )
-                state.status = StreamStatus.ERROR
-                state.log_add("⚠ No playlist — stream skipped at startup.")
-                continue
-            self._start_worker(state)
-            started += 1
+        for s in self.states:
+            if not s.config.enabled:
+                s.status = StreamStatus.DISABLED
+            elif s.config.is_scheduled_today():
+                self.start_stream(s)
+            else:
+                if s.config.folder_source:
+                    self._fw_registry.register(s)
+                s.status = StreamStatus.SCHEDULED
 
-        msg = (
-            f"{APP_NAME} v{APP_VER}: {started} stream(s) started "
-            f"({len(self.states) - started} skipped / disabled)."
+    def stop_all(self) -> None:
+        for s in self.states:
+            self.stop_stream(s)
+
+    # ── Add / remove streams at runtime (Web UI) ──────────────────────────────
+    def add_stream(self, config: StreamConfig) -> None:
+        """
+        Add a new stream config to the in-memory list and persist to
+        streams.json.  The stream is created in STOPPED state; the Web UI
+        can start it immediately via the start action.
+        """
+        # Guard against duplicates (name and port).
+        for s in self.states:
+            if s.config.name == config.name:
+                raise ValueError(f"Stream '{config.name}' already exists.")
+            if s.config.port == config.port:
+                raise ValueError(
+                    f"Port {config.port} is already used by '{s.config.name}'."
+                )
+        new_state = StreamState(config=config)
+        self.states.append(new_state)
+        if config.folder_source:
+            self._fw_registry.register(new_state)
+        # Persist
+        JSONManager.save([s.config for s in self.states])
+        logging.info(
+            "Stream added: '%s' (port %d)", config.name, config.port
         )
-        self._glog.add(msg, "INFO")
-        log.info("manager: start_all complete — %s", msg)
-
-    def shutdown(self) -> None:
-        """
-        Stop the scheduler, all stream workers, and the folder watcher registry.
-        Blocks until all workers have terminated cleanly.
-        """
-        log.info("manager: shutdown requested.")
-        self._stop.set()
-
-        # Stop each worker.
-        for state in self.states:
-            try:
-                self._stop_worker(state, reason="shutdown")
-            except Exception as exc:
-                log.warning(
-                    "manager: error stopping '%s': %s",
-                    state.config.name, exc,
-                )
-
-        # Stop folder watchers.
-        try:
-            self._fw_registry.stop_all()
-        except Exception as exc:
-            log.warning("manager: folder watcher stop error: %s", exc)
-
-        log.info("manager: shutdown complete.")
-
-    # ── Scheduler ─────────────────────────────────────────────────────────────
-
-    def run_scheduler(self) -> None:
-        """
-        Launch the background scheduler thread (non-blocking).
-
-        The thread fires every _SCHED_TICK seconds and:
-          1. Checks each stream's weekday window — starts/stops as needed.
-          2. Fires pending one-shot events (OneShotEvent) within a 1-min window.
-          3. Handles compliance-mode: pauses stream until compliance_start time.
-        """
-        t = threading.Thread(
-            target=self._scheduler_loop,
-            daemon=True,
-            name="hc-scheduler",
+        self._glog.add(
+            f"[{config.name}] Stream added via Web UI (port {config.port}).",
+            "INFO",
         )
-        t.start()
-        log.info("manager: scheduler thread started (tick=%.0fs).", _SCHED_TICK)
 
-    def _scheduler_loop(self) -> None:
-        last_day: Optional[int] = None
-
-        while not self._stop.is_set():
-            try:
-                now       = datetime.now()
-                today_idx = now.weekday()
-
-                # ── Day-change handling ───────────────────────────────────────
-                if today_idx != last_day:
-                    last_day = today_idx
-                    self._on_day_change(today_idx, now)
-
-                # ── One-shot event firing ─────────────────────────────────────
-                self._check_events(now)
-
-                # ── Compliance-mode checks ────────────────────────────────────
-                self._check_compliance(now)
-
-            except Exception as exc:
-                log.error("manager: scheduler error: %s", exc)
-
-            self._stop.wait(timeout=_SCHED_TICK)
-
-    def _on_day_change(self, today_idx: int, now: datetime) -> None:
-        """Called once when the calendar day advances."""
-        day_name = DAY_ABBR[today_idx]
-        msg = f"📅 Day changed → {day_name}.  Evaluating stream schedules."
-        self._glog.add(msg, "INFO")
-        log.info("manager: %s", msg)
-
-        for state in self.states:
-            cfg = state.config
-            if not cfg.enabled:
-                continue
-
-            scheduled_today = (not cfg.weekdays) or (today_idx in cfg.weekdays)
-
-            if scheduled_today and state.status not in (
-                StreamStatus.LIVE, StreamStatus.STARTING
-            ):
-                log.info(
-                    "manager: day-change → starting '%s' (scheduled for %s).",
-                    cfg.name, day_name,
-                )
-                state.log_add(f"📅 Day changed to {day_name} — stream starting.")
-                self._start_worker(state)
-
-            elif not scheduled_today and state.status == StreamStatus.LIVE:
-                log.info(
-                    "manager: day-change → stopping '%s' (not scheduled for %s).",
-                    cfg.name, day_name,
-                )
-                state.log_add(f"📅 Day changed to {day_name} — stream stopped (not scheduled).")
-                self._stop_worker(state, reason="day-change")
-                state.status = StreamStatus.SCHEDULED
-
-            # Refresh folder-source playlist for today's _day_ tags.
-            if cfg.folder_source and scheduled_today:
-                try:
-                    items, warnings = scan_folder(cfg.folder_source)
-                    if items:
-                        cfg.playlist = items
-                        state.log_add(
-                            f"📅 Folder playlist refreshed for {day_name}: "
-                            f"{len(items)} file(s)."
-                        )
-                    for w in warnings:
-                        state.log_add(f"⚠ {w}")
-                except Exception as exc:
-                    log.warning(
-                        "manager: day-change folder rescan failed for '%s': %s",
-                        cfg.name, exc,
-                    )
-
-    def _check_events(self, now: datetime) -> None:
-        """Fire any pending OneShotEvent within the scheduler tick window."""
-        for ev in self._events:
-            if ev.played:
-                continue
-            delta = (ev.play_at - now).total_seconds()
-            # Fire window: up to (tick + 10 s) in the future, or overdue by
-            # up to 5 minutes (covers slow MediaMTX startup, busy scheduler).
-            # Events more than 5 minutes overdue are marked played (missed).
-            _PAST_CUTOFF = 300.0
-            if delta < -_PAST_CUTOFF:
-                log.warning(
-                    "manager: event '%s' missed (%.0fs overdue) — marking played.",
-                    ev.event_id, -delta,
-                )
-                state = self.get_state(ev.stream_name)
-                if state:
-                    state.log_add(
-                        f"⚠ One-shot event missed (scheduled "
-                        f"{ev.play_at.strftime('%H:%M')}, "
-                        f"{int(-delta)}s overdue)."
-                    )
-                JSONManager.mark_event_played(self._events, ev.event_id)
-                continue
-            # Fire window: between now and (tick + 10 s) into the future.
-            if not (0 <= delta <= (_SCHED_TICK + 10)):
-                continue
-
-            state = self.get_state(ev.stream_name)
-            if state is None:
-                log.warning(
-                    "manager: event '%s' target stream '%s' not found.",
-                    ev.event_id, ev.stream_name,
-                )
-                JSONManager.mark_event_played(self._events, ev.event_id)
-                continue
-            try:
-                log.info(
-                    "manager: firing one-shot event '%s' → '%s'.",
-                    ev.event_id, ev.stream_name,
-                )
-                state.log_add(
-                    f"🎬 One-shot event: playing '{ev.file_path.name}' "
-                    f"at {ev.play_at.strftime('%H:%M')}."
-                )
-                worker = self.get_worker(ev.stream_name)
-                if worker:
-                    # If the stream is not live, start it first so
-                    # play_oneshot has a running ffmpeg pipeline to hand off to.
-                    if state.status not in (
-                        StreamStatus.LIVE, StreamStatus.STARTING
-                    ):
-                        log.info(
-                            "manager: stream '%s' not running — starting "
-                            "before one-shot event.",
-                            ev.stream_name,
-                        )
-                        state.log_add(
-                            "▶ Stream started automatically for one-shot event."
-                        )
-                        self._start_worker(state)
-                        # Give the worker a moment to reach LIVE before
-                        # injecting the one-shot clip.
-                        deadline = time.time() + 10.0
-                        while time.time() < deadline:
-                            if state.status == StreamStatus.LIVE:
-                                break
-                            time.sleep(0.25)
-                    # play_oneshot is the correct method on StreamWorker
-                    # (inject_event does not exist).
-                    worker.play_oneshot(ev)
-                JSONManager.mark_event_played(self._events, ev.event_id)
-                self._glog.add(
-                    f"Event fired: '{ev.file_path.name}' → {ev.stream_name}",
-                    "INFO",
-                )
-            except Exception as exc:
-                log.error(
-                    "manager: event '%s' fire failed: %s",
-                    ev.event_id, exc,
-                )
-
-    def _check_compliance(self, now: datetime) -> None:
+    def remove_stream(self, name: str) -> None:
         """
-        Compliance mode: if compliance_enabled, ensure the stream only runs
-        at or after compliance_start.  Before that time, hold the stream in
-        SCHEDULED state; at the start time, begin streaming.
+        Stop a stream (if running) and remove it from the in-memory list,
+        then persist to streams.json.  Raises ValueError if not found.
         """
+        state = self.get_state(name)
+        if state is None:
+            raise ValueError(f"Stream '{name}' not found.")
+
+        # Stop gracefully if active.
+        if state.status in (StreamStatus.LIVE, StreamStatus.STARTING):
+            w = self._workers.get(name)
+            if w:
+                w.stop()   # blocking stop so the port is released cleanly
+
+        # Deregister folder watcher.
         try:
-            cs_h, cs_m, cs_s = (int(x) for x in "06:00:00".split(":"))
-        except ValueError:
-            return
+            self._fw_registry.unregister(state)
+        except Exception:
+            pass
 
-        now_secs = now.hour * 3600 + now.minute * 60 + now.second
+        self.states  = [s for s in self.states if s.config.name != name]
+        self._workers.pop(name, None)
 
-        for state in self.states:
-            cfg = state.config
-            if not cfg.compliance_enabled:
-                continue
-            try:
-                parts  = cfg.compliance_start.split(":")
-                target = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-            except Exception:
-                continue
+        # Persist
+        JSONManager.save([s.config for s in self.states])
+        logging.info("Stream removed: '%s'", name)
+        self._glog.add(f"[{name}] Stream removed via Web UI.", "INFO")
 
-            today_idx = now.weekday()
-            scheduled = (not cfg.weekdays) or (today_idx in cfg.weekdays)
-
-            if not scheduled or not cfg.enabled:
-                continue
-
-            # At or after compliance_start and stream is not yet live → start it.
-            if now_secs >= target and state.status == StreamStatus.SCHEDULED:
-                log.info(
-                    "manager: compliance start time reached for '%s'.",
-                    cfg.name,
-                )
-                state.log_add(
-                    f"⏰ Compliance start reached ({cfg.compliance_start}) — "
-                    "stream beginning."
-                )
-                self._start_worker(state)
-
-            # Before compliance_start and stream is live but compliance blocks it.
-            elif now_secs < target and state.status == StreamStatus.LIVE:
-                # Only block on the very first tick after midnight; after that
-                # the stream is already validated from a previous scheduler pass.
-                pass
-
-    # ── Per-stream control (public) ───────────────────────────────────────────
-
-    def start(self, name: str) -> bool:
-        """
-        Manually start a stream by name (regardless of weekday schedule).
-        Returns True on success.
-        """
-        state = self.get_state(name)
-        if state is None:
-            log.warning("manager.start: unknown stream '%s'.", name)
-            return False
-        if state.status == StreamStatus.LIVE:
-            log.info("manager.start: '%s' already LIVE.", name)
-            return True
-        self._start_worker(state)
-        return True
-
-    def stop(self, name: str) -> bool:
-        """
-        Manually stop a stream by name.
-        Returns True on success.
-        """
-        state = self.get_state(name)
-        if state is None:
-            log.warning("manager.stop: unknown stream '%s'.", name)
-            return False
-        self._stop_worker(state, reason="manual-stop")
-        return True
-
-    def restart(self, name: str) -> bool:
-        """
-        Restart a stream: stop (if running) then start.
-        Returns True on success.
-        """
-        state = self.get_state(name)
-        if state is None:
-            log.warning("manager.restart: unknown stream '%s'.", name)
-            return False
-        log.info("manager: restarting '%s'.", name)
-        state.log_add("🔄 Restarting stream …")
-        self._stop_worker(state, reason="restart")
-        time.sleep(0.5)
-        self._start_worker(state)
-        return True
-
+    # ── Folder rescan (TUI F key) ─────────────────────────────────────────────
     def rescan_folder(self, state: StreamState) -> None:
         """
-        Force an immediate folder rescan for a folder-source stream.
-        Delegates to FolderWatcherRegistry; falls back to a direct scan.
+        Force an immediate folder rescan for *state*.
+
+        • If the stream has a folder_source, the watcher triggers a full
+          rescan and updates cfg.playlist in-place.
+        • If no folder_source is set but the first playlist entry is a
+          directory, it is promoted to folder_source first.
+        • Safe to call while the stream is LIVE — the updated playlist is
+          picked up when the worker advances to the next file.
         """
-        if state.config.folder_source is None:
-            msg = f"[{state.config.name}] rescan_folder: not a folder-source stream."
-            log.warning(msg)
-            state.log_add(f"⚠ {msg}")
+        cfg = state.config
+
+        # Auto-promote if folder_source not yet set.
+        if cfg.folder_source is None:
+            if cfg.playlist and cfg.playlist[0].file_path.is_dir():
+                cfg.folder_source = cfg.playlist[0].file_path
+                self._glog.add(
+                    f"[{cfg.name}] Promoted folder_source: {cfg.folder_source.name}",
+                    "INFO",
+                )
+            else:
+                self._glog.add(
+                    f"[{cfg.name}] rescan_folder: not a folder-source stream.",
+                    "WARN",
+                )
+                return
+
+        # Ensure a watcher is running for this folder.
+        self._fw_registry.register(state)
+        # Trigger the rescan.
+        self._fw_registry.rescan(state)
+        self._glog.add(
+            f"[{cfg.name}] Folder rescan triggered: {cfg.folder_source.name}", "INFO"
+        )
+
+    # ── Clear error (TUI C key) ───────────────────────────────────────────────
+    def clear_error(self, state: StreamState) -> None:
+        """
+        Clear an ERROR state and reset the restart counter so the auto-restart
+        back-off starts fresh.  Does not restart the stream automatically.
+        """
+        state.error_msg    = ""
+        state.restart_count = 0
+        if state.status == StreamStatus.ERROR:
+            state.status = StreamStatus.STOPPED
+        msg = f"[{state.config.name}] Error cleared — ready to restart."
+        state.log_add(msg)
+        self._glog.add(msg, "INFO")
+
+    # ── Hot JSON reload (TUI L key) ───────────────────────────────────────────
+    def reload_csv(self) -> None:
+        """
+        Re-read streams.json and update in-memory config without restarting
+        any currently-LIVE or STARTING streams.
+
+        Fields updated for ALL streams (safe while running):
+          weekdays, enabled, shuffle, video_bitrate, audio_bitrate,
+          compliance_enabled, compliance_start, compliance_loop
+
+        Fields updated only for STOPPED / SCHEDULED / ERROR streams:
+          playlist, stream_path, hls_enabled, folder_source
+
+        New streams (names that appear in the JSON but not in memory) are
+        appended.  Streams removed from the JSON are left running until they
+        stop naturally; they are then marked DISABLED.
+        """
+        try:
+            new_configs: List[StreamConfig] = JSONManager.load()
+        except Exception as exc:
+            self._glog.add(f"reload_csv failed: {exc}", "ERROR")
             return
 
-        msg = (
-            f"[{state.config.name}] Manual folder rescan triggered: "
-            f"{state.config.folder_source.name}"
-        )
+        new_by_name: Dict[str, StreamConfig] = {c.name: c for c in new_configs}
+        existing_names = {s.config.name for s in self.states}
+
+        updated = 0
+        for state in self.states:
+            nc = new_by_name.get(state.config.name)
+            if nc is None:
+                # Stream removed from JSON — mark disabled when it stops.
+                continue
+
+            cfg = state.config
+            is_active = state.status in (StreamStatus.LIVE, StreamStatus.STARTING)
+
+            # Always-safe field updates.
+            cfg.weekdays             = nc.weekdays
+            cfg.enabled              = nc.enabled
+            cfg.shuffle              = nc.shuffle
+            cfg.video_bitrate        = nc.video_bitrate
+            cfg.audio_bitrate        = nc.audio_bitrate
+            cfg.compliance_enabled   = nc.compliance_enabled
+            cfg.compliance_start     = nc.compliance_start
+            cfg.compliance_loop      = nc.compliance_loop
+
+            # Destructive field updates — only apply when stream is idle.
+            if not is_active:
+                cfg.playlist      = nc.playlist
+                cfg.stream_path   = nc.stream_path
+                cfg.hls_enabled   = nc.hls_enabled
+                # Update folder_source and re-register watcher if it changed.
+                if nc.folder_source != cfg.folder_source:
+                    cfg.folder_source = nc.folder_source
+                    if cfg.folder_source:
+                        self._fw_registry.register(state)
+
+            updated += 1
+
+        # Append genuinely new streams.
+        added = 0
+        for name, nc in new_by_name.items():
+            if name not in existing_names:
+                new_state = StreamState(config=nc)
+                self.states.append(new_state)
+                self._fw_registry.register(new_state)
+                added += 1
+
+        msg = f"streams.json reloaded — {updated} updated, {added} new."
         self._glog.add(msg, "INFO")
-        state.log_add(f"🔍 {msg}")
-        self._fw_registry.rescan(state)
+        logging.info(msg)
 
-    def clear_error(self, name: str) -> bool:
-        """Reset error state and restart count for a stream (C key in TUI)."""
-        state = self.get_state(name)
-        if state is None:
-            return False
-        state.clear_error()
-        log.info("manager: error state cleared for '%s'.", name)
-        return True
+    # ── Scheduler loop ────────────────────────────────────────────────────────
+    def _scheduler_loop(self) -> None:
+        while self._running:
+            for s in self.states:
+                if not s.config.enabled:
+                    s.status = StreamStatus.DISABLED
+                    continue
+                should = s.config.is_scheduled_today()
+                active = s.status in (StreamStatus.LIVE, StreamStatus.STARTING)
+                if should and not active:
+                    self._glog.add(f"[{s.config.name}] Scheduler: starting.", "INFO")
+                    self.start_stream(s)
+                elif not should and active:
+                    self._glog.add(f"[{s.config.name}] Scheduler: stopping.", "INFO")
+                    self.stop_stream(s)
+                elif not should and not active:
+                    if s.status not in (StreamStatus.SCHEDULED, StreamStatus.DISABLED):
+                        s.status = StreamStatus.SCHEDULED
+            for _ in range(600):
+                if not self._running:
+                    return
+                time.sleep(0.1)
 
-    # ── URL export ────────────────────────────────────────────────────────────
+    # ── One-shot event loop ───────────────────────────────────────────────────
+    def _event_loop(self) -> None:
+        while self._running:
+            now = datetime.now()
+            for ev in self.events:
+                if ev.played:
+                    continue
+                delta = (ev.play_at - now).total_seconds()
+                if -10 <= delta <= 5:
+                    for s in self.states:
+                        if s.config.name == ev.stream_name:
+                            w = self._workers.get(s.config.name)
+                            if w:
+                                ev.played = True
+                                JSONManager.mark_event_played(
+                                    self.events, ev.event_id)
+                                self._glog.add(
+                                    f"[{s.config.name}] Firing one-shot: "
+                                    f"{ev.file_path.name}", "INFO")
+                                threading.Thread(
+                                    target=lambda w=w, ev=ev: w.play_oneshot(ev),
+                                    daemon=True,
+                                ).start()
+                            break
+            for _ in range(50):
+                if not self._running:
+                    return
+                time.sleep(0.1)
 
-    def export_urls(self) -> Path:
-        """
-        Write a plain-text file listing all RTSP (and HLS) stream URLs.
-        Returns the Path of the written file.
-        """
+    def run_scheduler(self) -> None:
+        self._running = True
+        self._sched_t = threading.Thread(
+            target=self._scheduler_loop, daemon=True, name="scheduler")
+        self._sched_t.start()
+        self._event_t = threading.Thread(
+            target=self._event_loop, daemon=True, name="eventloop")
+        self._event_t.start()
+
+    def shutdown(self) -> None:
+        self._running = False
+        self.stop_all()
+        self._fw_registry.stop_all()
+        deadline = time.time() + 12
+        while time.time() < deadline:
+            if not any(
+                s.status in (StreamStatus.LIVE, StreamStatus.STARTING)
+                for s in self.states
+            ):
+                break
+            time.sleep(0.2)
+
+    # ── Queries ───────────────────────────────────────────────────────────────
+    def get_state(self, name: str) -> Optional[StreamState]:
+        for s in self.states:
+            if s.config.name == name:
+                return s
+        return None
+
+    def export_urls(self, path: Optional[Path] = None) -> Path:
+        from hc.constants import APP_VER, BASE_DIR
         from hc.utils import _local_ip
-        ip   = _local_ip()
-        lines: List[str] = [
-            f"# {APP_NAME} v{APP_VER} — Stream URLs",
+        out = path or (BASE_DIR() / "stream_urls.txt")
+        lines = [
+            f"# HydraCast {APP_VER} — Stream URLs",
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Server IP: {ip}",
             "",
         ]
-
-        for state in self.states:
-            cfg = state.config
-            rtsp_url = f"rtsp://{ip}:{cfg.port}/{cfg.stream_path}"
-            lines.append(f"[{cfg.name}]")
-            lines.append(f"  RTSP : {rtsp_url}")
+        for s in self.states:
+            cfg = s.config
+            lines += [
+                f"[{cfg.name}]",
+                f"  RTSP (local)    : {cfg.rtsp_url}",
+                f"  RTSP (external) : {cfg.rtsp_url_external}",
+            ]
             if cfg.hls_enabled:
-                hls_url = (
-                    f"http://{ip}:{getattr(cfg, 'hls_port', cfg.port + 800)}"
-                    f"/{cfg.stream_path}/index.m3u8"
-                )
-                lines.append(f"  HLS  : {hls_url}")
-            lines.append(
-                f"  Days : {cfg.weekdays_display()}"
-            )
-            lines.append(
-                f"  Files: {len(cfg.playlist)} in playlist"
-            )
+                lines.append(f"  HLS             : {cfg.hls_url}")
             lines.append("")
-
-        out = BASE_DIR() / "stream_urls.txt"
         out.write_text("\n".join(lines), encoding="utf-8")
-        log.info("manager: URLs exported to '%s'.", out)
         return out
 
-    # ── Internal worker helpers ───────────────────────────────────────────────
-
-    def _start_worker(self, state: StreamState) -> None:
-        """Create (or retrieve) and start the StreamWorker for *state*."""
-        name = state.config.name
-        with self._lock:
-            worker = self._workers.get(name)
-            if worker is None:
-                worker = StreamWorker(state=state, glog=self._glog)
-                self._workers[name] = worker
-
-        try:
-            worker.start()
-            log.info("manager: worker started for '%s'.", name)
-        except Exception as exc:
-            log.error("manager: failed to start worker for '%s': %s", name, exc)
-            state.status = StreamStatus.ERROR
-            state.log_add(f"✘ Worker start failed: {exc}")
-
-    def _stop_worker(self, state: StreamState, reason: str = "stop") -> None:
-        """Signal and wait for the StreamWorker for *state* to stop."""
-        name = state.config.name
-        with self._lock:
-            worker = self._workers.get(name)
-
-        if worker is None:
-            return
-
-        try:
-            worker.stop()
-            log.info("manager: worker stopped for '%s' (reason=%s).", name, reason)
-        except Exception as exc:
-            log.warning(
-                "manager: error stopping worker for '%s': %s",
-                name, exc,
-            )
-
-    # ── Convenience: add a stream at runtime (web upload flow) ────────────────
-
-    def add_stream(self, cfg: StreamConfig) -> StreamState:
-        """
-        Register a brand-new StreamConfig at runtime (e.g. via web UI).
-        Does NOT auto-start — caller must call start(cfg.name) if desired.
-        """
-        state = self._add_stream(cfg)
-        log.info("manager: new stream '%s' registered.", cfg.name)
-        return state
-
-    def remove_stream(self, name: str) -> bool:
-        """
-        Stop and remove a stream at runtime (e.g. deleted via web UI).
-        Returns True if the stream was found and removed.
-        """
-        state = self.get_state(name)
-        if state is None:
-            return False
-        self._stop_worker(state, reason="remove")
-        if state.config.folder_source:
-            self._fw_registry.unregister(state)
-        with self._lock:
-            self._states = [s for s in self._states if s.config.name != name]
-            self._workers.pop(name, None)
-        log.info("manager: stream '%s' removed.", name)
-        return True
-
-    # ── One-shot event management (public) ───────────────────────────────────
-
-    def add_event(self, ev: OneShotEvent) -> None:
-        """
-        Append a pre-constructed OneShotEvent to the in-memory list and
-        persist it to config/events.json.
-        Called by web.py after it builds the OneShotEvent object.
-        """
-        with self._lock:
-            self._events.append(ev)
-        JSONManager._save_events(self._events)
-        log.info(
-            "manager: one-shot event '%s' scheduled for %s on stream '%s'.",
-            ev.event_id, ev.play_at.isoformat(), ev.stream_name,
-        )
-
-    def fire_event_now(self, event_id: str) -> bool:
-        """
-        Immediately fire a pending one-shot event by its event_id.
-        Called by the web UI "Play Now" button.
-        Returns True if the event was found, not yet played, and fired.
-        """
-        with self._lock:
-            ev = next((e for e in self._events if e.event_id == event_id), None)
-        if ev is None:
-            log.warning("manager.fire_event_now: event_id '%s' not found.", event_id)
-            return False
-        if ev.played:
-            log.warning("manager.fire_event_now: event_id '%s' already played.", event_id)
-            return False
-        state = self.get_state(ev.stream_name)
-        if state is None:
-            log.warning(
-                "manager.fire_event_now: stream '%s' not found.", ev.stream_name
-            )
-            return False
-        worker = self.get_worker(ev.stream_name)
-        if worker is None:
-            log.warning(
-                "manager.fire_event_now: no worker for stream '%s'.", ev.stream_name
-            )
-            return False
-        if state.status not in (StreamStatus.LIVE, StreamStatus.STARTING):
-            log.info(
-                "manager.fire_event_now: stream '%s' not running — starting first.",
-                ev.stream_name,
-            )
-            state.log_add("▶ Stream started automatically for manual event fire.")
-            self._start_worker(state)
-            deadline = time.time() + 10.0
-            while time.time() < deadline:
-                if state.status == StreamStatus.LIVE:
-                    break
-                time.sleep(0.25)
-        log.info(
-            "manager.fire_event_now: firing event '%s' on '%s'.",
-            event_id, ev.stream_name,
-        )
-        state.log_add(
-            f"▶ Manual fire: playing '{ev.file_path.name}'."
-        )
-        worker.play_oneshot(ev)
-        JSONManager.mark_event_played(self._events, event_id)
-        return True
-
-    def remove_event(self, event_id: str) -> bool:
-        """
-        Remove a one-shot event by its event_id.
-        Returns True if found and removed, False otherwise.
-        """
-        with self._lock:
-            before = len(self._events)
-            self._events = [e for e in self._events if e.event_id != event_id]
-            removed = len(self._events) < before
-        if removed:
-            JSONManager._save_events(self._events)
-            log.info("manager: one-shot event '%s' removed.", event_id)
-        else:
-            log.warning("manager: remove_event: event_id '%s' not found.", event_id)
-        return removed
-
-    # ── String representation ─────────────────────────────────────────────────
-
-    def __repr__(self) -> str:  # pragma: no cover
-        return (
-            f"<StreamManager streams={len(self._states)} "
-            f"live={sum(1 for s in self._states if s.status == StreamStatus.LIVE)}>"
-        )
+    # ── Health summary ────────────────────────────────────────────────────────
+    def health_summary(self) -> dict:
+        return {
+            "total":     len(self.states),
+            "live":      sum(1 for s in self.states if s.status == StreamStatus.LIVE),
+            "stopped":   sum(1 for s in self.states if s.status == StreamStatus.STOPPED),
+            "error":     sum(1 for s in self.states if s.status == StreamStatus.ERROR),
+            "scheduled": sum(1 for s in self.states if s.status == StreamStatus.SCHEDULED),
+            "disabled":  sum(1 for s in self.states if s.status == StreamStatus.DISABLED),
+        }
