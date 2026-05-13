@@ -350,13 +350,44 @@ class StreamWorker:
     def play_oneshot(self, event: OneShotEvent) -> None:
         self._log(f"One-shot event starting: {event.file_path.name}", "INFO")
         self.state.oneshot_active = True
+
+        # Kill ffmpeg first, then MediaMTX.  If we only kill ffmpeg and
+        # immediately push a new stream, MediaMTX rejects it with
+        # "Could not write header / 400 Bad Request" because it still holds
+        # session state from the previous push (codec parameters, SPS/PPS).
+        # Cycling MediaMTX forces a clean session so the new clip is accepted.
         self._kill_ffmpeg()
+        self._kill_mediamtx()
         time.sleep(0.3)
+
         try:
             h, m, s = event.start_pos.split(":")
             seek_secs = int(h) * 3600 + int(m) * 60 + float(s)
         except Exception:
             seek_secs = 0.0
+
+        # Re-write the MediaMTX YAML (state/config unchanged) and relaunch.
+        cfg = self.state.config
+        try:
+            mtx_cfg = MediaMTXConfig.write(self.state)
+        except Exception as exc:
+            self._log(f"One-shot: failed to write MediaMTX config: {exc}", "ERROR")
+            self.state.oneshot_active = False
+            return
+
+        if not self._start_mediamtx(mtx_cfg):
+            self._log("One-shot: MediaMTX failed to start.", "ERROR")
+            self.state.oneshot_active = False
+            return
+
+        if not _wait_for_port(cfg.port, timeout=self.MTX_READY_TIMEOUT):
+            self._log(
+                f"One-shot: MediaMTX did not bind :{cfg.port} in time.", "ERROR"
+            )
+            self._kill_mediamtx()
+            self.state.oneshot_active = False
+            return
+
         item = PlaylistItem(file_path=event.file_path, start_position=event.start_pos)
         self.state.duration = probe_duration(item.file_path)
         self._start_ffmpeg(item, seek_secs)
