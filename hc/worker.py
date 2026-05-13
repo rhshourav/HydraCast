@@ -174,7 +174,9 @@ def grab_thumbnail(file_path: Path, seek_secs: float = 5.0) -> Optional[bytes]:
 class StreamWorker:
     MAX_AUTO_RESTARTS = 8
     BACKOFF           = [5, 10, 20, 40, 60, 120, 120, 120]
-    MTX_READY_TIMEOUT = 20.0   # increased: Windows binds TCP before path handler is ready
+    # Windows AV scanning / SmartScreen can add 20–30 s to MediaMTX startup;
+    # give it extra headroom.  Linux/macOS keep the tighter bound.
+    MTX_READY_TIMEOUT = 40.0 if IS_WIN else 20.0
 
     _FFMPEG_PROGRESS_RE = re.compile(r"^(\w+)=(.+)$")
 
@@ -660,16 +662,57 @@ class StreamWorker:
         # the port ~500-800 ms before its RTSP handler is initialised; ffmpeg
         # connecting during that gap sends ANNOUNCE and gets 400 Bad Request.
         # _wait_for_rtsp() sends a real RTSP OPTIONS and waits for 200 OK.
+        # Wait for MediaMTX RTSP handler to be fully ready.
+        # _wait_for_port() only confirms TCP bind. On Windows, MediaMTX binds
+        # the port ~500-800 ms before its RTSP handler is initialised; ffmpeg
+        # connecting during that gap sends ANNOUNCE and gets 400 Bad Request.
+        # _wait_for_rtsp() sends a real RTSP OPTIONS and waits for a response.
         self._log(f"Waiting for MediaMTX RTSP handler :{cfg.port} (timeout {self.MTX_READY_TIMEOUT:.0f}s) ...")
         _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
-        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT, path=_push_path):
-            log_tail = _tail_log(LOGS_DIR() / f"mediamtx_{cfg.port}.log", 12)
-            detail = log_tail or "No output in MediaMTX log file"
-            self._log(
-                f"MediaMTX RTSP-ready timeout :{cfg.port}. "
-                f"MediaMTX log tail:\n{detail}",
-                "ERROR",
-            )
+        mtx_proc   = self.state.mtx_proc
+
+        def _mtx_alive() -> bool:
+            return mtx_proc is not None and mtx_proc.poll() is None
+
+        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT,
+                               path=_push_path, check_alive=_mtx_alive):
+            # Determine if MediaMTX crashed (process dead) or just didn't respond.
+            proc_dead  = mtx_proc is not None and mtx_proc.poll() is not None
+            crash_f    = getattr(mtx_proc, "_crash_f", None) if mtx_proc else None
+            log_tail   = _tail_log(LOGS_DIR() / f"mediamtx_{cfg.port}.log", 12)
+            crash_tail = _tail_log(crash_f, 20) if crash_f else ""
+            detail     = crash_tail or log_tail or "No output in MediaMTX log file"
+
+            if proc_dead:
+                exit_code = mtx_proc.returncode
+                self._log(
+                    f"MediaMTX crashed during RTSP readiness probe "
+                    f"(exit code {exit_code}). "
+                    f"Log/crash output:\n{detail}\n"
+                    f"HINT: Run '{MEDIAMTX_BIN()} {mtx_cfg}' in a terminal "
+                    "to see the full error.",
+                    "ERROR",
+                )
+            else:
+                tcp_up = _port_in_use(cfg.port)
+                hint = (
+                    "HINT: Windows Firewall or Antivirus may be intercepting "
+                    "RTSP on loopback (127.0.0.1). Try temporarily disabling "
+                    "real-time protection or adding a firewall exception for "
+                    f"TCP :{cfg.port}."
+                    if IS_WIN and tcp_up else
+                    f"HINT: MediaMTX TCP port {cfg.port} is NOT bound — "
+                    "the process may have crashed after the stability check."
+                    if not tcp_up else ""
+                )
+                self._log(
+                    f"MediaMTX RTSP-ready timeout :{cfg.port} after "
+                    f"{self.MTX_READY_TIMEOUT:.0f}s "
+                    f"(MediaMTX {'alive' if tcp_up else 'not responding on TCP'}). "
+                    f"Log output:\n{detail}"
+                    + (f"\n{hint}" if hint else ""),
+                    "ERROR",
+                )
             self._kill_mediamtx()
             self.state.status    = StreamStatus.ERROR
             self.state.error_msg = f"MediaMTX timeout (:{cfg.port})"
@@ -694,28 +737,38 @@ class StreamWorker:
         return True
 
     def _start_mediamtx(self, cfg_file: Path) -> bool:
-        log_f  = LOGS_DIR() / f"mediamtx_{self.state.config.port}.log"
-        name   = self.state.config.name
-        port   = self.state.config.port
+        # mediamtx_NNN.log       — MediaMTX's own log (written by MediaMTX via YAML logFile:)
+        # mediamtx_NNN_crash.log — Python captures stdout+stderr (Go panic traces etc.)
+        #
+        # Using SEPARATE files is critical on Windows.  When Python opens
+        # mediamtx_NNN.log for writing AND MediaMTX also tries to open the same
+        # path (as specified in the YAML logFile: field), Windows may raise a
+        # FILE_SHARE_VIOLATION.  MediaMTX's Go runtime then crashes silently —
+        # no log output, process exits 3-5 s after the stability check, and the
+        # RTSP probe times out with a misleading "No output in log file" message.
+        log_f   = LOGS_DIR() / f"mediamtx_{self.state.config.port}.log"
+        crash_f = LOGS_DIR() / f"mediamtx_{self.state.config.port}_crash.log"
+        name    = self.state.config.name
+        port    = self.state.config.port
 
         self._log(f"Launching MediaMTX | config={cfg_file} | log={log_f}")
 
         try:
-            # Open the log file OUTSIDE a with-block so the handle stays open
+            # Open the CRASH log OUTSIDE a with-block so the handle stays open
             # for the lifetime of the MediaMTX process.  Using a with-block
             # closes the fd before Popen returns on some Python/Windows versions,
             # which causes MediaMTX to fail immediately when it tries to write
             # its first log line — producing an empty log and a silent crash.
             #
-            # We redirect BOTH stdout and stderr to the log file so that any
-            # crash output (including Go panic traces) is captured regardless
-            # of which stream MediaMTX uses.  On Windows especially, MediaMTX
-            # writes its startup errors to stderr, not the log file.
+            # We redirect stdout+stderr to the CRASH log (separate from logFile:)
+            # so that Go panic traces are captured even when MediaMTX cannot open
+            # its own log file.  On Windows especially, MediaMTX writes startup
+            # errors to stderr rather than the YAML log file.
             try:
-                lf = open(log_f, "w", buffering=1)   # line-buffered
+                lf = open(crash_f, "w", buffering=1)   # line-buffered
             except OSError as exc:
                 self._log(
-                    f"Cannot open MediaMTX log file '{log_f}': {exc} — "
+                    f"Cannot open MediaMTX crash-log '{crash_f}': {exc} — "
                     "falling back to DEVNULL",
                     "WARN",
                 )
@@ -728,7 +781,8 @@ class StreamWorker:
                 [str(MEDIAMTX_BIN()), str(cfg_file)], **kw
             )
             # Store the handle so we can close it when we kill MediaMTX.
-            proc._log_fh = lf   # type: ignore[attr-defined]
+            proc._log_fh   = lf       # type: ignore[attr-defined]
+            proc._crash_f  = crash_f  # type: ignore[attr-defined]
 
             self.state.mtx_proc = proc
             self._log(f"MediaMTX spawned PID={proc.pid} on :{port}")
@@ -748,7 +802,8 @@ class StreamWorker:
                 except Exception:
                     pass
 
-                log_tail = _tail_log(log_f, 20)
+                # Check crash log first (Go panics go there); fall back to YAML log.
+                log_tail = _tail_log(crash_f, 20) or _tail_log(log_f, 20)
                 detail = log_tail or "(no output — MediaMTX may have crashed before opening its log)"
 
                 hints = []
@@ -1267,10 +1322,14 @@ class StreamWorker:
             self._log("_cycle_mediamtx: MediaMTX failed to restart.", "ERROR")
             return False
         _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
-        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT, path=_push_path):
-            self._log(
-                f"_cycle_mediamtx: MediaMTX RTSP handler not ready on :{cfg.port}.", "ERROR"
-            )
+        mtx_proc2  = self.state.mtx_proc
+
+        def _mtx_alive2() -> bool:
+            return mtx_proc2 is not None and mtx_proc2.poll() is None
+
+        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT,
+                               path=_push_path, check_alive=_mtx_alive2):
+            self._log("_cycle_mediamtx: MediaMTX RTSP handler not ready on :{}.".format(cfg.port), "ERROR")
             self._kill_mediamtx()
             return False
         # Path probe confirmed — no extra settle delay needed.
