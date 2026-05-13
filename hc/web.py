@@ -160,6 +160,7 @@ _HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HydraCast</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -374,15 +375,30 @@ a:hover{color:var(--accent)}
   background:currentColor;animation:pulse 2s infinite}
 
 /* ─────────── THEME TOGGLE ─────────── */
-.theme-btn{
-  width:38px;height:38px;
-  background:var(--bg3);border:1px solid var(--border);
-  border-radius:10px;display:flex;align-items:center;justify-content:center;
-  cursor:pointer;font-size:16px;transition:all 0.22s;flex-shrink:0;
+/* ── THEME TOGGLE (moon/sun) ── */
+.hc-toggle-wrap{display:flex;align-items:center;flex-shrink:0}
+.hc-toggle-cb{opacity:0;position:absolute;width:0;height:0}
+.hc-toggle-label{
+  background-color:#111;
+  width:50px;height:26px;border-radius:50px;
+  position:relative;padding:5px;cursor:pointer;
+  display:flex;justify-content:space-between;align-items:center;
+  transition:background 0.2s linear;
+  box-shadow:0 2px 8px rgba(0,0,0,0.35);
 }
-.theme-btn:hover{
-  background:rgba(184,115,51,0.12);border-color:var(--accent);
-  transform:rotate(12deg) scale(1.05);
+[data-theme="light"] .hc-toggle-label{background-color:#b87333}
+.hc-toggle-label .fa-moon{color:#f1c40f;font-size:12px}
+.hc-toggle-label .fa-sun {color:#f39c12;font-size:12px}
+.hc-toggle-ball{
+  background-color:#fff;
+  width:22px;height:22px;
+  position:absolute;left:2px;top:2px;
+  border-radius:50%;
+  transition:transform 0.2s linear;
+  box-shadow:0 1px 4px rgba(0,0,0,0.3);
+}
+.hc-toggle-cb:checked + .hc-toggle-label .hc-toggle-ball{
+  transform:translateX(24px);
 }
 
 .topbar-btns{display:flex;gap:6px}
@@ -962,7 +978,14 @@ select option{background:var(--bg3)}
     <div class="stat-pill">CPU <b id="h-cpu">—</b></div>
     <div class="stat-pill">RAM <b id="h-ram">—</b></div>
     <div class="stat-pill" style="font-variant-numeric:tabular-nums"><b id="h-time">—</b></div>
-    <button class="theme-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark/light mode">☽</button>
+    <div class="hc-toggle-wrap" title="Toggle dark/light mode">
+      <input type="checkbox" class="hc-toggle-cb" id="hc-theme-cb">
+      <label for="hc-theme-cb" class="hc-toggle-label">
+        <i class="fas fa-moon"></i>
+        <i class="fas fa-sun"></i>
+        <span class="hc-toggle-ball"></span>
+      </label>
+    </div>
     <div class="topbar-btns">
       <button class="hbtn g" onclick="api('start_all',{})">▶ All</button>
       <button class="hbtn r" onclick="api('stop_all',{})">■ All</button>
@@ -981,6 +1004,9 @@ select option{background:var(--bg3)}
     </label>
     <button class="btn b" onclick="loadStreams()">↻ Refresh</button>
     <button class="btn" onclick="downloadUrlsCsv()" title="Download all stream URLs as a CSV file">⬇ URLs CSV</button>
+    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:5px;cursor:pointer" title="Include playlist filenames in the CSV">
+      <input type="checkbox" id="csv-files" style="width:auto;accent-color:var(--accent)"> + filenames
+    </label>
   </div>
   <div class="card">
     <div class="tbl-wrap">
@@ -1693,8 +1719,9 @@ async function api(action,data){
 // DOWNLOAD URLS CSV
 // ═══════════════════════════════════
 function downloadUrlsCsv(){
+  const incFiles=document.getElementById('csv-files')?.checked?'1':'0';
   const a=document.createElement('a');
-  a.href='/api/urls_csv';
+  a.href='/api/urls_csv?include_files='+incFiles;
   a.download='';           // filename comes from Content-Disposition
   document.body.appendChild(a);
   a.click();
@@ -2937,24 +2964,32 @@ async function doRestore(file){
 // ═══════════════════════════════════
 // THEME TOGGLE
 // ═══════════════════════════════════
-function toggleTheme(){
-  const html=document.documentElement;
-  const isDark=html.getAttribute('data-theme')==='dark';
-  const next=isDark?'light':'dark';
-  html.setAttribute('data-theme',next);
-  document.getElementById('theme-toggle').textContent=isDark?'☀':'☽';
-  try{localStorage.setItem('hc-theme',next);}catch(_){}
-}
-(function applyStoredTheme(){
+// THEME TOGGLE (moon/sun checkbox)
+// ═══════════════════════════════════
+(function initTheme(){
   try{
-    const t=localStorage.getItem('hc-theme');
-    if(t&&t!=='dark'){
-      document.documentElement.setAttribute('data-theme',t);
-      const btn=document.getElementById('theme-toggle');
-      if(btn)btn.textContent='☀';
-    }
+    const stored=localStorage.getItem('hc-theme');
+    const isDark=!stored||stored==='dark';
+    document.documentElement.setAttribute('data-theme',isDark?'dark':'light');
+    const cb=document.getElementById('hc-theme-cb');
+    if(cb)cb.checked=!isDark; // checked = light mode (sun visible on right)
   }catch(_){}
 })();
+document.addEventListener('DOMContentLoaded',function(){
+  const cb=document.getElementById('hc-theme-cb');
+  if(!cb)return;
+  // Set initial checked state from current attribute
+  cb.checked=document.documentElement.getAttribute('data-theme')==='light';
+  cb.addEventListener('change',function(){
+    const next=this.checked?'light':'dark';
+    document.documentElement.setAttribute('data-theme',next);
+    try{localStorage.setItem('hc-theme',next);}catch(_){}
+  });
+});
+function toggleTheme(){
+  const cb=document.getElementById('hc-theme-cb');
+  if(cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));}
+}
 
 // ═══════════════════════════════════
 // INIT
@@ -3357,7 +3392,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
             "/api/stream_view":    lambda: self._get_stream_view(qs),
-            "/api/urls_csv":               self._get_urls_csv,
+            "/api/urls_csv":               lambda: self._get_urls_csv(qs),
             "/api/mail_config":              self._get_mail_config,
             "/api/gmail_oauth2_status":      self._get_gmail_oauth2_status,
             "/api/microsoft_oauth2_status":  self._get_ms_oauth2_status,
@@ -3477,33 +3512,54 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             })
         self._json(result)
 
-    def _get_urls_csv(self) -> None:
+    def _get_urls_csv(self, qs: Dict[str, Any]) -> None:
         """
-        Generate and download a CSV file containing all stream URLs.
-        Columns: name, port, stream_path, rtsp_url, hls_url, status, enabled
+        Download a CSV of all stream URLs.
+
+        Query params:
+          include_files=1   also emit a 'filenames' column with each stream's
+                            playlist file names (pipe-separated).
+
+        Columns always present:
+          name, ip, port, stream_path, rtsp_url, hls_url, status, enabled
+
+        Optional column (include_files=1):
+          filenames   — pipe-separated list of playlist file basenames
         """
         import io, csv as _csv
-        mgr = _WEB_MANAGER
+        from hc.utils import _local_ip
+
+        include_files = qs.get("include_files", ["0"])[0] == "1"
+        lan_ip        = _local_ip()
+        mgr           = _WEB_MANAGER
+
+        fieldnames = ["name", "ip", "port", "stream_path",
+                      "rtsp_url", "hls_url", "status", "enabled"]
+        if include_files:
+            fieldnames.append("filenames")
+
         rows = []
         if mgr:
             for st in mgr.states:
                 cfg = st.config
-                rows.append({
+                row: Dict[str, Any] = {
                     "name":        cfg.name,
+                    "ip":          lan_ip,
                     "port":        cfg.port,
                     "stream_path": cfg.stream_path or "",
                     "rtsp_url":    cfg.rtsp_url_external,
                     "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
                     "status":      st.status.label,
                     "enabled":     "yes" if cfg.enabled else "no",
-                })
+                }
+                if include_files:
+                    row["filenames"] = "|".join(
+                        item.file_path.name for item in cfg.playlist
+                    )
+                rows.append(row)
 
         buf = io.StringIO()
-        writer = _csv.DictWriter(
-            buf,
-            fieldnames=["name", "port", "stream_path", "rtsp_url", "hls_url", "status", "enabled"],
-            lineterminator="\r\n",
-        )
+        writer = _csv.DictWriter(buf, fieldnames=fieldnames, lineterminator="\r\n")
         writer.writeheader()
         writer.writerows(rows)
         body = buf.getvalue().encode("utf-8")
@@ -3523,7 +3579,8 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass
-        log.info("URL CSV downloaded: %s (%d stream(s))", fname, len(rows))
+        log.info("URL CSV downloaded: %s (%d stream(s), files=%s)",
+                 fname, len(rows), include_files)
 
     def _get_library(self) -> None:
         self._json(_get_library_cached())
