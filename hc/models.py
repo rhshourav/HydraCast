@@ -90,17 +90,20 @@ class StreamConfig:
     # ── Derived properties ────────────────────────────────────────────────────
     @property
     def rtsp_path(self) -> str:
-        return self.stream_path if self.stream_path else "stream"
+        """Return the stream path segment, or empty string if none (root mount)."""
+        return self.stream_path.strip("/") if self.stream_path else ""
 
     @property
     def rtsp_url(self) -> str:
-        return f"rtsp://127.0.0.1:{self.port}/{self.rtsp_path}"
+        path = f"/{self.rtsp_path}" if self.rtsp_path else ""
+        return f"rtsp://127.0.0.1:{self.port}{path}"
 
     @property
     def rtsp_url_external(self) -> str:
         from hc.utils import _local_ip
         ip = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
-        return f"rtsp://{ip}:{self.port}/{self.rtsp_path}"
+        path = f"/{self.rtsp_path}" if self.rtsp_path else ""
+        return f"rtsp://{ip}:{self.port}{path}"
 
     @property
     def hls_port(self) -> int:
@@ -110,7 +113,8 @@ class StreamConfig:
     def hls_url(self) -> str:
         from hc.utils import _local_ip
         ip = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
-        return f"http://{ip}:{self.hls_port}/{self.rtsp_path}/index.m3u8"
+        path = f"/{self.rtsp_path}" if self.rtsp_path else ""
+        return f"http://{ip}:{self.hls_port}{path}/index.m3u8"
 
     def is_scheduled_today(self) -> bool:
         return datetime.now().weekday() in self.weekdays
