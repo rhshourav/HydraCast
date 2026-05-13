@@ -42,11 +42,7 @@ _FFMPEG_ARCHIVES: dict[tuple[str, str], tuple[str, str]] = {
         "ffmpeg-master-latest-linuxarm64-gpl.tar.xz",
         "tar.xz",
     ),
-    ("win",    "amd64"): (
-        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/"
-        "ffmpeg-master-latest-win64-gpl.zip",
-        "zip",
-    ),
+    # Windows is handled via winget (see _install_ffmpeg_windows).
     ("darwin", "amd64"): (
         "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip",
         "zip_single",
@@ -80,8 +76,9 @@ class DependencyManager:
 
         Checks (in order):
           1. System PATH via shutil.which + a -version probe.
-          2. Local BIN_DIR() – accepts the file if it exists even when the
-             version probe fails (the binary may need execute permission set).
+          2. On Windows: ``cmd /c where <name>`` to catch binaries installed by
+             winget whose PATH update is not yet visible in the current process.
+          3. Local BIN_DIR() – accepted even when the version probe fails.
         """
         # 1. System PATH
         sys_path = shutil.which(name)
@@ -96,7 +93,23 @@ class DependencyManager:
                 except Exception:
                     pass
 
-        # 2. Local bin/ directory
+        # 2. Windows: shell out so the child process inherits the *updated* PATH
+        #    that winget wrote to the registry (the current process started before
+        #    winget modified PATH, so os.environ is stale).
+        if IS_WIN:
+            try:
+                r = subprocess.run(
+                    ["cmd", "/c", f"where {name}"],
+                    capture_output=True, text=True, timeout=8,
+                )
+                if r.returncode == 0:
+                    found = r.stdout.strip().splitlines()[0].strip()
+                    if found:
+                        return found
+            except Exception:
+                pass
+
+        # 3. Local bin/ directory
         local = BIN_DIR() / name
         if local.exists():
             for flag in ("-version", "--version"):
@@ -108,8 +121,7 @@ class DependencyManager:
                         return str(local)
                 except Exception:
                     pass
-            # Binary exists but version probe failed — return the path anyway
-            # so the caller can decide what to do.
+            # Binary exists but version probe failed — return path anyway.
             return str(local)
 
         return None
@@ -191,6 +203,60 @@ class DependencyManager:
                 | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
             )
 
+    # ── Windows: winget installer ─────────────────────────────────────────────
+    @classmethod
+    def _install_ffmpeg_windows(cls, console: object) -> bool:
+        """
+        Install FFmpeg (and FFprobe) on Windows via ``winget``.
+
+        winget installs Gyan's build which includes both ffmpeg.exe and
+        ffprobe.exe and adds them to the system PATH automatically.
+        Returns True if winget exited successfully.
+        """
+        from hc.constants import CG, CR, CY
+
+        if not shutil.which("winget"):
+            console.print(
+                f"[{CR}]✘  winget is not available on this system.[/]\n"
+                f"[{CY}]   Install FFmpeg manually from "
+                f"https://www.gyan.dev/ffmpeg/builds/ and add it to PATH.[/]"
+            )
+            return False
+
+        console.print(f"[{CY}]⬇  Installing FFmpeg via winget (Gyan.FFmpeg) …[/]")
+        console.print(f"[{CY}]   This may take a minute — a UAC prompt may appear.[/]")
+        try:
+            result = subprocess.run(
+                [
+                    "winget", "install",
+                    "--id",    "Gyan.FFmpeg",
+                    "-e",
+                    "--accept-package-agreements",
+                    "--accept-source-agreements",
+                ],
+                # Do NOT capture output so the winget progress bar is visible.
+                timeout=300,
+            )
+        except FileNotFoundError:
+            console.print(f"[{CR}]✘  winget executable not found.[/]")
+            return False
+        except subprocess.TimeoutExpired:
+            console.print(f"[{CR}]✘  winget timed out after 5 minutes.[/]")
+            return False
+        except Exception as exc:
+            console.print(f"[{CR}]✘  winget error: {exc}[/]")
+            return False
+
+        if result.returncode != 0:
+            console.print(
+                f"[{CR}]✘  winget exited with code {result.returncode}.[/]\n"
+                f"[{CY}]   Try running manually:  winget install --id Gyan.FFmpeg -e[/]"
+            )
+            return False
+
+        console.print(f"[{CG}]✔  FFmpeg installed via winget.[/]")
+        return True
+
     # ── FFmpeg / FFprobe downloader ───────────────────────────────────────────
     @classmethod
     def _pick_ffmpeg_entry(
@@ -209,14 +275,22 @@ class DependencyManager:
     @classmethod
     def download_ffmpeg(cls, console: object) -> bool:
         """
-        Download a static FFmpeg build (and FFprobe where bundled) for the
-        current platform into BIN_DIR().
+        Install FFmpeg (and FFprobe where bundled) for the current platform.
+
+        • Windows  → ``winget install --id Gyan.FFmpeg``
+        • Linux    → BtbN static .tar.xz  (ffmpeg + ffprobe bundled)
+        • macOS    → evermeet.cx static .zip (ffmpeg); separate download for ffprobe
 
         Returns True if at least FFmpeg was successfully installed.
         FFprobe installation is attempted but its failure is non-fatal.
         """
         from hc.constants import CG, CR, CY
 
+        # ── Windows: delegate entirely to winget ──────────────────────────────
+        if IS_WIN:
+            return cls._install_ffmpeg_windows(console)
+
+        # ── Linux / macOS: static archive download ────────────────────────────
         bin_dir = BIN_DIR()
         bin_dir.mkdir(parents=True, exist_ok=True)
 
@@ -365,8 +439,15 @@ class DependencyManager:
             cls._maybe_download_ffprobe(ffprobe_dest, key, console)
             return cls.check_ffprobe()
 
-        # For Linux / Windows, ffprobe ships bundled with FFmpeg. If it is
-        # missing here, re-run the full FFmpeg download to recover it.
+        # For Linux / Windows, ffprobe ships bundled with FFmpeg.
+        # On Windows it was installed by winget alongside ffmpeg; if it still
+        # cannot be found, there is nothing more we can do here.
+        if IS_WIN:
+            console.print(f"[{CY}]⚠  FFprobe not found in PATH (optional — continuing).[/]")
+            return None
+
+        # Linux: ffprobe ships bundled with FFmpeg. If it is missing here,
+        # re-run the full FFmpeg download to recover it.
         ffprobe_dest = BIN_DIR() / FFPROBE_BIN_NAME
         if not ffprobe_dest.exists():
             console.print(
