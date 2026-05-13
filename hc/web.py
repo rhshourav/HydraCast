@@ -3292,7 +3292,9 @@ def _notify_folder_upload(upload_dir: Path) -> None:
 # =============================================================================
 # REQUEST HANDLER
 # =============================================================================
-class WebHandler(BaseHTTPRequestHandler):
+from hc.web_filemanager import _FileManagerMixin   # provides _get_files, _handle_file_op
+
+class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
 
     def log_message(self, *args: Any) -> None:
         pass  # suppress default access log
@@ -3661,6 +3663,12 @@ class WebHandler(BaseHTTPRequestHandler):
 
     # ── POST dispatch ────────────────────────────────────────────────────────
     def _dispatch(self, action: str, data: Dict[str, Any]) -> None:
+        # File-manager actions are handled by _FileManagerMixin
+        _FILE_OPS = {"file_rename", "file_delete", "file_delete_dir", "file_move", "file_copy"}
+        if action in _FILE_OPS:
+            self._handle_file_op(action, data)
+            return
+
         mgr = _WEB_MANAGER
         if not mgr:
             self._json({"ok": False, "msg": "Manager not ready"})
