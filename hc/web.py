@@ -997,10 +997,10 @@ select option{background:var(--bg3)}
     <div class="card-hdr"><h3>One-Shot Event</h3></div>
     <div class="card-body">
       <div class="form-grid" style="margin-bottom:12px">
-        <div class="fg"><label>Stream</label><select id="ev-stream"></select></div>
-        <div class="fg"><label>Video File</label><select id="ev-file"></select></div>
-        <div class="fg"><label>Play at (local time)</label><input type="datetime-local" id="ev-dt"></div>
-        <div class="fg"><label>Start position</label><input type="text" id="ev-pos" value="00:00:00" placeholder="HH:MM:SS"></div>
+        <div class="fg"><label>Stream *</label><select id="ev-stream"></select></div>
+        <div class="fg"><label>Video File *</label><select id="ev-file"></select></div>
+        <div class="fg"><label>Play at (local time) *</label><input type="datetime-local" id="ev-dt"></div>
+        <div class="fg"><label>Start position (HH:MM:SS)</label><input type="text" id="ev-pos" value="00:00:00" placeholder="00:00:00"></div>
         <div class="fg"><label>After playback</label>
           <select id="ev-post">
             <option value="resume">Resume playlist</option>
@@ -1017,19 +1017,34 @@ select option{background:var(--bg3)}
   </div>
 
   <div class="section-hdr">
-    <h2>Pending Events</h2>
+    <h2>Scheduled Events</h2>
     <span class="sep"></span>
+    <select id="ev-filter-stream" onchange="renderEventsTable()"
+      style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);
+             border-radius:var(--radius);padding:5px 10px;font-size:12px;font-family:var(--font-sans)">
+      <option value="">All streams</option>
+    </select>
+    <select id="ev-filter-status" onchange="renderEventsTable()"
+      style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);
+             border-radius:var(--radius);padding:5px 10px;font-size:12px;font-family:var(--font-sans)">
+      <option value="">All statuses</option>
+      <option value="pending">Pending</option>
+      <option value="played">Played</option>
+    </select>
     <button class="btn r" onclick="clearPlayed()">✕ Clear Played</button>
     <button class="btn b" onclick="loadEvents()">↻</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);cursor:pointer">
+      <input type="checkbox" id="ev-autoref" checked style="width:auto;accent-color:var(--accent)"> Live
+    </label>
   </div>
   <div class="card">
     <div class="tbl-wrap">
       <table>
         <thead><tr>
           <th>Stream</th><th>File</th><th>Play At</th>
-          <th>Countdown</th><th>After</th><th>Status</th><th></th>
+          <th>Countdown</th><th>After</th><th>Status</th><th style="text-align:right">Actions</th>
         </tr></thead>
-        <tbody id="evtbl"></tbody>
+        <tbody id="evtbl"><tr><td colspan="7"><div class="empty"><div class="empty-icon">📅</div>Loading…</div></td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1852,75 +1867,151 @@ function upOne(file){
 // ═══════════════════════════════════
 // EVENTS
 // ═══════════════════════════════════
+let _evData = [];          // cached event list from server
+let _evTimer = null;       // auto-refresh interval
+let _evCountdown = null;   // per-second countdown ticker
+
 async function loadEvtForm(){
   try{
     const[streams,lib]=await Promise.all([
       fetch('/api/streams').then(r=>r.json()),
       fetch('/api/library').then(r=>r.json()),
     ]);
-    document.getElementById('ev-stream').innerHTML=
-      streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
-    document.getElementById('ev-file').innerHTML=
-      lib.map(f=>`<option value="${esc(f.full_path)}">${esc(f.path)}</option>`).join('');
+    const streamSel = document.getElementById('ev-stream');
+    streamSel.innerHTML = streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+    document.getElementById('ev-file').innerHTML =
+      lib.map(f=>`<option value="${esc(f.full_path)}">${esc(f.path)} (${esc(f.duration||'?')})</option>`).join('');
     const dt=new Date(Date.now()+5*60000);
     document.getElementById('ev-dt').value=
       new Date(dt-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
-  }catch(_){}
-}
-
-async function schedEvent(){
-  const stream=document.getElementById('ev-stream').value;
-  const file=document.getElementById('ev-file').value;
-  const dt=document.getElementById('ev-dt').value;
-  const pos=document.getElementById('ev-pos').value||'00:00:00';
-  const post=document.getElementById('ev-post').value;
-  if(!stream||!file||!dt){toast('Fill all required fields','err');return;}
-  await api('add_event',{stream_name:stream,file_path:file,play_at:dt,start_pos:pos,post_action:post});
-  loadEvents();
+    // Populate stream filter dropdown
+    const fsel = document.getElementById('ev-filter-stream');
+    const prev = fsel.value;
+    fsel.innerHTML = '<option value="">All streams</option>' +
+      streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+    if(prev) fsel.value = prev;
+  }catch(e){ log.warn && console.warn('loadEvtForm:', e); }
 }
 
 async function loadEvents(){
   try{
-    const data=await fetch('/api/events').then(r=>r.json());
-    const now=Date.now();
-    document.getElementById('evtbl').innerHTML=data.map(ev=>{
-      const pa=new Date(ev.play_at.replace(' ','T'));
-      const d=((pa-now)/1000).toFixed(0);
-      const cd=ev.played?'—':d>0?`in ${Math.floor(d/60)}m ${d%60}s`:`${Math.abs(d)}s ago`;
-      const cdColor=d>0?'var(--accent-light)':'var(--text3)';
-      return `<tr>
-        <td style="color:var(--accent-light)">${esc(ev.stream_name)}</td>
-        <td class="td-muted">${esc(ev.file_name)}</td>
-        <td class="td-muted" style="white-space:nowrap">${esc(ev.play_at)}</td>
-        <td style="font-size:11px;color:${cdColor}">${cd}</td>
-        <td class="td-muted">${esc(ev.post_action)}</td>
-        <td><span class="badge ${ev.played?'STOPPED':'SCHED'}">${ev.played?'Played':'Pending'}</span></td>
-        <td><button class="btn r" onclick="delEvent('${esc(ev.event_id)}')">✕</button></td>
-      </tr>`;
-    }).join('')||`<tr><td colspan="7"><div class="empty"><div class="empty-icon">📅</div>No scheduled events.</div></td></tr>`;
-  }catch(_){}
+    _evData = await fetch('/api/events').then(r=>r.json());
+    renderEventsTable();
+  }catch(e){ console.warn('loadEvents:', e); }
+}
+
+function _fmtCountdown(secs){
+  if(secs === null || isNaN(secs)) return '—';
+  const abs = Math.abs(Math.round(secs));
+  const h = Math.floor(abs/3600);
+  const m = Math.floor((abs%3600)/60);
+  const s = abs%60;
+  const hms = h>0
+    ? `${h}h ${String(m).padStart(2,'0')}m`
+    : m>0
+      ? `${m}m ${String(s).padStart(2,'0')}s`
+      : `${s}s`;
+  return secs >= 0 ? `in ${hms}` : `${hms} ago`;
+}
+
+function renderEventsTable(){
+  const filterStream = (document.getElementById('ev-filter-stream')||{}).value || '';
+  const filterStatus = (document.getElementById('ev-filter-status')||{}).value || '';
+  let rows = _evData.filter(ev=>{
+    if(filterStream && ev.stream_name !== filterStream) return false;
+    if(filterStatus === 'pending' && ev.played) return false;
+    if(filterStatus === 'played'  && !ev.played) return false;
+    return true;
+  });
+  if(!rows.length){
+    document.getElementById('evtbl').innerHTML =
+      `<tr><td colspan="7"><div class="empty"><div class="empty-icon">📅</div>No events${filterStream||filterStatus?' matching filter':' scheduled'}.</div></td></tr>`;
+    return;
+  }
+  const now = Date.now();
+  document.getElementById('evtbl').innerHTML = rows.map(ev=>{
+    const secsNow = Math.round((new Date(ev.play_at_iso||ev.play_at.replace(' ','T')) - now)/1000);
+    const imminent = !ev.played && secsNow >= 0 && secsNow < 300;
+    const past     = !ev.played && secsNow < 0;
+    const cdColor  = ev.played ? 'var(--text3)' : imminent ? 'var(--yellow)' : past ? 'var(--red)' : 'var(--accent-light)';
+    const rowStyle = imminent ? 'background:rgba(201,168,120,0.06)' : '';
+    const fireBtn  = !ev.played
+      ? `<button class="btn" style="font-size:10px;padding:3px 8px;color:var(--yellow);border-color:rgba(201,168,120,0.4)"
+           onclick="fireNow('${esc(ev.event_id)}')" title="Fire immediately">▶ Now</button>`
+      : '';
+    return `<tr style="${rowStyle}">
+      <td style="color:var(--accent-light)">${esc(ev.stream_name)}</td>
+      <td class="td-muted" title="${esc(ev.file_path||ev.file_name)}">${esc(ev.file_name)}</td>
+      <td class="td-muted" style="white-space:nowrap;font-family:var(--font-mono);font-size:11px">${esc(ev.play_at)}</td>
+      <td class="ev-cd" data-secs="${secsNow}" style="font-size:11px;color:${cdColor};white-space:nowrap">${_fmtCountdown(secsNow)}</td>
+      <td class="td-muted" style="font-size:11px">${esc(ev.post_action||'resume')}</td>
+      <td><span class="badge ${ev.played?'STOPPED':'SCHED'}">${ev.played?'✓ Played':'⏰ Pending'}</span></td>
+      <td style="text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end">
+        ${fireBtn}
+        <button class="btn r" style="font-size:10px;padding:3px 8px" onclick="delEvent('${esc(ev.event_id)}')">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function _tickCountdowns(){
+  // Update only the countdown cells every second — no full re-render
+  document.querySelectorAll('.ev-cd').forEach(cell=>{
+    let s = parseInt(cell.dataset.secs, 10);
+    s--;
+    cell.dataset.secs = s;
+    cell.textContent = _fmtCountdown(s);
+    const imminent = s >= 0 && s < 300;
+    const past     = s < 0;
+    cell.style.color = imminent ? 'var(--yellow)' : past ? 'var(--red)' : 'var(--accent-light)';
+  });
+}
+
+function _startEvTimers(){
+  clearInterval(_evTimer);
+  clearInterval(_evCountdown);
+  _evTimer    = setInterval(()=>{ if(document.getElementById('ev-autoref')?.checked) loadEvents(); }, 15000);
+  _evCountdown = setInterval(_tickCountdowns, 1000);
+}
+
+async function schedEvent(){
+  const stream = document.getElementById('ev-stream').value;
+  const file   = document.getElementById('ev-file').value;
+  const dt     = document.getElementById('ev-dt').value;
+  const pos    = document.getElementById('ev-pos').value||'00:00:00';
+  const post   = document.getElementById('ev-post').value;
+  if(!stream){ toast('Select a stream','err'); return; }
+  if(!file)  { toast('Select a file','err');   return; }
+  if(!dt)    { toast('Set a date/time','err'); return; }
+  const r = await api('add_event',{stream_name:stream,file_path:file,play_at:dt,start_pos:pos,post_action:post});
+  if(r?.ok) await loadEvents();
 }
 
 async function delEvent(id){
   if(!confirm('Delete this event?'))return;
   const r=await api('delete_event',{event_id:id});
-  if(r&&r.ok)loadEvents();
+  if(r?.ok) await loadEvents();
+}
+
+async function fireNow(id){
+  if(!confirm('Fire this event immediately?'))return;
+  const r=await api('fire_event_now',{event_id:id});
+  if(r?.ok) await loadEvents();
 }
 
 async function clearPlayed(){
-  if(!confirm('Remove all played events?'))return;
+  const played = _evData.filter(e=>e.played).map(e=>e.event_id);
+  if(!played.length){ toast('No played events to clear','info'); return; }
+  if(!confirm(`Remove ${played.length} played event(s)?`))return;
   try{
-    const evts=await fetch('/api/events').then(r=>r.json());
-    const ids=evts.filter(e=>e.played).map(e=>e.event_id);
-    if(!ids.length){toast('No played events to clear','info');return;}
     const r=await fetch('/api/delete_played_events',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({event_ids:ids})
+      body:JSON.stringify({event_ids:played})
     });
     const j=await r.json();
     toast(j.ok?(j.msg||'Cleared'):(j.msg||'Error'),j.ok?'ok':'err');
-    loadEvents();
-  }catch(e){toast('Error: '+e,'err');}
+    await loadEvents();
+  }catch(e){ toast('Error: '+e,'err'); }
 }
 
 // ═══════════════════════════════════
@@ -2994,15 +3085,21 @@ class WebHandler(BaseHTTPRequestHandler):
         if not mgr:
             self._json([])
             return
+        now = datetime.now()
         result = []
-        for ev in mgr.events:
+        for ev in sorted(mgr.events, key=lambda e: e.play_at):
+            diff = (ev.play_at - now).total_seconds()
             result.append({
-                "event_id":    ev.event_id,
-                "stream_name": ev.stream_name,
-                "file_name":   ev.file_path.name,
-                "play_at":     ev.play_at.strftime("%Y-%m-%d %H:%M:%S"),
-                "post_action": ev.post_action,
-                "played":      ev.played,
+                "event_id":      ev.event_id,
+                "stream_name":   ev.stream_name,
+                "file_name":     ev.file_path.name,
+                "file_path":     str(ev.file_path),
+                "play_at":       ev.play_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "play_at_iso":   ev.play_at.isoformat(),
+                "seconds_until": round(diff),
+                "post_action":   ev.post_action,
+                "start_pos":     ev.start_pos if hasattr(ev, "start_pos") else "00:00:00",
+                "played":        ev.played,
             })
         self._json(result)
 
@@ -3346,10 +3443,15 @@ class WebHandler(BaseHTTPRequestHandler):
                 play_at     = str(data.get("play_at",     "")).strip()
                 start_pos   = str(data.get("start_pos",   "00:00:00")).strip()
                 post_action = str(data.get("post_action", "resume")).strip()
+                notes       = str(data.get("notes", "")).strip()[:200]
                 if post_action not in ("resume", "stop", "black"):
                     post_action = "resume"
-                if not re.fullmatch(r"\d{2}:\d{2}:\d{2}", start_pos):
+                if not re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", start_pos):
                     start_pos = "00:00:00"
+                if not stream_name:
+                    raise ValueError("Stream name is required")
+                if mgr.get_state(stream_name) is None:
+                    raise ValueError(f"Stream '{stream_name}' not found")
                 dt = None
                 for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
                     try:
@@ -3357,21 +3459,27 @@ class WebHandler(BaseHTTPRequestHandler):
                     except ValueError:
                         continue
                 if dt is None:
-                    raise ValueError("Invalid datetime")
+                    raise ValueError("Invalid datetime format")
                 fp   = Path(file_path)
                 safe = _safe_path(fp, MEDIA_DIR())
                 if safe is None and not fp.exists():
-                    raise ValueError("File not found or path unsafe")
+                    raise ValueError("File not found or path outside media directory")
+                ev_id = hashlib.md5(
+                    f"{stream_name}{play_at}{file_path}".encode()
+                ).hexdigest()[:8]
+                # Guard: reject exact duplicate (same stream+time+file)
+                if any(e.event_id == ev_id for e in mgr.events):
+                    raise ValueError("An identical event is already scheduled")
                 ev = OneShotEvent(
-                    event_id=hashlib.md5(f"{stream_name}{play_at}{file_path}".encode()).hexdigest()[:8],
-                    stream_name=stream_name,
-                    file_path=fp,
-                    play_at=dt,
-                    post_action=post_action,
-                    start_pos=start_pos,
+                    event_id    = ev_id,
+                    stream_name = stream_name,
+                    file_path   = fp,
+                    play_at     = dt,
+                    post_action = post_action,
+                    start_pos   = start_pos,
                 )
-                CSVManager.add_event(mgr.events, ev)
-                self._json({"ok": True, "msg": "Event scheduled"})
+                mgr.add_event(ev)
+                self._json({"ok": True, "msg": f"Event scheduled for {dt.strftime('%Y-%m-%d %H:%M')}"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
@@ -3380,9 +3488,8 @@ class WebHandler(BaseHTTPRequestHandler):
             if not ev_id:
                 self._json({"ok": False, "msg": "Missing event_id"})
                 return
-            mgr.events = [e for e in mgr.events if e.event_id != ev_id]
-            CSVManager.save_events(mgr.events)
-            self._json({"ok": True, "msg": "Event deleted"})
+            removed = mgr.remove_event(ev_id)
+            self._json({"ok": removed, "msg": "Event deleted" if removed else "Event not found"})
 
         elif action == "create_stream":
             try:
@@ -3469,10 +3576,16 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "msg": "event_ids must be a list"})
                 return
             id_set = set(str(i).strip() for i in ids)
-            before = len(mgr.events)
-            mgr.events = [e for e in mgr.events if e.event_id not in id_set]
-            CSVManager.save_events(mgr.events)
-            self._json({"ok": True, "msg": f"Removed {before - len(mgr.events)} event(s)"})
+            count = mgr.remove_events(id_set)
+            self._json({"ok": True, "msg": f"Removed {count} event(s)"})
+
+        elif action == "fire_event_now":
+            ev_id = str(data.get("event_id", "")).strip()
+            if not ev_id:
+                self._json({"ok": False, "msg": "Missing event_id"})
+                return
+            ok = mgr.fire_event_now(ev_id)
+            self._json({"ok": ok, "msg": "Event fired" if ok else "Event not found or stream not running"})
 
         elif action == "delete_file":
             raw_path = str(data.get("path", "")).strip()
