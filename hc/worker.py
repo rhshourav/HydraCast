@@ -35,7 +35,7 @@ from hc.constants import (
 )
 from hc.mediamtx_cfg import MediaMTXConfig
 from hc.models import OneShotEvent, PlaylistItem, StreamState, StreamStatus
-from hc.utils import _fmt_duration, _kill_orphan_on_port, _port_in_use, _wait_for_port
+from hc.utils import _fmt_duration, _kill_orphan_on_port, _port_in_use, _wait_for_port, _wait_for_rtsp
 
 log = logging.getLogger(__name__)
 
@@ -638,13 +638,17 @@ class StreamWorker:
         if not self._start_mediamtx(mtx_cfg):
             return False
 
-        # ── Wait for MediaMTX to bind ─────────────────────────────────────────
-        self._log(f"Waiting for MediaMTX to bind :{cfg.port} (timeout {self.MTX_READY_TIMEOUT:.0f}s) …")
-        if not _wait_for_port(cfg.port, timeout=self.MTX_READY_TIMEOUT):
+        # Wait for MediaMTX RTSP handler to be fully ready.
+        # _wait_for_port() only confirms TCP bind. On Windows, MediaMTX binds
+        # the port ~500-800 ms before its RTSP handler is initialised; ffmpeg
+        # connecting during that gap sends ANNOUNCE and gets 400 Bad Request.
+        # _wait_for_rtsp() sends a real RTSP OPTIONS and waits for 200 OK.
+        self._log(f"Waiting for MediaMTX RTSP handler :{cfg.port} (timeout {self.MTX_READY_TIMEOUT:.0f}s) ...")
+        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT):
             log_tail = _tail_log(LOGS_DIR() / f"mediamtx_{cfg.port}.log", 12)
             detail = log_tail or "No output in MediaMTX log file"
             self._log(
-                f"MediaMTX port-bind timeout :{cfg.port}. "
+                f"MediaMTX RTSP-ready timeout :{cfg.port}. "
                 f"MediaMTX log tail:\n{detail}",
                 "ERROR",
             )
@@ -652,7 +656,7 @@ class StreamWorker:
             self.state.status    = StreamStatus.ERROR
             self.state.error_msg = f"MediaMTX timeout (:{cfg.port})"
             return False
-        self._log(f"MediaMTX is live on :{cfg.port}")
+        self._log(f"MediaMTX RTSP handler ready on :{cfg.port}")
 
         # ── Launch FFmpeg ─────────────────────────────────────────────────────
         if not self._start_ffmpeg(item, seek_pos):
@@ -1103,9 +1107,9 @@ class StreamWorker:
         if not self._start_mediamtx(mtx_cfg):
             self._log("_cycle_mediamtx: MediaMTX failed to restart.", "ERROR")
             return False
-        if not _wait_for_port(cfg.port, timeout=self.MTX_READY_TIMEOUT):
+        if not _wait_for_rtsp(cfg.port, timeout=self.MTX_READY_TIMEOUT):
             self._log(
-                f"_cycle_mediamtx: MediaMTX did not bind :{cfg.port} in time.", "ERROR"
+                f"_cycle_mediamtx: MediaMTX RTSP handler not ready on :{cfg.port}.", "ERROR"
             )
             self._kill_mediamtx()
             return False
