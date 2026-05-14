@@ -892,9 +892,13 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 raw_files = str(data.get("files", "")).strip()
                 if folder_source_raw:
                     from hc.folder_scanner import scan_folder, SortMode
-                    folder_source = Path(folder_source_raw)
-                    if not folder_source.is_dir():
-                        raise ValueError(f"Folder not found or not a directory: '{folder_source_raw}'")
+                    _fp = Path(folder_source_raw)
+                    # Relative paths from the media browser are relative to MEDIA_DIR
+                    if not _fp.is_absolute():
+                        _fp = MEDIA_DIR() / _fp
+                    folder_source = _safe_path(_fp, MEDIA_DIR())
+                    if folder_source is None or not folder_source.is_dir():
+                        raise ValueError(f"Folder not found or access denied: '{folder_source_raw}'")
                     playlist, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
                     for w in warnings:
                         log.warning("update_config folder scan: %s", w)
@@ -1040,9 +1044,12 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 playlist: "List[PlaylistItem]" = []
                 if folder_source_raw:
                     from hc.folder_scanner import scan_folder, SortMode
-                    folder_source = Path(folder_source_raw)
-                    if not folder_source.is_dir():
-                        raise ValueError(f"Folder not found or not a directory: '{folder_source_raw}'")
+                    _fp = Path(folder_source_raw)
+                    if not _fp.is_absolute():
+                        _fp = MEDIA_DIR() / _fp
+                    folder_source = _safe_path(_fp, MEDIA_DIR())
+                    if folder_source is None or not folder_source.is_dir():
+                        raise ValueError(f"Folder not found or access denied: '{folder_source_raw}'")
                     playlist, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
                     for w in warnings:
                         log.warning("create_stream folder scan: %s", w)
