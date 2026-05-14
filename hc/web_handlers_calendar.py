@@ -130,10 +130,13 @@ class _CalendarHandlersMixin:
     # play_at timestamp.  Partial success is returned as HTTP 207.
     # ------------------------------------------------------------------
     def _post_events_bulk(self, body: bytes) -> None:
-        from hc.web import _WEB_MANAGER
+        # Import the module so we always get the live value of _WEB_MANAGER,
+        # not a stale snapshot from when the mixin was first loaded.
+        import hc.web_handler as _wh_mod
         from hc.json_manager import JSONManager
+        from typing import Optional as _Opt
 
-        mgr = _WEB_MANAGER
+        mgr = _wh_mod._WEB_MANAGER
         if mgr is None:
             self._json({"error": "Manager not ready — try again shortly."}, 503)
             return
@@ -150,6 +153,22 @@ class _CalendarHandlersMixin:
             self._json({"error": f"Bad payload: {exc}"}, 400)
             return
 
+        # --- optional broadcast end time ---
+        broadcast_end: _Opt[datetime] = None
+        be_str = payload.get("broadcast_end", "")
+        if be_str:
+            try:
+                broadcast_end = datetime.fromisoformat(be_str)
+                # Must be strictly after play_at; silently discard if not
+                if broadcast_end <= play_at:
+                    log.warning(
+                        "_post_events_bulk: broadcast_end %s is not after play_at %s — ignored",
+                        be_str, play_at_str,
+                    )
+                    broadcast_end = None
+            except ValueError:
+                log.warning("_post_events_bulk: invalid broadcast_end %r — ignored", be_str)
+
         # --- create one event per stream ---
         created: List[Dict[str, Any]] = []
         errors:  List[Dict[str, Any]] = []
@@ -165,22 +184,36 @@ class _CalendarHandlersMixin:
                 })
                 continue
 
+            # Guard: stream must exist in the manager
+            if mgr.get_state(stream_name) is None:
+                errors.append({
+                    "stream_name": stream_name,
+                    "error": f"Stream '{stream_name}' not found.",
+                })
+                log.warning("bulk event skipped — unknown stream: %s", stream_name)
+                continue
+
             try:
                 ev = JSONManager.add_event(
                     mgr.events,
-                    stream_name = stream_name,
-                    file_path   = Path(file_path_s),
-                    play_at     = play_at,
+                    stream_name   = stream_name,
+                    file_path     = Path(file_path_s),
+                    play_at       = play_at,
+                    broadcast_end = broadcast_end,
                 )
-                created.append({
+                ev_dict: Dict[str, Any] = {
                     "event_id":    ev.event_id,
                     "stream_name": ev.stream_name,
                     "file_path":   str(ev.file_path),
                     "play_at":     ev.play_at.isoformat(),
-                })
+                }
+                if broadcast_end is not None:
+                    ev_dict["broadcast_end"] = broadcast_end.isoformat()
+                created.append(ev_dict)
                 log.info(
-                    "bulk event created: stream=%s file=%s at=%s",
+                    "bulk event created: stream=%s file=%s at=%s%s",
                     stream_name, file_path_s, play_at.isoformat(),
+                    f" end={broadcast_end.isoformat()}" if broadcast_end else "",
                 )
             except Exception as exc:
                 errors.append({"stream_name": stream_name, "error": str(exc)})
