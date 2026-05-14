@@ -17,16 +17,7 @@ _HTML = r"""
 
 *{box-sizing:border-box;margin:0;padding:0}
 
-/* ── Shared non-colour tokens ── */
-:root{
-  --font-sans:'Inter',system-ui,sans-serif;
-  --font-display:'Plus Jakarta Sans',system-ui,sans-serif;
-  --font-mono:'JetBrains Mono',monospace;
-  --radius:10px;
-  --radius-lg:14px;
-}
-
-/* ── Dark (default) ── */
+/* ── CryptoVault Dark Theme ── */
 :root,[data-theme="dark"]{
   --bg:#1c1c1e;
   --bg2:#232325;
@@ -53,9 +44,14 @@ _HTML = r"""
   --accent-gradient:linear-gradient(135deg,#b87333 0%,#d4945a 50%,#c9845a 100%);
   --accent-gradient-hover:linear-gradient(135deg,#c9845a 0%,#daa57a 50%,#d4945a 100%);
   --shadow:rgba(0,0,0,0.35);
+  --font-sans:'Inter',system-ui,sans-serif;
+  --font-display:'Plus Jakarta Sans',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+  --radius:10px;
+  --radius-lg:14px;
 }
 
-/* ── Light ── */
+/* ── CryptoVault Light Theme ── */
 [data-theme="light"]{
   --bg:#f2f2f4;
   --bg2:#ffffff;
@@ -82,93 +78,11 @@ _HTML = r"""
   --accent-gradient:linear-gradient(135deg,#b87333 0%,#d4945a 50%,#c9845a 100%);
   --accent-gradient-hover:linear-gradient(135deg,#c9845a 0%,#daa57a 50%,#d4945a 100%);
   --shadow:rgba(0,0,0,0.07);
-}
-
-/* ── Ocean ── deep blue/teal */
-[data-theme="ocean"]{
-  --bg:#0d1b2a;
-  --bg2:#112233;
-  --bg3:#152c40;
-  --bg4:#1a3550;
-  --border:#1e3d5a;
-  --border2:#2a5070;
-  --text:#d8eaf8;
-  --text2:#8aafcc;
-  --text3:#4a7a99;
-  --green:#5ba88a;
-  --green-dim:rgba(91,168,138,0.14);
-  --red:#c06e7a;
-  --red-dim:rgba(192,110,122,0.14);
-  --yellow:#c8a84a;
-  --yellow-dim:rgba(200,168,74,0.14);
-  --blue:#5a9fd4;
-  --blue-dim:rgba(90,159,212,0.12);
-  --cyan:#4ac8d8;
-  --purple:#8a78c8;
-  --purple-dim:rgba(138,120,200,0.14);
-  --accent:#2196b8;
-  --accent-light:#38b8d8;
-  --accent-gradient:linear-gradient(135deg,#2196b8 0%,#38b8d8 50%,#2aaccc 100%);
-  --accent-gradient-hover:linear-gradient(135deg,#38b8d8 0%,#50cce8 50%,#38b8d8 100%);
-  --shadow:rgba(0,0,0,0.45);
-}
-
-/* ── Midnight ── purple/indigo */
-[data-theme="midnight"]{
-  --bg:#0f0e17;
-  --bg2:#15141f;
-  --bg3:#1c1a2a;
-  --bg4:#252334;
-  --border:#2e2a42;
-  --border2:#3d3858;
-  --text:#ede8ff;
-  --text2:#a89ec8;
-  --text3:#60587a;
-  --green:#6aaa82;
-  --green-dim:rgba(106,170,130,0.14);
-  --red:#cc7088;
-  --red-dim:rgba(204,112,136,0.14);
-  --yellow:#c8a85a;
-  --yellow-dim:rgba(200,168,90,0.14);
-  --blue:#7a8ccc;
-  --blue-dim:rgba(122,140,204,0.12);
-  --cyan:#68b8cc;
-  --purple:#b898e8;
-  --purple-dim:rgba(184,152,232,0.14);
-  --accent:#8066cc;
-  --accent-light:#a088e8;
-  --accent-gradient:linear-gradient(135deg,#8066cc 0%,#a088e8 50%,#9070da 100%);
-  --accent-gradient-hover:linear-gradient(135deg,#a088e8 0%,#b8a0f0 50%,#a088e8 100%);
-  --shadow:rgba(0,0,0,0.50);
-}
-
-/* ── Forest ── green/earth */
-[data-theme="forest"]{
-  --bg:#0e1a14;
-  --bg2:#121f18;
-  --bg3:#182a1e;
-  --bg4:#1e3326;
-  --border:#213a29;
-  --border2:#2e5038;
-  --text:#e0f0e4;
-  --text2:#88b894;
-  --text3:#4a7255;
-  --green:#68c87a;
-  --green-dim:rgba(104,200,122,0.14);
-  --red:#c07070;
-  --red-dim:rgba(192,112,112,0.14);
-  --yellow:#c8b858;
-  --yellow-dim:rgba(200,184,88,0.14);
-  --blue:#6898c8;
-  --blue-dim:rgba(104,152,200,0.12);
-  --cyan:#58c8a8;
-  --purple:#9888b8;
-  --purple-dim:rgba(152,136,184,0.14);
-  --accent:#4a9a5a;
-  --accent-light:#5aba6e;
-  --accent-gradient:linear-gradient(135deg,#4a9a5a 0%,#5aba6e 50%,#52aa62 100%);
-  --accent-gradient-hover:linear-gradient(135deg,#5aba6e 0%,#70cc82 50%,#5aba6e 100%);
-  --shadow:rgba(0,0,0,0.45);
+  --font-sans:'Inter',system-ui,sans-serif;
+  --font-display:'Plus Jakarta Sans',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+  --radius:10px;
+  --radius-lg:14px;
 }
 
 /* ─────────── KEYFRAMES ─────────── */
@@ -356,51 +270,32 @@ a:hover{color:var(--accent)}
 .pulse{display:inline-block;width:5px;height:5px;border-radius:50%;
   background:currentColor;animation:pulse 2s infinite}
 
-/* ─────────── THEME PICKER ─────────── */
-.theme-picker-wrap{position:relative;display:flex;align-items:center;flex-shrink:0}
-.theme-picker-btn{
-  background:var(--bg3);border:1px solid var(--border);color:var(--text2);
-  cursor:pointer;font:500 12px var(--font-sans);padding:6px 12px;border-radius:20px;
-  display:inline-flex;align-items:center;gap:7px;
-  transition:all 0.22s;white-space:nowrap;
+/* ─────────── THEME TOGGLE ─────────── */
+/* ── THEME TOGGLE (moon/sun) ── */
+.hc-toggle-wrap{display:flex;align-items:center;flex-shrink:0}
+.hc-toggle-cb{opacity:0;position:absolute;width:0;height:0}
+.hc-toggle-label{
+  background-color:#111;
+  width:50px;height:26px;border-radius:50px;
+  position:relative;padding:5px;cursor:pointer;
+  display:flex;justify-content:space-between;align-items:center;
+  transition:background 0.2s linear;
+  box-shadow:0 2px 8px rgba(0,0,0,0.35);
 }
-.theme-picker-btn:hover{border-color:var(--border2);color:var(--text);background:var(--bg4)}
-.theme-picker-btn .theme-dot{
-  width:10px;height:10px;border-radius:50%;flex-shrink:0;
-  background:var(--accent);
-  box-shadow:0 0 0 2px var(--bg3),0 0 0 3px var(--accent);
-  transition:background 0.3s;
+[data-theme="light"] .hc-toggle-label{background-color:#b87333}
+.hc-toggle-label .fa-moon{color:#f1c40f;font-size:12px}
+.hc-toggle-label .fa-sun {color:#f39c12;font-size:12px}
+.hc-toggle-ball{
+  background-color:#fff;
+  width:22px;height:22px;
+  position:absolute;left:2px;top:2px;
+  border-radius:50%;
+  transition:transform 0.2s linear;
+  box-shadow:0 1px 4px rgba(0,0,0,0.3);
 }
-.theme-picker-dropdown{
-  position:absolute;top:calc(100% + 8px);right:0;z-index:9999;
-  background:var(--bg2);border:1px solid var(--border);
-  border-radius:var(--radius-lg);padding:8px;
-  min-width:180px;
-  box-shadow:0 8px 32px var(--shadow);
-  display:none;flex-direction:column;gap:2px;
-  animation:fadeSlideIn 0.18s ease;
+.hc-toggle-cb:checked + .hc-toggle-label .hc-toggle-ball{
+  transform:translateX(24px);
 }
-.theme-picker-dropdown.open{display:flex}
-.theme-opt{
-  display:flex;align-items:center;gap:10px;
-  padding:8px 10px;border-radius:8px;
-  cursor:pointer;font:500 13px var(--font-sans);color:var(--text2);
-  transition:background 0.15s,color 0.15s;border:none;background:none;width:100%;
-  text-align:left;
-}
-.theme-opt:hover{background:var(--bg3);color:var(--text)}
-.theme-opt.active{background:var(--bg4);color:var(--text)}
-.theme-opt .to-swatch{
-  width:28px;height:18px;border-radius:5px;flex-shrink:0;
-  border:1px solid rgba(255,255,255,0.08);
-}
-.to-swatch-dark   {background:linear-gradient(135deg,#1c1c1e 50%,#b87333 100%)}
-.to-swatch-light  {background:linear-gradient(135deg,#f2f2f4 50%,#b87333 100%);border-color:rgba(0,0,0,0.12)}
-.to-swatch-ocean  {background:linear-gradient(135deg,#0d1b2a 50%,#2196b8 100%)}
-.to-swatch-midnight{background:linear-gradient(135deg,#0f0e17 50%,#8066cc 100%)}
-.to-swatch-forest {background:linear-gradient(135deg,#0e1a14 50%,#4a9a5a 100%)}
-.theme-opt .to-check{margin-left:auto;color:var(--accent);font-size:11px;opacity:0}
-.theme-opt.active .to-check{opacity:1}
 
 .topbar-btns{display:flex;gap:6px}
 .hbtn{
@@ -1080,34 +975,13 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
-    <div class="theme-picker-wrap" id="theme-picker-wrap">
-      <button class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()" title="Choose theme">
-        <span class="theme-dot" id="theme-dot"></span>
-        <span id="theme-label">Theme</span>
-        <i class="fas fa-chevron-down" style="font-size:10px;opacity:0.6"></i>
-      </button>
-      <div class="theme-picker-dropdown" id="theme-picker-dropdown">
-        <button class="theme-opt" data-theme="dark"      onclick="setTheme('dark')">
-          <span class="to-swatch to-swatch-dark"></span>Dark
-          <i class="fas fa-check to-check"></i>
-        </button>
-        <button class="theme-opt" data-theme="light"     onclick="setTheme('light')">
-          <span class="to-swatch to-swatch-light"></span>Light
-          <i class="fas fa-check to-check"></i>
-        </button>
-        <button class="theme-opt" data-theme="ocean"     onclick="setTheme('ocean')">
-          <span class="to-swatch to-swatch-ocean"></span>Ocean
-          <i class="fas fa-check to-check"></i>
-        </button>
-        <button class="theme-opt" data-theme="midnight"  onclick="setTheme('midnight')">
-          <span class="to-swatch to-swatch-midnight"></span>Midnight
-          <i class="fas fa-check to-check"></i>
-        </button>
-        <button class="theme-opt" data-theme="forest"    onclick="setTheme('forest')">
-          <span class="to-swatch to-swatch-forest"></span>Forest
-          <i class="fas fa-check to-check"></i>
-        </button>
-      </div>
+    <div class="hc-toggle-wrap" title="Toggle between dark and light mode">
+      <input type="checkbox" class="hc-toggle-cb" id="hc-theme-cb">
+      <label for="hc-theme-cb" class="hc-toggle-label" title="Toggle between dark and light mode">
+        <i class="fas fa-moon"></i>
+        <i class="fas fa-sun"></i>
+        <span class="hc-toggle-ball"></span>
+      </label>
     </div>
     <div class="topbar-btns">
       <button class="hbtn g" onclick="api('start_all',{})" title="Start every stream">▶ All</button>
@@ -3097,37 +2971,8 @@ function renderConfigEditor(s){
             title="When the video is shorter than 24 h, calculate the seek position within the current loop iteration">
           Loop calculation (seek within loops for videos shorter than 24 h)
         </label>
-        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-top:4px">
-          <div class="fg">
-            <label title="How often (seconds) HydraCast re-checks position against the expected broadcast offset. Minimum 60 s.">Resync interval (seconds)</label>
-            <input id="cfg-comp-resync-interval" type="number" min="60" step="60"
-                   value="${s.compliance_resync_interval??7200}" placeholder="7200">
-          </div>
-          <div class="fg">
-            <label title="Maximum tolerated drift (seconds) before a hard resync is triggered. 0 = always resync on every check.">Drift threshold (seconds)</label>
-            <input id="cfg-comp-drift-threshold" type="number" min="0" step="1"
-                   value="${s.compliance_drift_threshold??30}" placeholder="30">
-          </div>
-        </div>
-        <div class="st-comp-row" style="margin-top:2px">
-          <label for="cfg-comp-alert" style="flex:1;font-size:12px;color:var(--text2);cursor:pointer;text-transform:none;letter-spacing:0">
-            Show banner alerts when compliance file is missing or seek fails
-            <small>Displays a pulsing error banner in the Web UI until dismissed</small>
-          </label>
-          <input type="checkbox" id="cfg-comp-alert" ${s.compliance_alert_enabled!==false?'checked':''}
-                 style="width:auto;accent-color:var(--accent);flex-shrink:0">
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
-          <button class="btn" style="font-size:11px;padding:4px 12px"
-                  title="Immediately seek this stream to its correct compliance position right now"
-                  onclick="complianceResyncNow('${esc(s.name)}',this)">
-            &#x21BA; Resync Now
-          </button>
-          <span id="cfg-comp-resync-status" style="font-size:11px;color:var(--text3)"></span>
-        </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px">
+        <div style="font-size:10px;color:var(--text3)">
           When enabled, HydraCast calculates the correct playback seek offset so the stream matches a continuous linear broadcast that started at the configured time today.
-          Periodic drift checks run every <em>resync interval</em> seconds and trigger a hard seek when drift exceeds the threshold.
         </div>
       </div>
     </div>
@@ -3229,8 +3074,6 @@ async function saveConfig(){
     compliance_start:document.getElementById('cfg-comp-start')?.value||'06:00:00',
     compliance_loop:document.getElementById('cfg-comp-loop')?.checked||false,
     compliance_alert_enabled:document.getElementById('cfg-comp-alert')?.checked!==false,
-    compliance_resync_interval:parseFloat(document.getElementById('cfg-comp-resync-interval')?.value)||7200,
-    compliance_drift_threshold:parseFloat(document.getElementById('cfg-comp-drift-threshold')?.value)||30,
   };
   const r=await api('update_config',payload);
   if(r?.ok){_clearDirty();loadConfig();}
@@ -3980,28 +3823,6 @@ function _dismissCompAlert(streamName) {
   setTimeout(() => { /* passive — next loadStreams tick re-evaluates */ }, 60000);
 }
 
-async function complianceResyncNow(streamName, btn) {
-  const statusEl = document.getElementById('cfg-comp-resync-status');
-  if (btn) btn.disabled = true;
-  if (statusEl) { statusEl.textContent = 'Resyncing…'; statusEl.style.color = 'var(--yellow)'; }
-  try {
-    const r = await api('compliance_resync', {name: streamName});
-    if (r?.ok) {
-      if (statusEl) { statusEl.textContent = '✓ Resync initiated'; statusEl.style.color = 'var(--green)'; }
-      toast('Compliance resync initiated', 'ok');
-    } else {
-      if (statusEl) { statusEl.textContent = '✕ ' + (r?.msg||'Failed'); statusEl.style.color = 'var(--red)'; }
-      toast(r?.msg || 'Resync failed', 'err');
-    }
-  } catch(e) {
-    if (statusEl) { statusEl.textContent = '✕ Request failed'; statusEl.style.color = 'var(--red)'; }
-    toast('Resync request failed', 'err');
-  } finally {
-    if (btn) btn.disabled = false;
-    setTimeout(() => { if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; } }, 4000);
-  }
-}
-
 function toggleComplianceAlerts(checked) {
   _compAlertsEnabled = checked;
   localStorage.setItem('hc_comp_alerts', checked ? 'true' : 'false');
@@ -4544,59 +4365,33 @@ async function doRestore(file){
 }
 
 // ═══════════════════════════════════
+// THEME TOGGLE
 // ═══════════════════════════════════
-// THEME PICKER
+// THEME TOGGLE (moon/sun checkbox)
 // ═══════════════════════════════════
-const THEMES={
-  dark:     {label:'Dark',    dot:'#b87333'},
-  light:    {label:'Light',   dot:'#b87333'},
-  ocean:    {label:'Ocean',   dot:'#2196b8'},
-  midnight: {label:'Midnight',dot:'#8066cc'},
-  forest:   {label:'Forest',  dot:'#4a9a5a'},
-};
-function setTheme(name){
-  if(!THEMES[name]) name='dark';
-  document.documentElement.setAttribute('data-theme',name);
-  try{localStorage.setItem('hc-theme',name);}catch(_){}
-  _updateThemeUI(name);
-  const dd=document.getElementById('theme-picker-dropdown');
-  if(dd) dd.classList.remove('open');
-}
-function _updateThemeUI(name){
-  const t=THEMES[name]||THEMES.dark;
-  const dot=document.getElementById('theme-dot');
-  const lbl=document.getElementById('theme-label');
-  if(dot){dot.style.background=t.dot;dot.style.boxShadow='0 0 0 2px var(--bg3),0 0 0 3px '+t.dot;}
-  if(lbl) lbl.textContent=t.label;
-  document.querySelectorAll('.theme-opt').forEach(el=>{
-    el.classList.toggle('active',el.dataset.theme===name);
-  });
-}
-function toggleThemePicker(){
-  const dd=document.getElementById('theme-picker-dropdown');
-  if(dd) dd.classList.toggle('open');
-}
-document.addEventListener('click',function(e){
-  const wrap=document.getElementById('theme-picker-wrap');
-  if(wrap&&!wrap.contains(e.target)){
-    const dd=document.getElementById('theme-picker-dropdown');
-    if(dd) dd.classList.remove('open');
-  }
-});
 (function initTheme(){
   try{
     const stored=localStorage.getItem('hc-theme');
-    const name=(stored&&THEMES[stored])?stored:'dark';
-    document.documentElement.setAttribute('data-theme',name);
+    const isDark=!stored||stored==='dark';
+    document.documentElement.setAttribute('data-theme',isDark?'dark':'light');
+    const cb=document.getElementById('hc-theme-cb');
+    if(cb)cb.checked=!isDark; // checked = light mode (sun visible on right)
   }catch(_){}
 })();
 document.addEventListener('DOMContentLoaded',function(){
-  const name=document.documentElement.getAttribute('data-theme')||'dark';
-  _updateThemeUI(name);
+  const cb=document.getElementById('hc-theme-cb');
+  if(!cb)return;
+  // Set initial checked state from current attribute
+  cb.checked=document.documentElement.getAttribute('data-theme')==='light';
+  cb.addEventListener('change',function(){
+    const next=this.checked?'light':'dark';
+    document.documentElement.setAttribute('data-theme',next);
+    try{localStorage.setItem('hc-theme',next);}catch(_){}
+  });
 });
 function toggleTheme(){
-  const cur=document.documentElement.getAttribute('data-theme')||'dark';
-  setTheme(cur==='dark'?'light':'dark');
+  const cb=document.getElementById('hc-theme-cb');
+  if(cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));}
 }
 
 // ═══════════════════════════════════

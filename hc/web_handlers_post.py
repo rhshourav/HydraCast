@@ -1,7 +1,7 @@
 """
 hc/web_handlers_post.py  —  POST dispatch + upload + backup/restore for WebHandler.
 
-Mixed into WebHandler in hc/web_handler.py.
+Mixed into WebHandler in web.py.
 """
 from __future__ import annotations
 
@@ -31,8 +31,7 @@ class _PostHandlersMixin:
     # ── Main dispatch ─────────────────────────────────────────────────────────
 
     def _dispatch(self, action: str, data: Dict[str, Any]) -> None:  # noqa: C901
-        import hc.web_handler as _wh; _WEB_MANAGER = _wh._WEB_MANAGER  # noqa: E702
-        from hc.web_csvmanager import CSVManager  # type: ignore
+        from hc.web import _WEB_MANAGER, CSVManager  # type: ignore
 
         # File-manager actions are handled by the FileManager mixin
         if action in _FILE_OPS:
@@ -156,7 +155,6 @@ class _PostHandlersMixin:
                     if parsed:
                         cfg.playlist = parsed
                 # Compliance
-                was_compliance_enabled = cfg.compliance_enabled
                 if "compliance_enabled" in data:
                     cfg.compliance_enabled = bool(data["compliance_enabled"])
                 if "compliance_start" in data:
@@ -164,36 +162,8 @@ class _PostHandlersMixin:
                         str(data["compliance_start"]))
                 if "compliance_loop" in data:
                     cfg.compliance_loop = bool(data["compliance_loop"])
-                if "compliance_resync_interval" in data:
-                    try:
-                        cfg.compliance_resync_interval = max(
-                            60.0, float(data["compliance_resync_interval"])
-                        )
-                    except (TypeError, ValueError):
-                        pass
-                if "compliance_drift_threshold" in data:
-                    try:
-                        cfg.compliance_drift_threshold = max(
-                            0.0, float(data["compliance_drift_threshold"])
-                        )
-                    except (TypeError, ValueError):
-                        pass
 
                 CSVManager.save([s.config for s in mgr.states])
-
-                # When compliance mode is turned ON for an already-live stream,
-                # seek to the correct position immediately (hard resync).
-                newly_enabled = (not was_compliance_enabled) and cfg.compliance_enabled
-                if newly_enabled and st.status.label == "LIVE":
-                    _w = mgr.get_worker(cfg.name)
-                    if _w:
-                        import threading as _thr
-                        _thr.Thread(
-                            target=_w.compliance_resync,
-                            daemon=True,
-                            name=f"comp-toggle-{cfg.name}",
-                        ).start()
-
                 self._json({"ok": True, "msg": f"Config saved for '{name_s}'"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
@@ -337,7 +307,7 @@ class _PostHandlersMixin:
 
         # ── Legacy file/folder ops (via upload tab) ───────────────────────────
         elif action == "delete_file":
-            from hc.web_handler import _invalidate_lib_cache  # type: ignore
+            from hc.web import _invalidate_lib_cache  # type: ignore
             raw_path = str(data.get("path", "")).strip()
             if not raw_path:
                 self._json({"ok": False, "msg": "Missing path"})
@@ -497,7 +467,7 @@ class _PostHandlersMixin:
     # ── Multipart upload ──────────────────────────────────────────────────────
 
     def _handle_upload(self) -> None:
-        from hc.web_handler import _invalidate_lib_cache, _notify_folder_upload  # type: ignore
+        from hc.web import _invalidate_lib_cache, _notify_folder_upload  # type: ignore
         try:
             cl = int(self.headers.get("Content-Length", 0))
             if cl > UPLOAD_MAX_BYTES:
@@ -632,7 +602,7 @@ class _PostHandlersMixin:
             self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Access-Control-Allow-Origin", "*")
-            from hc.web_handler import _SEC_HEADERS  # type: ignore
+            from hc.web import _SEC_HEADERS  # type: ignore
             for k, v in _SEC_HEADERS.items():
                 self.send_header(k, v)
             self.end_headers()
@@ -650,7 +620,7 @@ class _PostHandlersMixin:
     def _handle_restore(self, payload: Dict[str, Any]) -> None:
         import json as _json
         from hc.constants import BASE_DIR, CONFIG_DIR
-        import hc.web_handler as _wh; _WEB_MANAGER = _wh._WEB_MANAGER  # noqa: E702
+        from hc.web import _WEB_MANAGER  # type: ignore
         try:
             if payload.get("format") != "hydracast_backup":
                 self._json({"ok": False, "msg": "Not a valid HydraCast backup file"})
