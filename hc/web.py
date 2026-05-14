@@ -2004,7 +2004,7 @@ function _rowCells(s,i,showRtsp){
   const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
   const status=s.status||'STOPPED';
   const isEvent = status==='ONESHOT';
-  const nowPlayingFile = isEvent ? s.active_event : s.current_file;
+  const nowPlayingFile = s.current_file || (isEvent ? s.active_event : null);
   return `
     <td class="td-muted">${i+1}</td>
     <td>
@@ -2014,8 +2014,8 @@ function _rowCells(s,i,showRtsp){
       ${isEvent?`<span style="font-size:10px;font-weight:700;color:var(--purple);background:var(--purple-dim);border:1px solid rgba(154,138,176,0.4);border-radius:4px;padding:2px 7px;margin-left:4px">🎬 EVENT</span>`:''}
       ${s.playlist_count>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(${s.playlist_count} files)</span>`:''}
       ${nowPlayingFile?`
-      <div style="margin-top:4px;display:flex;align-items:center;gap:5px;max-width:260px">
-        <span style="font-size:10px;flex-shrink:0;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'🎬':'▶'}</span>
+      <div style="margin-top:4px;display:flex;align-items:center;gap:5px;max-width:260px;overflow:hidden">
+        <span style="font-size:9px;font-weight:700;flex-shrink:0;letter-spacing:0.04em;text-transform:uppercase;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'EVENT':'PLAYLIST'}</span>
         <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 7px"
               title="${esc(nowPlayingFile)}">${esc(nowPlayingFile)}</span>
       </div>`:''}
@@ -2032,10 +2032,8 @@ function _rowCells(s,i,showRtsp){
     <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
     <td style="min-width:140px">
       ${isEvent?`
-        <div style="position:relative;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden">
-          <div style="position:absolute;inset:0;background:linear-gradient(90deg,var(--purple),rgba(154,138,176,0.3),var(--purple));background-size:200% 100%;animation:shimmer 1.4s linear infinite"></div>
-        </div>
-        <div class="prog-label" style="color:var(--purple)">🎬 Event ${s.time_remaining?'· '+fmtRemaining(s.time_remaining)+' left':pct+'%'}</div>
+        <div class="prog"><div class="prog-fill" style="width:${pct}%;background:var(--purple)"></div></div>
+        <div class="prog-label" style="color:var(--purple)">🎬 Event · ${pct}%${s.time_remaining?' · '+fmtRemaining(s.time_remaining)+' left':''}</div>
       `:`
         <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
         <div class="prog-label">${pct}%${s.time_remaining?' · '+fmtRemaining(s.time_remaining)+' left':''}</div>
@@ -2215,7 +2213,10 @@ async function loadViewer(){
     const isLive=status==='LIVE';
     const isEvent=status==='ONESHOT';
     const pct=(+s.progress||0).toFixed(1);
-    const nowFile = isEvent ? s.active_event : s.current_file;
+    // current_file is always set by the worker regardless of mode (playlist or oneshot).
+    // active_event holds the *next pending* event (not yet fired); use it as a fallback
+    // only when current_file is absent (e.g. stream just started, worker not yet reporting).
+    const nowFile = s.current_file || (isEvent ? s.active_event : null);
 
     if(!existing[s.name]){
       // ── First render: create the full card ──
@@ -2228,9 +2229,9 @@ async function loadViewer(){
           <span class="stream-card-title">${esc(s.name)}</span>
           <span style="font-size:11px;color:var(--accent-light)">:${s.port}</span>
         </div>
-        ${nowFile?`<div class="vc-nowplaying-${esc(s.name)}" style="padding:5px 14px 0;display:flex;align-items:center;gap:5px;min-width:0">
-          <span style="font-size:10px;flex-shrink:0;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'🎬':'▶'}</span>
-          <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
+        ${nowFile?`<div class="vc-nowplaying-${esc(s.name)}" style="padding:5px 14px 0;display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden">
+          <span style="font-size:9px;font-weight:700;flex-shrink:0;letter-spacing:0.04em;text-transform:uppercase;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'EVENT':'PLAYLIST'}</span>
+          <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
                 title="${esc(nowFile)}">${esc(nowFile)}</span>
         </div>`:`<div class="vc-nowplaying-${esc(s.name)}" style="padding:5px 14px 0;height:22px"></div>`}
         <div class="stream-preview" id="vp-${esc(s.name)}">
@@ -2282,9 +2283,9 @@ async function loadViewer(){
       const npEl=card.querySelector('.vc-nowplaying-'+safeName);
       if(npEl){
         if(nowFile){
-          npEl.style.display='flex';
-          npEl.innerHTML=`<span style="font-size:10px;flex-shrink:0;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'🎬':'▶'}</span>
-            <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
+          npEl.style.cssText='padding:5px 14px 0;display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden';
+          npEl.innerHTML=`<span style="font-size:9px;font-weight:700;flex-shrink:0;letter-spacing:0.04em;text-transform:uppercase;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'EVENT':'PLAYLIST'}</span>
+            <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
                   title="${esc(nowFile)}">${esc(nowFile)}</span>`;
         } else {
           npEl.innerHTML='';
@@ -4393,7 +4394,9 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "app_ver":        APP_VER,
                 # current file being played (name only, safe fallback)
                 "current_file":   getattr(st, "current_file", None),
-                # active unplayed event for this stream, if any
+                # next queued (pending, not yet fired) event for this stream.
+                # Only meaningful when status != ONESHOT; during ONESHOT the
+                # worker already sets current_file to the event file being played.
                 "active_event":   next(
                     (ev.file_path.name for ev in mgr.events
                      if ev.stream_name == cfg.name and not ev.played),
