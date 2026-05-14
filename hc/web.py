@@ -1051,13 +1051,12 @@ select option{background:var(--bg3)}
             <th>Position</th>
             <th>FPS</th>
             <th>Loop</th>
-            <th>Bitrate</th>
             <th>Stream URLs</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody id="stbl">
-          <tr><td colspan="11" class="empty"><div class="empty"><div class="empty-icon">📡</div>Loading streams…</div></td></tr>
+          <tr><td colspan="10" class="empty"><div class="empty"><div class="empty-icon">📡</div>Loading streams…</div></td></tr>
         </tbody>
       </table>
     </div>
@@ -1771,7 +1770,20 @@ async function api(action,data){
     });
     const j=await r.json();
     toast(j.msg||(j.ok?'Done':'Error'),j.ok?'ok':'err');
-    loadStreams();
+    // For stop/start actions give the backend time to settle before refreshing,
+    // and pause auto-refresh for that window so the poller doesn't race.
+    const settleMs = (action==='stop'||action==='stop_all') ? 1500
+                   : (action==='start'||action==='start_all'||action==='restart'||action==='restart_all') ? 800
+                   : 0;
+    if(settleMs>0){
+      const wasAuto=document.getElementById('auto-ref')?.checked;
+      if(wasAuto) clearInterval(_autoTimer);
+      await new Promise(res=>setTimeout(res,settleMs));
+      loadStreams();
+      if(wasAuto) _autoTimer=setInterval(loadStreams,2500);
+    } else {
+      loadStreams();
+    }
     return j;
   }catch(e){toast('Request failed','err');}
 }
@@ -1854,7 +1866,6 @@ function _sigOf(s){
          s.position||'',
          s.fps>0?Math.round(s.fps):'',
          s.loop_count||'',
-         s.bitrate||'',
          s.error_msg||'',
          s.playlist_count||0,
          s.enabled?1:0,
@@ -1898,7 +1909,6 @@ function _rowCells(s,i,showRtsp){
     <td class="td-muted" style="white-space:nowrap">${esc(s.position||'--')}</td>
     <td class="td-muted">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
     <td class="td-muted">${s.loop_count!=null&&s.loop_count!==undefined?'×'+s.loop_count:'--'}</td>
-    <td class="td-muted">${(s.bitrate&&s.bitrate!=='—'&&s.bitrate!=='N/A'&&s.bitrate!=='n/a')?esc(s.bitrate):'--'}</td>
     <td>
       <div style="display:flex;flex-direction:column;gap:5px;min-width:220px">
         ${s.rtsp_url?`
@@ -1932,7 +1942,7 @@ function renderStreams(data){
   const showRtsp=document.getElementById('st-showrtsp')?.classList.contains('on')!==false;
 
   if(!data.length){
-    tb.innerHTML=`<tr><td colspan="11"><div class="empty"><div class="empty-icon">📡</div>No streams configured.</div></td></tr>`;
+    tb.innerHTML=`<tr><td colspan="10"><div class="empty"><div class="empty-icon">📡</div>No streams configured.</div></td></tr>`;
     _streamSigs={};
     return;
   }
