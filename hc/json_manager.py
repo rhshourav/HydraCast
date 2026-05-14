@@ -291,6 +291,11 @@ class JSONManager:
         cls._save_events(events)
 
     @classmethod
+    def save_events(cls, events: List[OneShotEvent]) -> None:
+        """Public alias for _save_events — kept for backward compatibility."""
+        cls._save_events(events)
+
+    @classmethod
     def add_event(
         cls,
         events: List[OneShotEvent],
