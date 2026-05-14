@@ -31,7 +31,8 @@ class _PostHandlersMixin:
     # ── Main dispatch ─────────────────────────────────────────────────────────
 
     def _dispatch(self, action: str, data: Dict[str, Any]) -> None:  # noqa: C901
-        from hc.web import _WEB_MANAGER, CSVManager  # type: ignore
+        import hc.web_handler as _wh; _WEB_MANAGER = _wh._WEB_MANAGER  # noqa: E702
+        from hc.web_csvmanager import CSVManager  # type: ignore
 
         # File-manager actions are handled by the FileManager mixin
         if action in _FILE_OPS:
@@ -336,7 +337,7 @@ class _PostHandlersMixin:
 
         # ── Legacy file/folder ops (via upload tab) ───────────────────────────
         elif action == "delete_file":
-            from hc.web import _invalidate_lib_cache  # type: ignore
+            from hc.web_handler import _invalidate_lib_cache  # type: ignore
             raw_path = str(data.get("path", "")).strip()
             if not raw_path:
                 self._json({"ok": False, "msg": "Missing path"})
@@ -496,7 +497,7 @@ class _PostHandlersMixin:
     # ── Multipart upload ──────────────────────────────────────────────────────
 
     def _handle_upload(self) -> None:
-        from hc.web import _invalidate_lib_cache, _notify_folder_upload  # type: ignore
+        from hc.web_handler import _invalidate_lib_cache, _notify_folder_upload  # type: ignore
         try:
             cl = int(self.headers.get("Content-Length", 0))
             if cl > UPLOAD_MAX_BYTES:
@@ -631,7 +632,7 @@ class _PostHandlersMixin:
             self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Access-Control-Allow-Origin", "*")
-            from hc.web import _SEC_HEADERS  # type: ignore
+            from hc.web_handler import _SEC_HEADERS  # type: ignore
             for k, v in _SEC_HEADERS.items():
                 self.send_header(k, v)
             self.end_headers()
@@ -649,7 +650,7 @@ class _PostHandlersMixin:
     def _handle_restore(self, payload: Dict[str, Any]) -> None:
         import json as _json
         from hc.constants import BASE_DIR, CONFIG_DIR
-        from hc.web import _WEB_MANAGER  # type: ignore
+        import hc.web_handler as _wh; _WEB_MANAGER = _wh._WEB_MANAGER  # noqa: E702
         try:
             if payload.get("format") != "hydracast_backup":
                 self._json({"ok": False, "msg": "Not a valid HydraCast backup file"})
