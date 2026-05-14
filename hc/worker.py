@@ -350,6 +350,94 @@ class StreamWorker:
         threading.Thread(target=self._monitor, daemon=True,
                          name=f"mon-{self.state.config.port}").start()
 
+    # ── Compliance seek helpers ────────────────────────────────────────────────
+
+    def compliance_resync(self) -> None:
+        """
+        Public: immediately seek to the correct compliance position right now.
+
+        Called from:
+          • Web UI when compliance mode is toggled ON for an already-live stream.
+          • After a one-shot event ends and the compliance file resumes.
+
+        No-ops if:
+          • compliance is not enabled on the config, OR
+          • the stream is not currently LIVE, OR
+          • a stop or seek is already in progress.
+        """
+        cfg = self.state.config
+        if not cfg.compliance_enabled:
+            self._log("compliance_resync: compliance not enabled — skipped.", "WARN")
+            return
+        if self.state.status != StreamStatus.LIVE:
+            self._log("compliance_resync: stream not live — skipped.", "WARN")
+            return
+        if self._stop.is_set() or self._seeking.is_set():
+            self._log("compliance_resync: stop/seek already in progress — skipped.", "WARN")
+            return
+        try:
+            from hc.compliance import calculate_compliance_offset
+            seek_pos, expl = calculate_compliance_offset(
+                video_duration=self.state.duration,
+                broadcast_start=cfg.compliance_start,
+                loop_calculation=cfg.compliance_loop,
+            )
+            self._log(f"Compliance immediate resync: {expl}")
+        except Exception as exc:
+            self._log(
+                f"compliance_resync: offset calculation failed: {exc} — skipped", "WARN"
+            )
+            return
+        # Stamp the check time BEFORE calling seek() so the new monitor thread
+        # does not immediately re-trigger another check.
+        self.state.compliance_last_check_ts = time.time()
+        self.seek(seek_pos)
+
+    def _compliance_check_and_resync(self) -> None:
+        """
+        Internal: measure drift against the configured threshold and, if the
+        drift exceeds it, perform a hard resync via seek().
+
+        Always runs in its own short-lived daemon thread (spawned from the
+        _monitor() progress loop) so the FFmpeg readline loop is never blocked.
+        """
+        cfg = self.state.config
+        # Re-check guards inside the thread; state may have changed since spawn.
+        if (not cfg.compliance_enabled
+                or self.state.duration <= 0
+                or self._stop.is_set()
+                or self._seeking.is_set()
+                or self.state.oneshot_active):
+            return
+        try:
+            from hc.compliance import check_compliance_drift
+            should_resync, drift, expected = check_compliance_drift(
+                current_pos=self.state.current_pos,
+                video_duration=self.state.duration,
+                broadcast_start=cfg.compliance_start,
+                loop_calculation=cfg.compliance_loop,
+                drift_threshold=cfg.compliance_drift_threshold,
+            )
+        except Exception as exc:
+            self._log(f"_compliance_check_and_resync: drift check error: {exc}", "WARN")
+            return
+
+        if should_resync:
+            self._log(
+                f"Compliance drift {drift:+.1f}s exceeds threshold "
+                f"{cfg.compliance_drift_threshold:.0f}s — "
+                f"hard resync to {_fmt_duration(expected)}",
+                "WARN",
+            )
+            # seek() will set _seeking, kill FFmpeg, and start a new monitor.
+            # The current monitor thread will detect the seeking flag and exit.
+            self.seek(expected)
+        else:
+            self._log(
+                f"Compliance periodic check: drift {drift:+.1f}s within "
+                f"threshold {cfg.compliance_drift_threshold:.0f}s — no resync needed."
+            )
+
     def play_oneshot(self, event: OneShotEvent) -> None:
         self._log(f"One-shot event starting: {event.file_path.name}", "INFO")
         self.state.oneshot_active = True
@@ -391,9 +479,31 @@ class StreamWorker:
                 item2 = self._current_item()
                 if item2:
                     self._log(f"Resuming playlist: {item2.file_path.name}")
+                    # Probe the duration before calculating the compliance offset.
+                    self.state.duration = probe_duration(item2.file_path)
+                    # Hard resync: same behaviour as the periodic check.
+                    resume_spos = 0.0
+                    if self.state.config.compliance_enabled:
+                        try:
+                            from hc.compliance import calculate_compliance_offset
+                            resume_spos, _expl3 = calculate_compliance_offset(
+                                video_duration=self.state.duration,
+                                broadcast_start=self.state.config.compliance_start,
+                                loop_calculation=self.state.config.compliance_loop,
+                            )
+                            self._log(
+                                f"One-shot resume — compliance hard resync: {_expl3}"
+                            )
+                            self.state.compliance_last_check_ts = time.time()
+                        except Exception as _exc3:
+                            self._log(
+                                f"One-shot resume compliance offset failed: {_exc3} "
+                                "— resuming from 00:00:00",
+                                "WARN",
+                            )
                     # Cycle MediaMTX again before resuming the playlist.
                     if self._cycle_mediamtx():
-                        self._start_ffmpeg_with_retry(item2, 0.0)
+                        self._start_ffmpeg_with_retry(item2, resume_spos)
                         threading.Thread(target=self._monitor, daemon=True,
                                          name=f"mon-{self.state.config.port}").start()
                     else:
@@ -1106,6 +1216,28 @@ class StreamWorker:
                 if k == "progress":
                     self._apply_progress(buf)
                     buf = {}
+                    # ── Periodic compliance drift check ───────────────────
+                    _cfg = self.state.config
+                    if (
+                        _cfg.compliance_enabled
+                        and not self._seeking.is_set()
+                        and not self.state.oneshot_active
+                    ):
+                        _now  = time.time()
+                        _last = self.state.compliance_last_check_ts
+                        if _last == 0.0:
+                            # First progress report — initialise the clock
+                            # without triggering an immediate resync.
+                            self.state.compliance_last_check_ts = _now
+                        elif _now - _last >= max(60.0, _cfg.compliance_resync_interval):
+                            # Stamp BEFORE spawning so a slow thread can't
+                            # double-fire before it finishes.
+                            self.state.compliance_last_check_ts = _now
+                            threading.Thread(
+                                target=self._compliance_check_and_resync,
+                                daemon=True,
+                                name=f"comp-check-{_cfg.port}",
+                            ).start()
             except Exception as exc:
                 log.debug("[%s] Monitor readline error: %s", self.state.config.name, exc)
                 time.sleep(0.05)
@@ -1177,6 +1309,24 @@ class StreamWorker:
                     spos    = int(h) * 3600 + int(m) * 60 + float(s)
                 except Exception:
                     spos = 0.0
+                # ── Compliance: recalculate seek offset on each file transition ──
+                _cfg2 = self.state.config
+                if _cfg2.compliance_enabled:
+                    try:
+                        from hc.compliance import calculate_compliance_offset
+                        spos, _expl2 = calculate_compliance_offset(
+                            video_duration=self.state.duration,
+                            broadcast_start=_cfg2.compliance_start,
+                            loop_calculation=_cfg2.compliance_loop,
+                        )
+                        self._log(f"Compliance file-transition seek: {_expl2}")
+                        self.state.compliance_last_check_ts = time.time()
+                    except Exception as _exc2:
+                        self._log(
+                            f"Compliance transition offset failed: {_exc2} — "
+                            "using playlist start position",
+                            "WARN",
+                        )
                 # Cycle MediaMTX to clear the old publisher session; a direct
                 # _start_ffmpeg without cycling gets 400 Bad Request.
                 if not self._cycle_mediamtx():
