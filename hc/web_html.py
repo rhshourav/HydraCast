@@ -4334,35 +4334,24 @@ function fmCloseDialogs() {
 </script>
 <script type="text/babel" data-presets="react">
 /**
- * EventsCalendar.jsx
+ * EventsCalendar.jsx  — v2.0
  *
- * Drop-in replacement for the Events tab in HydraCast web UI.
- *
- * API calls made:
- *   GET  /api/streams          — list of configured streams
- *   GET  /api/events           — list of OneShotEvents
- *   GET  /api/library          — media file list (lazy, on modal open)
- *   GET  /api/settings         — app settings (holiday_country, holiday_subdiv)
- *   GET  /api/holidays         — holiday list from Python 'holidays' library
- *   POST /api/events/bulk      — create one or more events at a timestamp
- *   POST /api/settings         — persist holiday country preference
- *
- * Embed in web_html.py by replacing the events tab's innerHTML with:
- *   <div id="events-calendar-root"></div>
- * then mounting:
- *   ReactDOM.createRoot(document.getElementById("events-calendar-root"))
- *           .render(<EventsCalendar />);
+ * Changes vs v1:
+ *   • Calendar grid fills the full tab width (no fixed-width sidebar push)
+ *   • Past dates/times are blocked — clicking them shows a tooltip, not the form
+ *   • Created events are editable (click chip → EditModal with all fields)
+ *   • Loop mode: play once / loop N times / loop indefinitely
+ *   • Multi-date selection: pick multiple dates in one session, schedule all at once
+ *   • Sidebar scrolls alongside and shows edit/delete buttons per event
  */
 
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useCallback } = React;
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
+const MONTHS     = ["January","February","March","April","May","June",
+                    "July","August","September","October","November","December"];
 const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 const COUNTRIES = [
@@ -4395,45 +4384,47 @@ const COUNTRIES = [
 function fmtDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
+function getEventDate(ev) { return (ev.play_at_iso || ev.play_at || "").slice(0,10); }
+function getEventTime(ev) { return (ev.play_at_iso || ev.play_at || "").slice(11,16); }
 
-function getEventDate(ev) {
-  return (ev.play_at_iso || ev.play_at || "").slice(0,10);
+function isPastDate(ds, todayStr) { return ds < todayStr; }
+function isPastDateTime(ds, timeStr, todayStr) {
+  if (ds < todayStr) return true;
+  if (ds === todayStr) {
+    const now = new Date();
+    const nowHHMM = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+    return timeStr <= nowHHMM;
+  }
+  return false;
 }
 
-function getEventTime(ev) {
-  return (ev.play_at_iso || ev.play_at || "").slice(11,16);
+function loopLabel(n) {
+  if (n === 0) return "Play once";
+  if (n === -1) return "Loop forever";
+  return `Loop ×${n+1}`;
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Shared label style
 // ---------------------------------------------------------------------------
+const lbl = {
+  display:"block", fontSize:"11px", fontWeight:"500",
+  color:"var(--color-text-secondary)", marginBottom:"6px",
+};
 
-function Legend() {
-  return (
-    <div style={{display:"flex",alignItems:"center",gap:"12px",fontSize:"12px",color:"var(--color-text-secondary)"}}>
-      {[
-        ["var(--color-background-danger)","var(--color-border-danger)","Holiday"],
-        ["var(--color-background-info)","var(--color-border-info)","Upcoming"],
-        ["var(--color-background-success)","var(--color-border-success)","Played"],
-      ].map(([bg,border,label]) => (
-        <span key={label} style={{display:"flex",alignItems:"center",gap:"4px"}}>
-          <span style={{width:"10px",height:"10px",borderRadius:"2px",
-            background:bg,border:`0.5px solid ${border}`,display:"inline-block",flexShrink:0}}/>
-          {label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function EventChip({ ev }) {
+// ---------------------------------------------------------------------------
+// EventChip — clickable, opens edit modal
+// ---------------------------------------------------------------------------
+function EventChip({ ev, onEdit }) {
   const played = ev.played;
   return (
     <div
-      title={`${ev.stream_name} — ${ev.file_name || ev.file_path}`}
+      onClick={e => { e.stopPropagation(); onEdit(ev); }}
+      title={`${ev.stream_name} — ${ev.file_name || ev.file_path}\nClick to edit`}
       style={{
         borderRadius:"3px", padding:"2px 5px", marginBottom:"2px",
         fontSize:"10px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+        cursor: played ? "default" : "pointer",
         background: played ? "var(--color-background-success)" : "var(--color-background-info)",
         border:`0.5px solid ${played ? "var(--color-border-success)" : "var(--color-border-info)"}`,
         color: played ? "var(--color-text-success)" : "var(--color-text-info)",
@@ -4441,80 +4432,112 @@ function EventChip({ ev }) {
     >
       <span style={{fontWeight:"500"}}>{getEventTime(ev)}</span>
       {" "}{ev.stream_name}
+      {ev.loop_count === -1 && " ∞"}
+      {ev.loop_count > 0 && ` ×${ev.loop_count+1}`}
     </div>
   );
 }
 
-function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen }) {
+// ---------------------------------------------------------------------------
+// DayCell
+// ---------------------------------------------------------------------------
+function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, selectedDates, onToggleSelect, multiSelect }) {
   if (!day) return (
     <div style={{
-      minHeight:"88px",
+      minHeight:"100px",
       borderRight:"0.5px solid var(--color-border-tertiary)",
       borderBottom:"0.5px solid var(--color-border-tertiary)",
     }}/>
   );
 
-  const ds = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+  const ds      = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
   const isToday = ds === todayStr;
-  const isPast  = ds < todayStr;
+  const isPast  = isPastDate(ds, todayStr);
   const holiday = holidays[ds];
   const dayEvts = eventsByDate[ds] || [];
+  const isSelected = selectedDates && selectedDates.has(ds);
 
-  const baseBg = isToday
-    ? "var(--color-background-info)"
-    : holiday
-      ? "var(--color-background-danger)"
-      : "transparent";
+  const baseBg = isSelected
+    ? "var(--color-background-success)"
+    : isToday
+      ? "var(--color-background-info)"
+      : holiday
+        ? "var(--color-background-danger)"
+        : "transparent";
+
+  const handleClick = () => {
+    if (isPast && !isToday) return;  // block past dates
+    if (multiSelect) {
+      onToggleSelect(ds);
+    } else {
+      onOpen(day, ds);
+    }
+  };
 
   return (
     <div
-      onClick={() => onOpen(day)}
-      tabIndex={0}
+      onClick={handleClick}
+      tabIndex={isPast && !isToday ? -1 : 0}
       role="button"
-      aria-label={`${MONTHS[month]} ${day}, ${year}${holiday ? `, ${holiday}` : ""}`}
-      onKeyDown={e => e.key === "Enter" && onOpen(day)}
+      aria-label={`${MONTHS[month]} ${day}, ${year}${holiday ? `, ${holiday}` : ""}${isPast && !isToday ? " (past)" : ""}`}
+      onKeyDown={e => e.key === "Enter" && handleClick()}
       style={{
-        minHeight:"88px", padding:"7px 8px",
+        minHeight:"100px", padding:"6px 7px",
         borderRight:"0.5px solid var(--color-border-tertiary)",
         borderBottom:"0.5px solid var(--color-border-tertiary)",
         background: baseBg,
-        cursor:"pointer",
-        opacity: isPast && !isToday ? 0.55 : 1,
+        cursor: isPast && !isToday ? "not-allowed" : "pointer",
+        opacity: isPast && !isToday ? 0.4 : 1,
         transition:"background 0.1s",
         outline:"none",
+        position:"relative",
       }}
-      onMouseEnter={e => { e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+      onMouseEnter={e => { if (!isPast || isToday) e.currentTarget.style.background = isSelected ? "var(--color-background-success)" : "var(--color-background-secondary)"; }}
       onMouseLeave={e => { e.currentTarget.style.background = baseBg; }}
     >
+      {/* Multi-select indicator */}
+      {multiSelect && !isPast && (
+        <div style={{
+          position:"absolute",top:"4px",right:"4px",
+          width:"14px",height:"14px",borderRadius:"3px",
+          border:`1px solid ${isSelected ? "var(--color-text-success)" : "var(--color-border-secondary)"}`,
+          background: isSelected ? "var(--color-text-success)" : "transparent",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          flexShrink:0,
+        }}>
+          {isSelected && <i className="ti ti-check" style={{fontSize:"9px",color:"#fff"}}/>}
+        </div>
+      )}
+
       {/* Day number */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"3px"}}>
         <span style={{
           fontSize:"13px",
           fontWeight: isToday ? "500" : "400",
-          width:"22px", height:"22px",
+          width:"22px",height:"22px",
           borderRadius:"50%",
-          display:"flex", alignItems:"center", justifyContent:"center",
+          display:"flex",alignItems:"center",justifyContent:"center",
           background: isToday ? "var(--color-text-info)" : "transparent",
           color: isToday ? "#fff" : "var(--color-text-primary)",
           flexShrink:0,
         }}>{day}</span>
         {holiday && (
-          <i className="ti ti-star-filled" aria-hidden="true"
-             style={{fontSize:"11px",color:"var(--color-text-danger)",marginTop:"3px"}}/>
+          <i className="ti ti-star-filled"
+             style={{fontSize:"10px",color:"var(--color-text-danger)",marginTop:"4px"}}/>
         )}
       </div>
 
-      {/* Holiday label */}
       {holiday && (
-        <div style={{fontSize:"13px",color:"var(--color-text-danger)",marginBottom:"3px",
+        <div style={{fontSize:"9px",color:"var(--color-text-danger)",marginBottom:"3px",
           lineHeight:"1.3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
           title={holiday}>{holiday}</div>
       )}
 
-      {/* Event chips (max 3 + overflow label) */}
-      {dayEvts.slice(0,3).map((ev,i) => <EventChip key={i} ev={ev}/>)}
+      {dayEvts.slice(0,3).map((ev,i) => (
+        <EventChip key={i} ev={ev} onEdit={()=>{}}/>
+      ))}
       {dayEvts.length > 3 && (
-        <div style={{fontSize:"10px",color:"var(--color-text-tertiary)"}}>
+        <div style={{fontSize:"9px",color:"var(--color-text-tertiary)"}}>
           +{dayEvts.length - 3} more
         </div>
       )}
@@ -4522,17 +4545,21 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen })
   );
 }
 
-function Sidebar({ month, year, events, holidays }) {
+// ---------------------------------------------------------------------------
+// Sidebar — event list for the current month
+// ---------------------------------------------------------------------------
+function Sidebar({ month, year, events, holidays, onEdit, onDelete }) {
   const monthPfx = `${year}-${String(month+1).padStart(2,"0")}`;
   const evts = events
     .filter(e => getEventDate(e).startsWith(monthPfx))
-    .sort((a,b) => getEventDate(a).localeCompare(getEventDate(b)) ||
-                   getEventTime(a).localeCompare(getEventTime(b)));
+    .sort((a,b) => (getEventDate(a)+getEventTime(a)).localeCompare(getEventDate(b)+getEventTime(b)));
 
   return (
-    <aside style={{width:"220px",borderLeft:"0.5px solid var(--color-border-tertiary)",flexShrink:0,overflowY:"auto"}}>
+    <aside style={{width:"230px",borderLeft:"0.5px solid var(--color-border-tertiary)",
+      flexShrink:0,overflowY:"auto",maxHeight:"calc(100vh - 180px)"}}>
       <div style={{padding:"10px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",
-        display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        display:"flex",justifyContent:"space-between",alignItems:"center",
+        position:"sticky",top:0,background:"var(--color-background-primary)",zIndex:1}}>
         <span style={{fontSize:"12px",fontWeight:"500",color:"var(--color-text-secondary)"}}>
           {MONTHS[month]} events
         </span>
@@ -4542,7 +4569,7 @@ function Sidebar({ month, year, events, holidays }) {
       {evts.length === 0 ? (
         <p style={{padding:"20px 14px",fontSize:"12px",color:"var(--color-text-tertiary)",
           textAlign:"center",lineHeight:"1.6",margin:0}}>
-          No events this month.<br/>Click any date to schedule one.
+          No events this month.<br/>Click any future date to schedule.
         </p>
       ) : (
         evts.map((ev,i) => {
@@ -4551,14 +4578,14 @@ function Sidebar({ month, year, events, holidays }) {
           const hol = holidays[ds];
           return (
             <div key={i} style={{padding:"9px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",fontSize:"12px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px",alignItems:"center"}}>
                 <span style={{color:"var(--color-text-secondary)",fontWeight:"500"}}>
                   {ds.slice(5).replace("-","/")} {ts}
                 </span>
                 <span style={{
                   fontSize:"10px",padding:"1px 6px",borderRadius:"999px",
                   background: ev.played ? "var(--color-background-success)" : "var(--color-background-info)",
-                  color:      ev.played ? "var(--color-text-success)" : "var(--color-text-info)",
+                  color:      ev.played ? "var(--color-text-success)"       : "var(--color-text-info)",
                   border:`0.5px solid ${ev.played ? "var(--color-border-success)" : "var(--color-border-info)"}`,
                 }}>{ev.played ? "played" : "upcoming"}</span>
               </div>
@@ -4571,17 +4598,33 @@ function Sidebar({ month, year, events, holidays }) {
                 title={ev.file_name || ev.file_path}>
                 {ev.file_name || (ev.file_path||"").split("/").pop()}
               </div>
+              <div style={{fontSize:"10px",color:"var(--color-text-secondary)",marginTop:"2px",
+                display:"flex",alignItems:"center",gap:"4px",flexWrap:"wrap"}}>
+                <i className="ti ti-rotate-clockwise" style={{fontSize:"10px"}}/>
+                {ev.post_action || "resume"}
+                {ev.loop_count === -1 && <span style={{marginLeft:"4px",color:"var(--color-text-info)"}}>∞ loop</span>}
+                {ev.loop_count > 0 && <span style={{marginLeft:"4px",color:"var(--color-text-info)"}}>×{ev.loop_count+1}</span>}
+              </div>
               {hol && (
-                <div style={{fontSize:"12px",color:"var(--color-text-danger)",marginTop:"3px",
+                <div style={{fontSize:"10px",color:"var(--color-text-danger)",marginTop:"2px",
                   display:"flex",alignItems:"center",gap:"3px"}}>
-                  <i className="ti ti-star-filled" aria-hidden="true" style={{fontSize:"11px"}}/> {hol}
+                  <i className="ti ti-star-filled" style={{fontSize:"9px"}}/> {hol}
                 </div>
               )}
-              <div style={{fontSize:"10px",color:"var(--color-text-tertiary)",marginTop:"2px",
-                display:"flex",alignItems:"center",gap:"3px"}}>
-                <i className="ti ti-rotate-clockwise" aria-hidden="true" style={{fontSize:"11px"}}/>
-                {ev.post_action || "compliance"}
-              </div>
+              {!ev.played && (
+                <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
+                  <button onClick={()=>onEdit(ev)}
+                    style={{fontSize:"10px",padding:"2px 8px",display:"flex",alignItems:"center",gap:"3px"}}>
+                    <i className="ti ti-pencil" style={{fontSize:"10px"}}/>Edit
+                  </button>
+                  <button onClick={()=>onDelete(ev.event_id)}
+                    style={{fontSize:"10px",padding:"2px 8px",
+                      color:"var(--color-text-danger)",borderColor:"var(--color-border-danger)",
+                      display:"flex",alignItems:"center",gap:"3px"}}>
+                    <i className="ti ti-trash" style={{fontSize:"10px"}}/>Del
+                  </button>
+                </div>
+              )}
             </div>
           );
         })
@@ -4591,17 +4634,43 @@ function Sidebar({ month, year, events, holidays }) {
 }
 
 // ---------------------------------------------------------------------------
-// Create-event modal
+// LoopSelector
 // ---------------------------------------------------------------------------
-function CreateModal({ date, holidays, streams, library, libraryLoading, onClose, onCreate }) {
+function LoopSelector({ value, onChange }) {
+  const opts = [
+    { v: 0,  label: "Play once" },
+    { v: 1,  label: "Loop ×2" },
+    { v: 2,  label: "Loop ×3" },
+    { v: 4,  label: "Loop ×5" },
+    { v: 9,  label: "Loop ×10" },
+    { v: -1, label: "Loop forever ∞" },
+  ];
+  return (
+    <select value={value} onChange={e=>onChange(Number(e.target.value))} style={{width:"100%"}}>
+      {opts.map(o=><option key={o.v} value={o.v}>{o.label}</option>)}
+    </select>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CreateModal — supports multi-date + loop
+// ---------------------------------------------------------------------------
+function CreateModal({ dates, holidays, streams, library, libraryLoading, todayStr, onClose, onCreate }) {
   const [time,       setTime]       = useState("12:00");
   const [endTime,    setEndTime]    = useState("");
   const [selStreams,  setSelStreams] = useState({});   // name -> true
   const [files,      setFiles]      = useState({});   // name -> file_path
+  const [loopCount,  setLoopCount]  = useState(0);
+  const [postAction, setPostAction] = useState("resume");
+  const [startPos,   setStartPos]   = useState("00:00:00");
   const [submitting, setSubmitting] = useState(false);
   const [err,        setErr]        = useState("");
 
-  const holiday = holidays[fmtDate(date)];
+  // sorted date list
+  const sortedDates = [...dates].sort();
+
+  // Check if any selected date+time is in the past
+  const hasPastDateTime = sortedDates.some(ds => isPastDateTime(ds, time, todayStr));
 
   const toggle = name => setSelStreams(p => { const n={...p}; n[name] ? delete n[name] : (n[name]=true); return n; });
 
@@ -4611,32 +4680,49 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
     for (const s of sel) {
       if (!files[s]) { setErr(`Select a file for "${s}".`); return; }
     }
-    const [hh,mm] = time.split(":").map(Number);
-    const dt = new Date(date);
-    dt.setHours(hh, mm, 0, 0);
-    const iso = fmtDate(dt) + `T${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:00`;
+    if (hasPastDateTime) { setErr("One or more selected date/time combinations are in the past."); return; }
 
-    // Optional broadcast end time
-    let broadcast_end;
+    const [hh,mm] = time.split(":").map(Number);
+    const timeStr = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:00`;
+
+    let broadcast_end_time;
     if (endTime) {
       const [ehh,emm] = endTime.split(":").map(Number);
-      const edt = new Date(date);
-      edt.setHours(ehh, emm, 0, 0);
-      // If end time is not after start (e.g. crossing midnight), advance by one day
-      if (edt <= dt) edt.setDate(edt.getDate() + 1);
-      broadcast_end = fmtDate(edt) + `T${String(ehh).padStart(2,"0")}:${String(emm).padStart(2,"0")}:00`;
+      broadcast_end_time = `${String(ehh).padStart(2,"0")}:${String(emm).padStart(2,"0")}:00`;
     }
 
     setSubmitting(true);
     setErr("");
     try {
-      const payload = {
-        play_at: iso,
-        streams: sel.map(name => ({ stream_name: name, file_path: files[name] })),
-        post_action: "compliance",
-      };
-      if (broadcast_end) payload.broadcast_end = broadcast_end;
-      await onCreate(payload);
+      // Fire one bulk call per date
+      let totalCreated = 0;
+      for (const ds of sortedDates) {
+        const iso = `${ds}T${timeStr}`;
+        const payload = {
+          play_at:    iso,
+          streams:    sel.map(name => ({ stream_name: name, file_path: files[name] })),
+          post_action: postAction,
+          loop_count: loopCount,
+        };
+        if (broadcast_end_time) {
+          // handle crossing midnight
+          let edate = ds;
+          if (broadcast_end_time <= timeStr) {
+            // advance by 1 day
+            const d = new Date(ds); d.setDate(d.getDate()+1);
+            edate = fmtDate(d);
+          }
+          payload.broadcast_end = `${edate}T${broadcast_end_time}`;
+        }
+        const res  = await fetch("/api/events/bulk", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (data.created?.length) totalCreated += data.created.length;
+      }
+      await onCreate(totalCreated);
       onClose();
     } catch(e) {
       setErr(e.message || "Failed to schedule events.");
@@ -4644,47 +4730,76 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
     }
   };
 
+  const dateLabel = sortedDates.length === 1
+    ? new Date(sortedDates[0]+"T12:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
+    : `${sortedDates.length} dates selected`;
+
   return (
     <div style={{
       background:"var(--color-background-primary)",
       border:"0.5px solid var(--color-border-primary)",
       borderRadius:"var(--border-radius-lg)",
-      width:"520px",maxHeight:"78vh",overflowY:"auto",
-      boxShadow:"0 8px 32px rgba(0,0,0,0.18)",
+      width:"540px",maxHeight:"82vh",overflowY:"auto",
+      boxShadow:"0 8px 32px rgba(0,0,0,0.22)",
     }}>
       {/* Header */}
       <div style={{padding:"16px 20px",borderBottom:"0.5px solid var(--color-border-tertiary)",
         display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
           <p style={{margin:0,fontSize:"15px",fontWeight:"500",color:"var(--color-text-primary)"}}>
-            Schedule event
+            Schedule event{sortedDates.length > 1 ? "s" : ""}
           </p>
           <p style={{margin:"3px 0 0",fontSize:"13px",color:"var(--color-text-secondary)"}}>
-            {date.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
-            {holiday && (
-              <span style={{marginLeft:"8px",color:"var(--color-text-danger)",fontSize:"13px"}}>
-                <i className="ti ti-star-filled" aria-hidden="true" style={{fontSize:"12px",verticalAlign:"-1px",marginRight:"3px"}}/>
-                {holiday}
-              </span>
-            )}
+            {dateLabel}
           </p>
         </div>
         <button onClick={onClose} aria-label="Close"
           style={{background:"none",border:"none",cursor:"pointer",
-            color:"var(--color-text-secondary)",fontSize:"20px",lineHeight:1,padding:"2px 6px"}}>
-          ×
-        </button>
+            color:"var(--color-text-secondary)",fontSize:"20px",lineHeight:1,padding:"2px 6px"}}>×</button>
       </div>
 
       <div style={{padding:"18px 20px"}}>
+        {/* Selected dates (multi) */}
+        {sortedDates.length > 1 && (
+          <div style={{marginBottom:"16px"}}>
+            <label style={lbl}>Selected dates ({sortedDates.length})</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
+              {sortedDates.map(ds=>{
+                const past = isPastDateTime(ds, time, todayStr);
+                return (
+                  <span key={ds} style={{
+                    fontSize:"11px",padding:"2px 8px",borderRadius:"999px",
+                    background: past ? "var(--color-background-danger)" : "var(--color-background-info)",
+                    color:      past ? "var(--color-text-danger)"       : "var(--color-text-info)",
+                    border:`0.5px solid ${past ? "var(--color-border-danger)" : "var(--color-border-info)"}`,
+                  }}>
+                    {ds.slice(5).replace("-","/")}
+                    {past && " ⚠"}
+                  </span>
+                );
+              })}
+            </div>
+            {hasPastDateTime && (
+              <p style={{fontSize:"11px",color:"var(--color-text-danger)",margin:"6px 0 0"}}>
+                ⚠ Some dates are in the past and will be skipped.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Time */}
-        <div style={{marginBottom:"16px"}}>
+        <div style={{marginBottom:"14px"}}>
           <label style={lbl}>Broadcast start time</label>
           <input type="time" value={time} onChange={e=>setTime(e.target.value)} style={{width:"160px"}}/>
+          {sortedDates.length===1 && hasPastDateTime && (
+            <span style={{fontSize:"11px",color:"var(--color-text-danger)",marginLeft:"10px"}}>
+              ⚠ This time is in the past
+            </span>
+          )}
         </div>
 
-        {/* End time (optional) */}
-        <div style={{marginBottom:"16px"}}>
+        {/* End time */}
+        <div style={{marginBottom:"14px"}}>
           <label style={lbl}>
             Broadcast end time
             <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>optional</span>
@@ -4693,19 +4808,41 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
             <input type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} style={{width:"160px"}}/>
             {endTime && (
               <button onClick={()=>setEndTime("")}
-                style={{fontSize:"11px",padding:"3px 9px",color:"var(--color-text-tertiary)"}}>
-                Clear
-              </button>
+                style={{fontSize:"11px",padding:"3px 9px",color:"var(--color-text-tertiary)"}}>Clear</button>
             )}
           </div>
-          <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:"6px 0 0"}}>
-            Leave blank to let the file play to its natural end.
+          <p style={{fontSize:"11px",color:"var(--color-text-tertiary)",margin:"5px 0 0"}}>
+            Leave blank to play to file end.
             {endTime && time && endTime <= time && (
-              <span style={{color:"var(--color-text-info)",marginLeft:"6px"}}>
-                (will wrap to next day)
-              </span>
+              <span style={{color:"var(--color-text-info)",marginLeft:"6px"}}>(wraps to next day)</span>
             )}
           </p>
+        </div>
+
+        {/* Start position */}
+        <div style={{marginBottom:"14px"}}>
+          <label style={lbl}>
+            Start position
+            <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>HH:MM:SS</span>
+          </label>
+          <input value={startPos} onChange={e=>setStartPos(e.target.value)}
+            placeholder="00:00:00" style={{width:"140px"}}/>
+        </div>
+
+        {/* Loop */}
+        <div style={{marginBottom:"14px"}}>
+          <label style={lbl}>Loop / repeat</label>
+          <LoopSelector value={loopCount} onChange={setLoopCount}/>
+        </div>
+
+        {/* Post-action */}
+        <div style={{marginBottom:"16px"}}>
+          <label style={lbl}>After playback</label>
+          <select value={postAction} onChange={e=>setPostAction(e.target.value)} style={{width:"100%"}}>
+            <option value="resume">Return to normal schedule / compliance</option>
+            <option value="stop">Stop stream</option>
+            <option value="black">Show black screen</option>
+          </select>
         </div>
 
         {/* Streams */}
@@ -4715,8 +4852,7 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
             {Object.keys(selStreams).length > 0 &&
               <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>
                 — {Object.keys(selStreams).length} selected
-              </span>
-            }
+              </span>}
           </label>
           {streams.length === 0 ? (
             <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:0}}>No streams configured.</p>
@@ -4731,43 +4867,34 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
                     background: sel ? "var(--color-background-info)" : "var(--color-background-secondary)",
                     transition:"border-color 0.12s",
                   }}>
-                    {/* Stream row */}
                     <div onClick={()=>toggle(st.name)}
-                      style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",cursor:"pointer"}}>
+                      style={{display:"flex",alignItems:"center",gap:"10px",padding:"9px 12px",cursor:"pointer"}}>
                       <div style={{
-                        width:"16px",height:"16px",borderRadius:"3px",flexShrink:0,
+                        width:"15px",height:"15px",borderRadius:"3px",flexShrink:0,
                         border:`0.5px solid ${sel ? "var(--color-border-info)" : "var(--color-border-secondary)"}`,
                         background: sel ? "var(--color-text-info)" : "transparent",
                         display:"flex",alignItems:"center",justifyContent:"center",
                       }}>
-                        {sel && <i className="ti ti-check" aria-hidden="true" style={{fontSize:"11px",color:"#fff"}}/>}
+                        {sel && <i className="ti ti-check" style={{fontSize:"10px",color:"#fff"}}/>}
                       </div>
                       <div style={{flex:1}}>
                         <p style={{margin:0,fontSize:"13px",fontWeight:"500",color:"var(--color-text-primary)"}}>{st.name}</p>
                         <p style={{margin:0,fontSize:"11px",color:"var(--color-text-secondary)"}}>:{st.port}</p>
                       </div>
                       <span style={{
-                        fontSize:"11px",padding:"2px 8px",borderRadius:"999px",
-                        background: st.status==="running" ? "var(--color-background-success)" : "var(--color-background-secondary)",
-                        color:      st.status==="running" ? "var(--color-text-success)" : "var(--color-text-secondary)",
-                        border:`0.5px solid ${st.status==="running" ? "var(--color-border-success)" : "var(--color-border-tertiary)"}`,
+                        fontSize:"10px",padding:"2px 7px",borderRadius:"999px",
+                        background:"var(--color-background-secondary)",
+                        color:"var(--color-text-secondary)",
+                        border:"0.5px solid var(--color-border-tertiary)",
                       }}>{st.status}</span>
                     </div>
-
-                    {/* File picker (shown when stream selected) */}
                     {sel && (
-                      <div style={{padding:"0 12px 12px",borderTop:"0.5px solid var(--color-border-tertiary)"}}>
-                        <label style={{...lbl,paddingTop:"10px",display:"block"}}>
-                          File for {st.name}
-                        </label>
+                      <div style={{padding:"0 12px 11px",borderTop:"0.5px solid var(--color-border-tertiary)"}}>
+                        <label style={{...lbl,paddingTop:"9px",display:"block"}}>File for {st.name}</label>
                         {libraryLoading ? (
                           <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:0}}>Loading library…</p>
                         ) : (
-                          <select
-                            value={files[st.name]||""}
-                            onChange={e=>setFiles(f=>({...f,[st.name]:e.target.value}))}
-                            style={{width:"100%"}}
-                          >
+                          <select value={files[st.name]||""} onChange={e=>setFiles(f=>({...f,[st.name]:e.target.value}))} style={{width:"100%"}}>
                             <option value="">— select a file —</option>
                             {library.map((f,i) => (
                               <option key={i} value={f.full_path}>{f.path}</option>
@@ -4783,31 +4910,183 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
           )}
         </div>
 
-        {/* Post-action note */}
-        <div style={{padding:"10px 12px",borderRadius:"var(--border-radius-md)",
-          background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)",
-          marginBottom:"16px",fontSize:"12px",color:"var(--color-text-secondary)",
-          display:"flex",alignItems:"center",gap:"7px"}}>
-          <i className="ti ti-rotate-clockwise" aria-hidden="true" style={{fontSize:"14px",flexShrink:0}}/>
-          After playback: return to compliance / normal schedule
-        </div>
-
-        {/* Error */}
         {err && (
           <div style={{padding:"8px 12px",borderRadius:"var(--border-radius-md)",
             background:"var(--color-background-danger)",border:"0.5px solid var(--color-border-danger)",
-            fontSize:"12px",color:"var(--color-text-danger)",marginBottom:"14px"}}>
-            {err}
-          </div>
+            fontSize:"12px",color:"var(--color-text-danger)",marginBottom:"14px"}}>{err}</div>
         )}
 
-        {/* Actions */}
         <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
           <button onClick={onClose}>Cancel</button>
-          <button onClick={submit} disabled={submitting}
-            style={{background:"var(--color-text-info)",color:"#fff",border:"none",opacity:submitting?0.65:1}}>
-            {submitting ? "Scheduling…" : "Schedule event"}
+          <button onClick={submit} disabled={submitting || (hasPastDateTime && sortedDates.length===1)}
+            style={{background:"var(--color-text-info)",color:"#fff",border:"none",
+              opacity:(submitting||(hasPastDateTime&&sortedDates.length===1))?0.55:1}}>
+            {submitting ? "Scheduling…" : sortedDates.length > 1 ? `Schedule for ${sortedDates.filter(ds=>!isPastDateTime(ds,time,todayStr)).length} date(s)` : "Schedule event"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EditModal — edit all fields of an existing event
+// ---------------------------------------------------------------------------
+function EditModal({ ev, streams, library, libraryLoading, todayStr, onClose, onSave, onDelete }) {
+  const [streamName, setStreamName] = useState(ev.stream_name);
+  const [filePath,   setFilePath]   = useState(ev.file_path || "");
+  const [playAt,     setPlayAt]     = useState((ev.play_at_iso||ev.play_at||"").slice(0,16));
+  const [postAction, setPostAction] = useState(ev.post_action || "resume");
+  const [startPos,   setStartPos]   = useState(ev.start_pos  || "00:00:00");
+  const [loopCount,  setLoopCount]  = useState(ev.loop_count !== undefined ? ev.loop_count : 0);
+  const [saving,     setSaving]     = useState(false);
+  const [err,        setErr]        = useState("");
+
+  const isPast = playAt && isPastDateTime(playAt.slice(0,10), playAt.slice(11,16), todayStr);
+
+  const save = async () => {
+    if (!streamName) { setErr("Stream is required."); return; }
+    if (!filePath)   { setErr("File is required."); return; }
+    if (!playAt)     { setErr("Date/time is required."); return; }
+    if (isPast)      { setErr("Cannot reschedule to a past date/time."); return; }
+    setSaving(true); setErr("");
+    try {
+      const res = await fetch("/api/action", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          action:      "update_event",
+          event_id:    ev.event_id,
+          stream_name: streamName,
+          file_path:   filePath,
+          play_at:     playAt,
+          post_action: postAction,
+          start_pos:   startPos,
+          loop_count:  loopCount,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.msg || "Failed");
+      await onSave();
+      onClose();
+    } catch(e) {
+      setErr(e.message);
+      setSaving(false);
+    }
+  };
+
+  const del = async () => {
+    if (!confirm(`Delete this event for "${ev.stream_name}"?`)) return;
+    await onDelete(ev.event_id);
+    onClose();
+  };
+
+  return (
+    <div style={{
+      background:"var(--color-background-primary)",
+      border:"0.5px solid var(--color-border-primary)",
+      borderRadius:"var(--border-radius-lg)",
+      width:"500px",maxHeight:"82vh",overflowY:"auto",
+      boxShadow:"0 8px 32px rgba(0,0,0,0.22)",
+    }}>
+      <div style={{padding:"16px 20px",borderBottom:"0.5px solid var(--color-border-tertiary)",
+        display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <p style={{margin:0,fontSize:"15px",fontWeight:"500",color:"var(--color-text-primary)"}}>
+          Edit event
+        </p>
+        <button onClick={onClose} aria-label="Close"
+          style={{background:"none",border:"none",cursor:"pointer",
+            color:"var(--color-text-secondary)",fontSize:"20px",lineHeight:1,padding:"2px 6px"}}>×</button>
+      </div>
+
+      <div style={{padding:"18px 20px"}}>
+        {/* Stream */}
+        <div style={{marginBottom:"14px"}}>
+          <label style={lbl}>Stream</label>
+          <select value={streamName} onChange={e=>setStreamName(e.target.value)} style={{width:"100%"}}>
+            {streams.map(st=>(
+              <option key={st.name} value={st.name}>{st.name} :{st.port}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* File */}
+        <div style={{marginBottom:"14px"}}>
+          <label style={lbl}>File</label>
+          {libraryLoading ? (
+            <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:0}}>Loading library…</p>
+          ) : (
+            <select value={filePath} onChange={e=>setFilePath(e.target.value)} style={{width:"100%"}}>
+              <option value="">— select a file —</option>
+              {library.map((f,i)=>(
+                <option key={i} value={f.full_path}>{f.path}</option>
+              ))}
+            </select>
+          )}
+          {filePath && !library.find(f=>f.full_path===filePath) && (
+            <p style={{fontSize:"11px",color:"var(--color-text-secondary)",margin:"4px 0 0",
+              fontFamily:"var(--font-mono)",wordBreak:"break-all"}}>{filePath}</p>
+          )}
+        </div>
+
+        {/* Date/time */}
+        <div style={{marginBottom:"14px"}}>
+          <label style={lbl}>Date &amp; time</label>
+          <input type="datetime-local" value={playAt}
+            onChange={e=>setPlayAt(e.target.value)}
+            min={`${todayStr}T00:00`}
+            style={{width:"230px"}}/>
+          {isPast && (
+            <p style={{fontSize:"11px",color:"var(--color-text-danger)",margin:"4px 0 0"}}>
+              ⚠ This date/time is in the past
+            </p>
+          )}
+        </div>
+
+        {/* Start position */}
+        <div style={{marginBottom:"14px"}}>
+          <label style={lbl}>Start position <span style={{fontWeight:"400",color:"var(--color-text-tertiary)"}}>HH:MM:SS</span></label>
+          <input value={startPos} onChange={e=>setStartPos(e.target.value)}
+            placeholder="00:00:00" style={{width:"140px"}}/>
+        </div>
+
+        {/* Loop */}
+        <div style={{marginBottom:"14px"}}>
+          <label style={lbl}>Loop / repeat</label>
+          <LoopSelector value={loopCount} onChange={setLoopCount}/>
+        </div>
+
+        {/* Post-action */}
+        <div style={{marginBottom:"16px"}}>
+          <label style={lbl}>After playback</label>
+          <select value={postAction} onChange={e=>setPostAction(e.target.value)} style={{width:"100%"}}>
+            <option value="resume">Return to normal schedule / compliance</option>
+            <option value="stop">Stop stream</option>
+            <option value="black">Show black screen</option>
+          </select>
+        </div>
+
+        {err && (
+          <div style={{padding:"8px 12px",borderRadius:"var(--border-radius-md)",
+            background:"var(--color-background-danger)",border:"0.5px solid var(--color-border-danger)",
+            fontSize:"12px",color:"var(--color-text-danger)",marginBottom:"14px"}}>{err}</div>
+        )}
+
+        <div style={{display:"flex",gap:"8px",justifyContent:"space-between",alignItems:"center"}}>
+          <button onClick={del}
+            style={{fontSize:"12px",padding:"5px 12px",
+              color:"var(--color-text-danger)",borderColor:"var(--color-border-danger)",
+              display:"flex",alignItems:"center",gap:"4px"}}>
+            <i className="ti ti-trash" style={{fontSize:"12px"}}/>Delete
+          </button>
+          <div style={{display:"flex",gap:"8px"}}>
+            <button onClick={onClose}>Cancel</button>
+            <button onClick={save} disabled={saving||isPast}
+              style={{background:"var(--color-text-info)",color:"#fff",border:"none",
+                opacity:(saving||isPast)?0.55:1}}>
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -4818,30 +5097,24 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
 // Settings modal
 // ---------------------------------------------------------------------------
 function SettingsModal({ settings, onSave, onClose }) {
-  const [form,    setForm]    = useState({ country: settings.holiday_country||"US", subdiv: settings.holiday_subdiv||"" });
-  const [query,   setQuery]   = useState("");
-  const [saving,  setSaving]  = useState(false);
-  const listRef               = useRef(null);
+  const [form,   setForm]   = useState({ country: settings.holiday_country||"US", subdiv: settings.holiday_subdiv||"" });
+  const [query,  setQuery]  = useState("");
+  const [saving, setSaving] = useState(false);
+  const listRef = useRef(null);
 
   const filtered = COUNTRIES.filter(c =>
     c.name.toLowerCase().includes(query.toLowerCase()) ||
     c.code.toLowerCase().includes(query.toLowerCase())
   );
-
   const selectedCountry = COUNTRIES.find(c => c.code === form.country);
 
-  // Scroll selected item into view whenever the list or selection changes
   useEffect(() => {
     if (!listRef.current) return;
     const el = listRef.current.querySelector("[data-selected='true']");
-    if (el) el.scrollIntoView({ block: "nearest" });
+    if (el) el.scrollIntoView({ block:"nearest" });
   }, [form.country, query]);
 
-  const handleSelect = (code) => {
-    setForm(f => ({...f, country: code}));
-    setQuery("");  // clear search so the full list is visible with selection
-  };
-
+  const handleSelect = code => { setForm(f=>({...f,country:code})); setQuery(""); };
   const save = async () => {
     setSaving(true);
     try { await onSave(form); } finally { setSaving(false); }
@@ -4852,8 +5125,7 @@ function SettingsModal({ settings, onSave, onClose }) {
       background:"var(--color-background-primary)",
       border:"0.5px solid var(--color-border-primary)",
       borderRadius:"var(--border-radius-lg)",
-      width:"380px",
-      boxShadow:"0 8px 32px rgba(0,0,0,0.18)",
+      width:"380px",boxShadow:"0 8px 32px rgba(0,0,0,0.22)",
     }}>
       <div style={{padding:"16px 20px",borderBottom:"0.5px solid var(--color-border-tertiary)",
         display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -4865,8 +5137,6 @@ function SettingsModal({ settings, onSave, onClose }) {
       <div style={{padding:"18px 20px"}}>
         <div style={{marginBottom:"14px"}}>
           <label style={lbl}>Country</label>
-
-          {/* Current selection badge — always visible */}
           {selectedCountry && (
             <div style={{
               display:"flex",alignItems:"center",gap:"6px",
@@ -4876,69 +5146,45 @@ function SettingsModal({ settings, onSave, onClose }) {
               border:"0.5px solid var(--color-border-info)",
               fontSize:"13px",color:"var(--color-text-info)",fontWeight:"500",
             }}>
-              <i className="ti ti-check" aria-hidden="true" style={{fontSize:"12px",flexShrink:0}}/>
+              <i className="ti ti-check" style={{fontSize:"12px",flexShrink:0}}/>
               {selectedCountry.code} — {selectedCountry.name}
             </div>
           )}
-
-          {/* Search box */}
-          <input
-            placeholder="Search countries…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            style={{width:"100%",marginBottom:"6px"}}
-            autoFocus
-          />
-
-          {/* Country list */}
+          <input placeholder="Search countries…" value={query}
+            onChange={e=>setQuery(e.target.value)}
+            style={{width:"100%",marginBottom:"6px"}} autoFocus/>
           {filtered.length === 0 ? (
-            <div style={{
-              padding:"16px",textAlign:"center",fontSize:"12px",
-              color:"var(--color-text-tertiary)",
-              border:"0.5px solid var(--color-border-tertiary)",
-              borderRadius:"var(--border-radius-md)",
-            }}>
-              No countries match "{query}"
-            </div>
+            <div style={{padding:"16px",textAlign:"center",fontSize:"12px",
+              color:"var(--color-text-tertiary)",border:"0.5px solid var(--color-border-tertiary)",
+              borderRadius:"var(--border-radius-md)"}}>No countries match "{query}"</div>
           ) : (
-            <div
-              ref={listRef}
-              style={{
-                maxHeight:"180px",overflowY:"auto",
-                border:"0.5px solid var(--color-border-secondary)",
-                borderRadius:"var(--border-radius-md)",
-              }}
-            >
+            <div ref={listRef} style={{maxHeight:"180px",overflowY:"auto",
+              border:"0.5px solid var(--color-border-secondary)",
+              borderRadius:"var(--border-radius-md)"}}>
               {filtered.map(c => {
                 const isSel = c.code === form.country;
                 return (
-                  <div
-                    key={c.code}
-                    data-selected={isSel ? "true" : "false"}
-                    onClick={() => handleSelect(c.code)}
+                  <div key={c.code} data-selected={isSel?"true":"false"}
+                    onClick={()=>handleSelect(c.code)}
                     style={{
                       padding:"7px 12px",cursor:"pointer",fontSize:"13px",
                       display:"flex",alignItems:"center",gap:"8px",
                       background: isSel ? "var(--color-background-info)" : "transparent",
                       color: isSel ? "var(--color-text-info)" : "var(--color-text-primary)",
                       borderBottom:"0.5px solid var(--color-border-tertiary)",
-                      transition:"background 0.1s",
                     }}
-                    onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
-                    onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = "transparent"; }}
-                  >
+                    onMouseEnter={e=>{ if(!isSel)e.currentTarget.style.background="var(--color-background-secondary)"; }}
+                    onMouseLeave={e=>{ if(!isSel)e.currentTarget.style.background="transparent"; }}>
                     <span style={{
                       width:"14px",height:"14px",borderRadius:"3px",flexShrink:0,
-                      border:`0.5px solid ${isSel ? "var(--color-border-info)" : "var(--color-border-secondary)"}`,
-                      background: isSel ? "var(--color-text-info)" : "transparent",
+                      border:`0.5px solid ${isSel?"var(--color-border-info)":"var(--color-border-secondary)"}`,
+                      background:isSel?"var(--color-text-info)":"transparent",
                       display:"flex",alignItems:"center",justifyContent:"center",
                     }}>
-                      {isSel && <i className="ti ti-check" aria-hidden="true" style={{fontSize:"10px",color:"#fff"}}/>}
+                      {isSel && <i className="ti ti-check" style={{fontSize:"10px",color:"#fff"}}/>}
                     </span>
                     <span style={{fontFamily:"var(--font-mono)",fontSize:"12px",
-                      color: isSel ? "inherit" : "var(--color-text-secondary)",flexShrink:0}}>
-                      {c.code}
-                    </span>
+                      color:isSel?"inherit":"var(--color-text-secondary)",flexShrink:0}}>{c.code}</span>
                     <span>{c.name}</span>
                   </div>
                 );
@@ -4946,12 +5192,8 @@ function SettingsModal({ settings, onSave, onClose }) {
             </div>
           )}
         </div>
-
         <div style={{marginBottom:"18px"}}>
-          <label style={lbl}>
-            State / province
-            <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>optional</span>
-          </label>
+          <label style={lbl}>State / province <span style={{fontWeight:"400",color:"var(--color-text-tertiary)"}}>optional</span></label>
           <input value={form.subdiv} onChange={e=>setForm(f=>({...f,subdiv:e.target.value}))}
             placeholder="e.g. CA, NSW, ON…" style={{width:"100%"}}/>
           <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:"6px 0 0"}}>
@@ -4971,35 +5213,61 @@ function SettingsModal({ settings, onSave, onClose }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main component
+// Legend
+// ---------------------------------------------------------------------------
+function Legend() {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:"10px",fontSize:"11px",color:"var(--color-text-secondary)"}}>
+      {[
+        ["var(--color-background-danger)","var(--color-border-danger)","Holiday"],
+        ["var(--color-background-info)","var(--color-border-info)","Upcoming"],
+        ["var(--color-background-success)","var(--color-border-success)","Played"],
+      ].map(([bg,border,label]) => (
+        <span key={label} style={{display:"flex",alignItems:"center",gap:"4px"}}>
+          <span style={{width:"9px",height:"9px",borderRadius:"2px",
+            background:bg,border:`0.5px solid ${border}`,display:"inline-block",flexShrink:0}}/>
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main EventsCalendar
 // ---------------------------------------------------------------------------
 function EventsCalendar() {
   const TODAY = new Date();
+  const todayStr = fmtDate(TODAY);
 
-  const [month,    setMonth]    = useState(TODAY.getMonth());
-  const [year,     setYear]     = useState(TODAY.getFullYear());
-  const [events,   setEvents]   = useState([]);
-  const [streams,  setStreams]  = useState([]);
-  const [library,  setLibrary]  = useState([]);
+  const [month,      setMonth]      = useState(TODAY.getMonth());
+  const [year,       setYear]       = useState(TODAY.getFullYear());
+  const [events,     setEvents]     = useState([]);
+  const [streams,    setStreams]     = useState([]);
+  const [library,    setLibrary]    = useState([]);
   const [libLoading, setLibLoading] = useState(false);
-  const [settings, setSettings] = useState({ holiday_country:"US", holiday_subdiv:null });
-  const [holidays, setHolidays] = useState({});
-  const [holKey,   setHolKey]   = useState("");   // cache buster
-  const [loading,  setLoading]  = useState(true);
-  const [modal,    setModal]    = useState(null);  // null | "create" | "settings"
-  const [selDate,  setSelDate]  = useState(null);
-  const [toast,    setToast]    = useState(null);
+  const [settings,   setSettings]   = useState({ holiday_country:"US", holiday_subdiv:null });
+  const [holidays,   setHolidays]   = useState({});
+  const [holKey,     setHolKey]     = useState("");
+  const [loading,    setLoading]    = useState(true);
+  const [modal,      setModal]      = useState(null);   // null | "create" | "edit" | "settings"
+  const [selDates,   setSelDates]   = useState(new Set());  // multi-date selection
+  const [multiMode,  setMultiMode]  = useState(false);
+  const [editEv,     setEditEv]     = useState(null);
+  const [toast,      setToast]      = useState(null);
   const libLoaded = useRef(false);
   const toastRef  = useRef(null);
 
-  // ---- toast helper ----
   const showToast = (msg, type="success") => {
     if (toastRef.current) clearTimeout(toastRef.current);
     setToast({ msg, type });
     toastRef.current = setTimeout(() => setToast(null), 3500);
   };
 
-  // ---- initial data load ----
+  const refreshEvents = useCallback(() =>
+    fetch("/api/events").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setEvents(d); }).catch(()=>{}), []);
+
+  // Initial load
   useEffect(() => {
     Promise.all([
       fetch("/api/streams").then(r=>r.json()).catch(()=>[]),
@@ -5013,7 +5281,7 @@ function EventsCalendar() {
     });
   }, []);
 
-  // ---- holiday reload when year / country changes ----
+  // Holidays
   useEffect(() => {
     if (loading) return;
     const country = settings.holiday_country || "US";
@@ -5023,7 +5291,7 @@ function EventsCalendar() {
     const qs = new URLSearchParams({ year, country });
     if (subdiv) qs.set("subdiv", subdiv);
     fetch(`/api/holidays?${qs}`)
-      .then(r => r.json())
+      .then(r=>r.json())
       .then(data => {
         if (Array.isArray(data)) {
           const map = {};
@@ -5031,33 +5299,28 @@ function EventsCalendar() {
           setHolidays(map);
           setHolKey(key);
         }
-      })
-      .catch(() => {});
+      }).catch(()=>{});
   }, [year, settings, loading, holKey]);
 
-  // ---- lazy-load library when create modal opens ----
+  // Lazy-load library
   useEffect(() => {
-    if (modal === "create" && !libLoaded.current) {
+    if ((modal === "create" || modal === "edit") && !libLoaded.current) {
       setLibLoading(true);
       fetch("/api/library")
-        .then(r => r.json())
-        .then(data => { setLibrary(Array.isArray(data) ? data : []); libLoaded.current = true; })
-        .catch(() => {})
-        .finally(() => setLibLoading(false));
+        .then(r=>r.json())
+        .then(data=>{ setLibrary(Array.isArray(data)?data:[]); libLoaded.current=true; })
+        .catch(()=>{})
+        .finally(()=>setLibLoading(false));
     }
   }, [modal]);
 
-  // ---- poll events every 15s ----
+  // Poll events every 15s
   useEffect(() => {
-    const t = setInterval(() => {
-      fetch("/api/events").then(r=>r.json()).then(d => {
-        if (Array.isArray(d)) setEvents(d);
-      }).catch(()=>{});
-    }, 15_000);
+    const t = setInterval(refreshEvents, 15_000);
     return () => clearInterval(t);
-  }, []);
+  }, [refreshEvents]);
 
-  // ---- calendar grid ----
+  // Calendar grid
   const firstDay    = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const cells = [];
@@ -5071,36 +5334,61 @@ function EventsCalendar() {
     if (d) (eventsByDate[d] = eventsByDate[d] || []).push(ev);
   });
 
-  const todayStr = fmtDate(TODAY);
-
-  // ---- handlers ----
+  // Handlers
   const prevMonth = () => month===0 ? (setMonth(11),setYear(y=>y-1)) : setMonth(m=>m-1);
-  const nextMonth = () => month===11 ? (setMonth(0), setYear(y=>y+1)) : setMonth(m=>m+1);
+  const nextMonth = () => month===11 ? (setMonth(0),setYear(y=>y+1)) : setMonth(m=>m+1);
   const goToday   = () => { setMonth(TODAY.getMonth()); setYear(TODAY.getFullYear()); };
 
-  const openCreateModal = (day) => {
-    setSelDate(new Date(year, month, day));
+  const openCreateSingle = (day, ds) => {
+    if (isPastDate(ds, todayStr) && ds !== todayStr) return;
+    setSelDates(new Set([ds]));
     setModal("create");
   };
 
-  const handleCreate = async (payload) => {
-    const res  = await fetch("/api/events/bulk", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify(payload),
+  const toggleDateSelect = (ds) => {
+    if (isPastDate(ds, todayStr) && ds !== todayStr) return;
+    setSelDates(prev => {
+      const n = new Set(prev);
+      n.has(ds) ? n.delete(ds) : n.add(ds);
+      return n;
     });
-    const data = await res.json();
-    if (!data.created?.length) throw new Error(data.errors?.[0]?.error || "Failed.");
-    // Optimistically append new events
-    const added = data.created.map(ev => ({
-      ...ev,
-      play_at_iso: ev.play_at,
-      file_name:   payload.streams.find(s=>s.stream_name===ev.stream_name)?.file_path.split("/").pop()||"",
-      played:      false,
-      post_action: "compliance",
-    }));
-    setEvents(prev => [...prev, ...added]);
-    showToast(`${added.length} event${added.length>1?"s":""} scheduled`);
+  };
+
+  const openMultiCreate = () => {
+    if (selDates.size === 0) { showToast("Select at least one date first.", "error"); return; }
+    setModal("create");
+  };
+
+  const openEdit = (ev) => {
+    if (ev.played) return;
+    setEditEv(ev);
+    setModal("edit");
+  };
+
+  const handleCreated = async (count) => {
+    await refreshEvents();
+    setSelDates(new Set());
+    setMultiMode(false);
+    showToast(`${count} event${count!==1?"s":""} scheduled`);
+  };
+
+  const handleDelete = async (evId) => {
+    try {
+      const res = await fetch("/api/action", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ action:"delete_event", event_id: evId }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        await refreshEvents();
+        showToast("Event deleted");
+      } else {
+        showToast(data.msg || "Delete failed", "error");
+      }
+    } catch(e) {
+      showToast("Delete failed", "error");
+    }
   };
 
   const handleSaveSettings = async ({ country, subdiv }) => {
@@ -5112,24 +5400,22 @@ function EventsCalendar() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     setSettings(data);
-    setHolKey(""); // force reload
+    setHolKey("");
     setModal(null);
     showToast("Holiday settings saved");
   };
 
-  if (loading) {
-    return (
-      <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"300px",
-        fontSize:"14px",color:"var(--color-text-secondary)"}}>
-        <i className="ti ti-loader-2" aria-hidden="true" style={{fontSize:"20px",marginRight:"8px"}}/>
-        Loading calendar…
-      </div>
-    );
-  }
+  if (loading) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"300px",
+      fontSize:"14px",color:"var(--color-text-secondary)"}}>
+      <i className="ti ti-loader-2" style={{fontSize:"20px",marginRight:"8px"}}/>
+      Loading calendar…
+    </div>
+  );
 
   return (
-    <div style={{position:"relative",minHeight:"680px"}}>
-      {/* --- Toast --- */}
+    <div style={{position:"relative",display:"flex",flexDirection:"column",height:"100%",minHeight:"680px"}}>
+      {/* Toast */}
       {toast && (
         <div style={{
           position:"absolute",top:"12px",right:"12px",zIndex:200,
@@ -5137,79 +5423,114 @@ function EventsCalendar() {
           background: toast.type==="error" ? "var(--color-background-danger)" : "var(--color-background-success)",
           color:      toast.type==="error" ? "var(--color-text-danger)"      : "var(--color-text-success)",
           border:`0.5px solid ${toast.type==="error" ? "var(--color-border-danger)" : "var(--color-border-success)"}`,
-          fontSize:"13px",fontWeight:"500",
+          fontSize:"13px",fontWeight:"500",boxShadow:"0 2px 12px rgba(0,0,0,0.18)",
         }}>{toast.msg}</div>
       )}
 
-      {/* --- Modal overlay (absolute, not fixed) --- */}
+      {/* Modal overlay */}
       {modal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={e => { if(e.target===e.currentTarget) setModal(null); }}
+        <div role="dialog" aria-modal="true"
+          onClick={e=>{ if(e.target===e.currentTarget) setModal(null); }}
           style={{
-            position:"absolute",inset:0,zIndex:100,
-            background:"rgba(0,0,0,0.32)",
+            position:"fixed",inset:0,zIndex:1000,
+            background:"rgba(0,0,0,0.36)",
             display:"flex",alignItems:"flex-start",justifyContent:"center",
-            paddingTop:"56px",
-          }}
-        >
-          {modal==="create" && selDate && (
+            paddingTop:"60px",overflowY:"auto",
+          }}>
+          {modal==="create" && (
             <CreateModal
-              date={selDate}
+              dates={selDates}
               holidays={holidays}
               streams={streams}
               library={library}
               libraryLoading={libLoading}
-              onClose={()=>setModal(null)}
-              onCreate={handleCreate}
+              todayStr={todayStr}
+              onClose={()=>{ setModal(null); }}
+              onCreate={handleCreated}
+            />
+          )}
+          {modal==="edit" && editEv && (
+            <EditModal
+              ev={editEv}
+              streams={streams}
+              library={library}
+              libraryLoading={libLoading}
+              todayStr={todayStr}
+              onClose={()=>{ setModal(null); setEditEv(null); }}
+              onSave={refreshEvents}
+              onDelete={async id=>{ await handleDelete(id); await refreshEvents(); }}
             />
           )}
           {modal==="settings" && (
-            <SettingsModal
-              settings={settings}
-              onSave={handleSaveSettings}
-              onClose={()=>setModal(null)}
-            />
+            <SettingsModal settings={settings} onSave={handleSaveSettings} onClose={()=>setModal(null)}/>
           )}
         </div>
       )}
 
-      {/* --- Calendar header --- */}
+      {/* Calendar header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-        padding:"14px 16px",borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+        padding:"12px 16px",borderBottom:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap",gap:"8px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
           <button onClick={prevMonth} aria-label="Previous month"
-            style={{width:"30px",height:"30px",display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <i className="ti ti-chevron-left" aria-hidden="true" style={{fontSize:"16px"}}/>
+            style={{width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <i className="ti ti-chevron-left" style={{fontSize:"15px"}}/>
           </button>
-          <span style={{fontSize:"16px",fontWeight:"500",minWidth:"190px",textAlign:"center",letterSpacing:"-0.01em"}}>
+          <span style={{fontSize:"15px",fontWeight:"500",minWidth:"180px",textAlign:"center",letterSpacing:"-0.01em"}}>
             {MONTHS[month]} {year}
           </span>
           <button onClick={nextMonth} aria-label="Next month"
-            style={{width:"30px",height:"30px",display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <i className="ti ti-chevron-right" aria-hidden="true" style={{fontSize:"16px"}}/>
+            style={{width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <i className="ti ti-chevron-right" style={{fontSize:"15px"}}/>
           </button>
-          <button onClick={goToday} style={{fontSize:"12px",padding:"4px 10px",marginLeft:"4px"}}>Today</button>
+          <button onClick={goToday} style={{fontSize:"11px",padding:"4px 9px",marginLeft:"4px"}}>Today</button>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+
+        <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
           <Legend/>
+
+          {/* Multi-date mode toggle */}
+          <button
+            onClick={()=>{ setMultiMode(m=>!m); setSelDates(new Set()); }}
+            style={{
+              fontSize:"11px",padding:"4px 10px",
+              display:"flex",alignItems:"center",gap:"5px",
+              background: multiMode ? "var(--color-background-info)" : "transparent",
+              color:      multiMode ? "var(--color-text-info)"       : "var(--color-text-secondary)",
+              border:`0.5px solid ${multiMode ? "var(--color-border-info)" : "var(--color-border-tertiary)"}`,
+            }}>
+            <i className="ti ti-calendar-plus" style={{fontSize:"13px"}}/>
+            {multiMode ? `${selDates.size} date${selDates.size!==1?"s":""} selected` : "Multi-date"}
+          </button>
+
+          {/* Schedule button (multi mode) */}
+          {multiMode && selDates.size > 0 && (
+            <button onClick={openMultiCreate}
+              style={{fontSize:"11px",padding:"4px 10px",
+                background:"var(--color-text-info)",color:"#fff",border:"none",
+                display:"flex",alignItems:"center",gap:"5px"}}>
+              <i className="ti ti-calendar-event" style={{fontSize:"13px"}}/>
+              Schedule {selDates.size} date{selDates.size!==1?"s":""}
+            </button>
+          )}
+
+          {/* Holiday country */}
           <button onClick={()=>setModal("settings")}
-            style={{display:"flex",alignItems:"center",gap:"5px",fontSize:"12px",padding:"4px 10px"}}>
-            <i className="ti ti-world" aria-hidden="true" style={{fontSize:"14px"}}/>
+            style={{display:"flex",alignItems:"center",gap:"5px",fontSize:"11px",padding:"4px 9px"}}>
+            <i className="ti ti-world" style={{fontSize:"13px"}}/>
             {settings.holiday_country || "—"}
           </button>
         </div>
       </div>
 
-      {/* --- Main grid + sidebar --- */}
-      <div style={{display:"flex"}}>
-        <div style={{flex:"1 1 0",minWidth:0}}>
+      {/* Grid + sidebar */}
+      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+        <div style={{flex:"1 1 0",minWidth:0,overflow:"auto"}}>
           {/* Weekday headers */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-            borderBottom:"0.5px solid var(--color-border-tertiary)"}}>
+            borderBottom:"0.5px solid var(--color-border-tertiary)",
+            position:"sticky",top:0,background:"var(--color-background-primary)",zIndex:2}}>
             {DAYS_SHORT.map(d => (
-              <div key={d} style={{padding:"8px 0",textAlign:"center",fontSize:"12px",
+              <div key={d} style={{padding:"8px 0",textAlign:"center",fontSize:"11px",fontWeight:"500",
                 color:"var(--color-text-secondary)",borderRight:"0.5px solid var(--color-border-tertiary)"}}>
                 {d}
               </div>
@@ -5226,27 +5547,27 @@ function EventsCalendar() {
                 todayStr={todayStr}
                 holidays={holidays}
                 eventsByDate={eventsByDate}
-                onOpen={openCreateModal}
+                onOpen={openCreateSingle}
+                selectedDates={selDates}
+                onToggleSelect={toggleDateSelect}
+                multiSelect={multiMode}
               />
             ))}
           </div>
         </div>
 
-        <Sidebar month={month} year={year} events={events} holidays={holidays}/>
+        <Sidebar
+          month={month}
+          year={year}
+          events={events}
+          holidays={holidays}
+          onEdit={openEdit}
+          onDelete={handleDelete}
+        />
       </div>
     </div>
   );
 }
-
-// Shared label style
-const lbl = {
-  display:"block",
-  fontSize:"11px",
-  fontWeight:"500",
-  color:"var(--color-text-secondary)",
-  marginBottom:"6px",
-};
-
 
 // Mount once DOM is ready
 (function mountCalendar(){
