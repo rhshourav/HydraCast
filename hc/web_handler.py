@@ -887,13 +887,27 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 # Weekdays
                 if "weekdays" in data:
                     cfg.weekdays = CSVManager.parse_weekdays(str(data["weekdays"]))
-                # Playlist files (semicolon or newline separated)
+                # Playlist source: folder_source takes priority over file list
+                folder_source_raw = str(data.get("folder_source") or "").strip()
                 raw_files = str(data.get("files", "")).strip()
-                if raw_files:
+                if folder_source_raw:
+                    from hc.folder_scanner import scan_folder, SortMode
+                    folder_source = Path(folder_source_raw)
+                    if not folder_source.is_dir():
+                        raise ValueError(f"Folder not found or not a directory: '{folder_source_raw}'")
+                    playlist, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
+                    for w in warnings:
+                        log.warning("update_config folder scan: %s", w)
+                    if not playlist:
+                        raise ValueError(f"No supported media files found in '{folder_source_raw}'")
+                    cfg.playlist      = playlist
+                    cfg.folder_source = folder_source
+                elif raw_files:
                     raw_files = raw_files.replace("\n", ";")
                     parsed = CSVManager.parse_files(raw_files)
                     if parsed:
-                        cfg.playlist = parsed
+                        cfg.playlist      = parsed
+                        cfg.folder_source = None
                 # Persist
                 all_cfgs = [s.config for s in mgr.states]
                 CSVManager.save(all_cfgs)
