@@ -1797,6 +1797,10 @@ select option{background:var(--bg3)}
     <!-- Breadcrumb -->
     <div style="padding:8px 16px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0">
       <div id="mb-breadcrumb" style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;flex:1;min-width:0;font-size:12px"></div>
+      <button id="mb-mkdir-btn" class="btn" onclick="mbMkdir()" title="Create a new sub-folder here"
+              style="padding:3px 9px;font-size:11px;flex-shrink:0;display:none">
+        <i class="fa fa-folder-plus" style="margin-right:4px"></i>New Folder
+      </button>
       <button class="btn" onclick="mbRefresh()" title="Reload this folder" style="padding:3px 9px;font-size:11px;flex-shrink:0">↻</button>
     </div>
 
@@ -3510,6 +3514,7 @@ function mbOpen(mode, target) {
     : 'Navigate and click a file to select it, then confirm. Double-click to confirm instantly.';
 
   _mbSetSelection(null);
+  document.getElementById('mb-mkdir-btn').style.display = mode === 'folder' ? '' : 'none';
   document.getElementById('mb-modal').classList.add('open');
   _mbLoad('');
 }
@@ -3520,6 +3525,24 @@ function mbClose() {
 }
 
 function mbRefresh() { _mbLoad(_mb.path); }
+
+async function mbMkdir() {
+  const name = prompt('New folder name:', '');
+  if (!name || !name.trim()) return;
+  const folderName = name.trim();
+  // Basic client-side validation mirrors server-side check
+  if (/[/\\<>"|?*\x00]/.test(folderName) || folderName.includes('..')) {
+    toast('Invalid folder name — forbidden characters', 'err');
+    return;
+  }
+  const r = await api('file_mkdir', { path: _mb.path, folder_name: folderName });
+  if (r?.ok) {
+    toast(r.msg || 'Folder created', 'ok');
+    // Navigate into the newly created folder so user can immediately select it
+    const newPath = r.new_path || (_mb.path ? _mb.path + '/' + folderName : folderName);
+    _mbLoad(newPath);
+  }
+}
 
 function mbConfirm() {
   if (!_mb.selected) { toast('Nothing selected', 'err'); return; }
