@@ -1009,3 +1009,9 @@
 2026-05-12 15:44:34,416  INFO     [Stream_1] Killing MediaMTX PID=18784
 2026-05-12 15:44:34,480  INFO     [Stream_1] MediaMTX PID=18784 terminated.
 2026-05-12 15:44:34,480  INFO     [Stream_1] Stream stopped cleanly.
+2026-05-13 17:09:10,995  INFO     HydraCast v5.3.0 started — 0 stream(s) configured.
+2026-05-13 17:09:11,044  INFO     Web UI → http://0.0.0.0:80
+2026-05-13 17:09:11,045  INFO     Web UI → http://192.168.19.44:80
+2026-05-13 17:23:11,554  INFO     HydraCast v5.3.0 started — 0 stream(s) configured.
+2026-05-13 17:23:11,570  INFO     Web UI → http://0.0.0.0:80
+2026-05-13 17:23:11,570  INFO     Web UI → http://192.168.99.174:80

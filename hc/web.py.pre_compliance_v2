@@ -270,51 +270,6 @@ _HTML = r"""
   40%{transform:translateY(-4px)}
   70%{transform:translateY(-2px)}
 }
-/* ─────────── COMPLIANCE ALERT BANNER ─────────── */
-@keyframes compliancePulse{
-  0%,100%{opacity:1;border-color:rgba(194,120,120,0.6);box-shadow:0 0 0 0 rgba(194,120,120,0)}
-  50%{opacity:0.88;border-color:rgba(194,120,120,1);box-shadow:0 0 10px 3px rgba(194,120,120,0.22)}
-}
-.compliance-alert-banner{
-  position:fixed;right:18px;top:72px;z-index:9999;
-  max-width:370px;min-width:260px;
-  background:var(--bg2);
-  border:1.5px solid var(--red);
-  border-radius:var(--radius-lg);
-  padding:14px 16px;
-  box-shadow:0 4px 20px rgba(194,120,120,0.18);
-  animation:compliancePulse 3s ease-in-out infinite;
-  display:flex;flex-direction:column;gap:8px;
-}
-.compliance-alert-banner .cab-hdr{
-  display:flex;align-items:center;gap:8px;font-weight:700;
-  font-size:12px;color:var(--red);font-family:var(--font-display);
-  letter-spacing:0.04em;text-transform:uppercase;
-}
-.compliance-alert-banner .cab-body{
-  font-size:12px;color:var(--text2);line-height:1.5;
-}
-.compliance-alert-banner .cab-stream{
-  font-size:11px;color:var(--text3);font-family:var(--font-mono);margin-top:2px;
-}
-.compliance-alert-banner .cab-dismiss{
-  align-self:flex-end;background:none;border:1px solid var(--border);
-  color:var(--text3);cursor:pointer;font:500 11px var(--font-sans);
-  padding:4px 10px;border-radius:6px;transition:all 0.2s;
-}
-.compliance-alert-banner .cab-dismiss:hover{
-  border-color:var(--red);color:var(--red);background:var(--red-dim);
-}
-.cab-dot{
-  display:inline-block;width:8px;height:8px;border-radius:50%;
-  background:var(--red);flex-shrink:0;
-  box-shadow:0 0 0 0 rgba(194,120,120,0.6);
-  animation:livePulse 1.8s ease-out infinite;
-}
-.st-comp-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)}
-.st-comp-row label{flex:1;font-size:13px;color:var(--text2);cursor:pointer;text-transform:none;letter-spacing:0}
-.st-comp-row small{display:block;font-size:11px;color:var(--text3);margin-top:2px}
-
 
 html{background:var(--bg);transition:background 0.35s}
 body{
@@ -2020,7 +1975,6 @@ async function loadStreams(){
       if(fv) fv.textContent=ver;
     }
     renderStreams(data);
-      _updateComplianceAlerts(data);
   }catch(_){}
 }
 
@@ -3048,7 +3002,6 @@ async function saveConfig(){
     compliance_enabled:document.getElementById('cfg-comp-en')?.checked||false,
     compliance_start:document.getElementById('cfg-comp-start')?.value||'06:00:00',
     compliance_loop:document.getElementById('cfg-comp-loop')?.checked||false,
-    compliance_alert_enabled:document.getElementById('cfg-comp-alert')?.checked!==false,
   };
   const r=await api('update_config',payload);
   if(r?.ok){_clearDirty();loadConfig();}
@@ -3350,11 +3303,6 @@ function showNewStreamForm(){
               title="Stop the stream entirely if the calculated seek offset exceeds the video duration (prevents silent looping)">
             Strict mode — stop stream if seek offset exceeds video duration
           </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2);margin-top:6px">
-            <input type="checkbox" id="new-comp-alert" checked style="width:auto;accent-color:var(--accent)"
-              title="Show a pulsing error banner on the dashboard when a compliance error occurs">
-            Show compliance error banner on dashboard
-          </label>
           <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.7;border-top:1px solid var(--border);padding-top:10px">
             <b style="color:var(--accent-light)">What is compliance mode?</b><br>
             Calculates the exact seek offset so viewers see what a continuous linear broadcast would be showing right now.
@@ -3409,7 +3357,6 @@ async function submitNewStream(){
     compliance_start:(document.getElementById('new-comp-start')?.value||'06:00:00').trim()||'06:00:00',
     compliance_loop:document.getElementById('new-comp-loop')?.checked||false,
     compliance_strict:document.getElementById('new-comp-strict')?.checked||false,
-    compliance_alert_enabled:document.getElementById('new-comp-alert')?.checked!==false,
   });
   if(r?.ok){
     cancelConfig();
@@ -3432,75 +3379,6 @@ async function deleteStream(name){
 // ═══════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════
-
-// ═══════════════════════════════════════════════════════
-// COMPLIANCE ALERT BANNER (v2)
-// ═══════════════════════════════════════════════════════
-
-let _compAlertsEnabled = localStorage.getItem('hc_comp_alerts') !== 'false';
-const _compAlertActive = {};
-
-function _updateComplianceAlerts(streams) {
-  if (!_compAlertsEnabled) {
-    document.querySelectorAll('.compliance-alert-banner').forEach(el => el.remove());
-    Object.keys(_compAlertActive).forEach(k => delete _compAlertActive[k]);
-    return;
-  }
-  const seenNames = new Set();
-  for (const s of streams) {
-    if (!s.compliance_enabled) continue;
-    if (!s.compliance_alert) continue;
-    if (s.compliance_alert_enabled === false) continue;
-    seenNames.add(s.name);
-    if (_compAlertActive[s.name]) {
-      const el = document.getElementById('cab-comp-' + s.name.replace(/[^a-z0-9]/gi,'_'));
-      if (el) el.querySelector('.cab-body').textContent = s.compliance_alert;
-      continue;
-    }
-    _compAlertActive[s.name] = true;
-    const safeId = 'cab-comp-' + s.name.replace(/[^a-z0-9]/gi,'_');
-    const div = document.createElement('div');
-    div.className = 'compliance-alert-banner';
-    div.id = safeId;
-    // Offset each banner vertically so multiple streams don't overlap
-    const offset = Object.keys(_compAlertActive).length - 1;
-    div.style.top = (72 + offset * 170) + 'px';
-    div.innerHTML =
-      '<div class="cab-hdr"><span class="cab-dot"></span>Compliance Error</div>' +
-      '<div class="cab-body">' + esc(s.compliance_alert) + '</div>' +
-      '<div class="cab-stream">Stream: ' + esc(s.name) + '</div>' +
-      '<button class="cab-dismiss" onclick="_dismissCompAlert(\'' +
-        s.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\')">Dismiss ×</button>';
-    document.body.appendChild(div);
-  }
-  for (const name of Object.keys(_compAlertActive)) {
-    if (!seenNames.has(name)) {
-      const safeId = 'cab-comp-' + name.replace(/[^a-z0-9]/gi,'_');
-      const el = document.getElementById(safeId);
-      if (el) { el.style.opacity='0'; setTimeout(()=>el.remove(),300); }
-      delete _compAlertActive[name];
-    }
-  }
-}
-
-function _dismissCompAlert(streamName) {
-  const safeId = 'cab-comp-' + streamName.replace(/[^a-z0-9]/gi,'_');
-  const el = document.getElementById(safeId);
-  if (el) { el.style.transition='opacity 0.3s'; el.style.opacity='0'; setTimeout(()=>el.remove(),300); }
-  delete _compAlertActive[streamName];
-  // Allow re-display after 60 s if still unresolved
-  setTimeout(() => { /* passive — next loadStreams tick re-evaluates */ }, 60000);
-}
-
-function toggleComplianceAlerts(checked) {
-  _compAlertsEnabled = checked;
-  localStorage.setItem('hc_comp_alerts', checked ? 'true' : 'false');
-  if (!checked) {
-    document.querySelectorAll('.compliance-alert-banner').forEach(b => b.remove());
-    Object.keys(_compAlertActive).forEach(k => delete _compAlertActive[k]);
-  }
-}
-
 const _settings={autoref:true,autoscroll:true,compact:false,showrtsp:true,notifStart:true,notifErr:true,notifEvent:false};
 
 function toggleSetting(key,el){
@@ -3510,9 +3388,6 @@ function toggleSetting(key,el){
 }
 
 function applySettings(){
-  // sync compliance alerts toggle
-  const caEl=document.getElementById('st-comp-alerts');
-  if(caEl)caEl.checked=_compAlertsEnabled;
   // compact mode
   document.querySelectorAll('td').forEach(td=>{
     td.style.paddingTop=_settings.compact?'4px':'8px';
@@ -4536,10 +4411,6 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 ) if not getattr(st, "oneshot_active", False) else None,
                 # next 2 upcoming playlist items
                 "next_in_queue":  _get_next_in_queue(st, cfg, n=2),
-                # Compliance alert (v2)
-                "compliance_enabled":       cfg.compliance_enabled,
-                "compliance_alert":         getattr(st, "compliance_alert", None),
-                "compliance_alert_enabled": getattr(cfg, "compliance_alert_enabled", True),
             })
         self._json(result)
 
@@ -4565,10 +4436,9 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "audio_bitrate": cfg.audio_bitrate,
                 "hls_enabled":          cfg.hls_enabled,
                 # Compliance fields (v5.0.6+)
-                "compliance_enabled":       cfg.compliance_enabled,
-                "compliance_start":         cfg.compliance_start,
-                "compliance_loop":          cfg.compliance_loop,
-                "compliance_alert_enabled": getattr(cfg, "compliance_alert_enabled", True),
+                "compliance_enabled":   cfg.compliance_enabled,
+                "compliance_start":     cfg.compliance_start,
+                "compliance_loop":      cfg.compliance_loop,
             })
         self._json(result)
 
