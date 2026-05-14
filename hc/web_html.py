@@ -4595,6 +4595,7 @@ function Sidebar({ month, year, events, holidays }) {
 // ---------------------------------------------------------------------------
 function CreateModal({ date, holidays, streams, library, libraryLoading, onClose, onCreate }) {
   const [time,       setTime]       = useState("12:00");
+  const [endTime,    setEndTime]    = useState("");
   const [selStreams,  setSelStreams] = useState({});   // name -> true
   const [files,      setFiles]      = useState({});   // name -> file_path
   const [submitting, setSubmitting] = useState(false);
@@ -4615,14 +4616,27 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
     dt.setHours(hh, mm, 0, 0);
     const iso = fmtDate(dt) + `T${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:00`;
 
+    // Optional broadcast end time
+    let broadcast_end;
+    if (endTime) {
+      const [ehh,emm] = endTime.split(":").map(Number);
+      const edt = new Date(date);
+      edt.setHours(ehh, emm, 0, 0);
+      // If end time is not after start (e.g. crossing midnight), advance by one day
+      if (edt <= dt) edt.setDate(edt.getDate() + 1);
+      broadcast_end = fmtDate(edt) + `T${String(ehh).padStart(2,"0")}:${String(emm).padStart(2,"0")}:00`;
+    }
+
     setSubmitting(true);
     setErr("");
     try {
-      await onCreate({
+      const payload = {
         play_at: iso,
         streams: sel.map(name => ({ stream_name: name, file_path: files[name] })),
         post_action: "compliance",
-      });
+      };
+      if (broadcast_end) payload.broadcast_end = broadcast_end;
+      await onCreate(payload);
       onClose();
     } catch(e) {
       setErr(e.message || "Failed to schedule events.");
@@ -4665,8 +4679,33 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
       <div style={{padding:"18px 20px"}}>
         {/* Time */}
         <div style={{marginBottom:"16px"}}>
-          <label style={lbl}>Broadcast time</label>
+          <label style={lbl}>Broadcast start time</label>
           <input type="time" value={time} onChange={e=>setTime(e.target.value)} style={{width:"160px"}}/>
+        </div>
+
+        {/* End time (optional) */}
+        <div style={{marginBottom:"16px"}}>
+          <label style={lbl}>
+            Broadcast end time
+            <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>optional</span>
+          </label>
+          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+            <input type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} style={{width:"160px"}}/>
+            {endTime && (
+              <button onClick={()=>setEndTime("")}
+                style={{fontSize:"11px",padding:"3px 9px",color:"var(--color-text-tertiary)"}}>
+                Clear
+              </button>
+            )}
+          </div>
+          <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:"6px 0 0"}}>
+            Leave blank to let the file play to its natural end.
+            {endTime && time && endTime <= time && (
+              <span style={{color:"var(--color-text-info)",marginLeft:"6px"}}>
+                (will wrap to next day)
+              </span>
+            )}
+          </p>
         </div>
 
         {/* Streams */}
@@ -4782,11 +4821,26 @@ function SettingsModal({ settings, onSave, onClose }) {
   const [form,    setForm]    = useState({ country: settings.holiday_country||"US", subdiv: settings.holiday_subdiv||"" });
   const [query,   setQuery]   = useState("");
   const [saving,  setSaving]  = useState(false);
+  const listRef               = useRef(null);
 
   const filtered = COUNTRIES.filter(c =>
     c.name.toLowerCase().includes(query.toLowerCase()) ||
     c.code.toLowerCase().includes(query.toLowerCase())
   );
+
+  const selectedCountry = COUNTRIES.find(c => c.code === form.country);
+
+  // Scroll selected item into view whenever the list or selection changes
+  useEffect(() => {
+    if (!listRef.current) return;
+    const el = listRef.current.querySelector("[data-selected='true']");
+    if (el) el.scrollIntoView({ block: "nearest" });
+  }, [form.country, query]);
+
+  const handleSelect = (code) => {
+    setForm(f => ({...f, country: code}));
+    setQuery("");  // clear search so the full list is visible with selection
+  };
 
   const save = async () => {
     setSaving(true);
@@ -4811,13 +4865,88 @@ function SettingsModal({ settings, onSave, onClose }) {
       <div style={{padding:"18px 20px"}}>
         <div style={{marginBottom:"14px"}}>
           <label style={lbl}>Country</label>
-          <input placeholder="Search…" value={query} onChange={e=>setQuery(e.target.value)}
-            style={{width:"100%",marginBottom:"8px"}} autoFocus/>
-          <select value={form.country} onChange={e=>setForm(f=>({...f,country:e.target.value}))}
-            style={{width:"100%"}} size={6}>
-            {filtered.map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
-          </select>
+
+          {/* Current selection badge — always visible */}
+          {selectedCountry && (
+            <div style={{
+              display:"flex",alignItems:"center",gap:"6px",
+              padding:"6px 10px",marginBottom:"8px",
+              borderRadius:"var(--border-radius-md)",
+              background:"var(--color-background-info)",
+              border:"0.5px solid var(--color-border-info)",
+              fontSize:"13px",color:"var(--color-text-info)",fontWeight:"500",
+            }}>
+              <i className="ti ti-check" aria-hidden="true" style={{fontSize:"12px",flexShrink:0}}/>
+              {selectedCountry.code} — {selectedCountry.name}
+            </div>
+          )}
+
+          {/* Search box */}
+          <input
+            placeholder="Search countries…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            style={{width:"100%",marginBottom:"6px"}}
+            autoFocus
+          />
+
+          {/* Country list */}
+          {filtered.length === 0 ? (
+            <div style={{
+              padding:"16px",textAlign:"center",fontSize:"12px",
+              color:"var(--color-text-tertiary)",
+              border:"0.5px solid var(--color-border-tertiary)",
+              borderRadius:"var(--border-radius-md)",
+            }}>
+              No countries match "{query}"
+            </div>
+          ) : (
+            <div
+              ref={listRef}
+              style={{
+                maxHeight:"180px",overflowY:"auto",
+                border:"0.5px solid var(--color-border-secondary)",
+                borderRadius:"var(--border-radius-md)",
+              }}
+            >
+              {filtered.map(c => {
+                const isSel = c.code === form.country;
+                return (
+                  <div
+                    key={c.code}
+                    data-selected={isSel ? "true" : "false"}
+                    onClick={() => handleSelect(c.code)}
+                    style={{
+                      padding:"7px 12px",cursor:"pointer",fontSize:"13px",
+                      display:"flex",alignItems:"center",gap:"8px",
+                      background: isSel ? "var(--color-background-info)" : "transparent",
+                      color: isSel ? "var(--color-text-info)" : "var(--color-text-primary)",
+                      borderBottom:"0.5px solid var(--color-border-tertiary)",
+                      transition:"background 0.1s",
+                    }}
+                    onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+                    onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span style={{
+                      width:"14px",height:"14px",borderRadius:"3px",flexShrink:0,
+                      border:`0.5px solid ${isSel ? "var(--color-border-info)" : "var(--color-border-secondary)"}`,
+                      background: isSel ? "var(--color-text-info)" : "transparent",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                    }}>
+                      {isSel && <i className="ti ti-check" aria-hidden="true" style={{fontSize:"10px",color:"#fff"}}/>}
+                    </span>
+                    <span style={{fontFamily:"var(--font-mono)",fontSize:"12px",
+                      color: isSel ? "inherit" : "var(--color-text-secondary)",flexShrink:0}}>
+                      {c.code}
+                    </span>
+                    <span>{c.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+
         <div style={{marginBottom:"18px"}}>
           <label style={lbl}>
             State / province
