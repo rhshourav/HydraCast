@@ -997,64 +997,6 @@ select option{background:var(--bg3)}
 .ev-stream-row select:focus{outline:none;border-color:var(--accent)}
 .ev-stream-row select:disabled{opacity:0.35;pointer-events:none}
 
-/* ─────────── MINI CALENDAR ─────────── */
-.ev-cal{
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  overflow:hidden;
-}
-.ev-cal-hdr{
-  display:flex;align-items:center;
-  padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--border);
-  gap:8px;
-}
-.ev-cal-title{
-  font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--text);
-}
-.ev-cal-nav{
-  background:var(--bg4);border:1px solid var(--border);color:var(--text3);cursor:pointer;
-  font-size:16px;padding:3px 10px;border-radius:6px;transition:all 0.15s;line-height:1;
-}
-.ev-cal-nav:hover{background:rgba(184,115,51,0.12);color:var(--accent);border-color:var(--accent)}
-.ev-cal-grid{
-  display:grid;grid-template-columns:repeat(7,1fr);
-  border-collapse:collapse;
-}
-.ev-cal-day-lbl{
-  text-align:center;padding:7px 2px;font-size:10px;font-weight:700;
-  text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);
-  background:var(--bg3);border-bottom:1px solid var(--border);
-  font-family:var(--font-display);
-}
-.ev-cal-cell{
-  position:relative;min-height:62px;padding:5px 4px;
-  border:1px solid var(--border);border-top:none;border-left:none;
-  text-align:center;cursor:default;transition:background 0.15s;
-  font-size:12px;font-family:var(--font-sans);
-}
-.ev-cal-cell:nth-child(7n){border-right:none}
-.ev-cal-cell:hover{background:var(--bg3)}
-.ev-cal-cell.other-month .ev-cal-num{opacity:0.28}
-.ev-cal-cell.today{background:rgba(184,115,51,0.09)}
-.ev-cal-cell.today .ev-cal-num{
-  background:var(--accent);color:#fff;border-radius:50%;
-  width:22px;height:22px;line-height:22px;margin:0 auto;font-weight:700;
-  box-shadow:0 2px 8px rgba(184,115,51,0.4);
-}
-.ev-cal-cell.has-holiday{background:rgba(154,138,176,0.10);border-color:rgba(154,138,176,0.2)}
-.ev-cal-cell.has-event{background:var(--blue-dim)}
-.ev-cal-cell.has-holiday.has-event{background:linear-gradient(160deg,rgba(154,138,176,0.14) 45%,rgba(122,159,194,0.14) 45%)}
-.ev-cal-num{font-size:12px;font-weight:500;color:var(--text2);line-height:22px}
-.ev-cal-dots{display:flex;gap:3px;justify-content:center;flex-wrap:wrap;margin-top:3px;min-height:8px}
-.ev-cal-dot-h{width:7px;height:7px;border-radius:50%;background:var(--purple);flex-shrink:0;box-shadow:0 0 4px rgba(154,138,176,0.6)}
-.ev-cal-dot-e{width:7px;height:7px;border-radius:50%;background:var(--blue);flex-shrink:0}
-.ev-cal-hd-name{
-  font-size:9px;color:var(--purple);line-height:1.2;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;display:block;
-  margin-top:2px;font-weight:600;
-}
-.ev-cal-ev-count{
-  font-size:9px;color:var(--blue);line-height:1.2;display:block;margin-top:1px;font-weight:600;
-}
 
 </style>
 </head>
@@ -2601,94 +2543,10 @@ async function loadHolidays(){
         ${isToday?'<div class="hd-today-tag">TODAY</div>':''}
       </div>`;
     }).join('');
-    // Refresh calendar if it's rendered
-    evCalRender();
+    // Holidays loaded — calendar removed
   }catch(e){
     document.getElementById('hd-list').innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px">⚠ Failed to load holidays. Ensure the <code>holidays</code> Python package is installed.</div>';
   }
-}
-
-// ═══════════════════════════════════
-// MINI CALENDAR
-// ═══════════════════════════════════
-let _calYear  = new Date().getFullYear();
-let _calMonth = new Date().getMonth(); // 0-based
-
-function evCalMove(delta){
-  _calMonth += delta;
-  if(_calMonth > 11){ _calMonth = 0; _calYear++; }
-  if(_calMonth < 0) { _calMonth = 11; _calYear--; }
-  evCalRender();
-}
-
-function evCalRender(){
-  const grid  = document.getElementById('ev-cal-grid');
-  const title = document.getElementById('ev-cal-title');
-  if(!grid) return;
-
-  const monthName = new Date(_calYear, _calMonth, 1)
-    .toLocaleDateString('en-US',{month:'long',year:'numeric'});
-  title.textContent = monthName;
-
-  // Build day-header row
-  const dayLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  let html = dayLabels.map(d=>`<div class="ev-cal-day-lbl">${d}</div>`).join('');
-
-  const today    = new Date().toISOString().slice(0,10);
-  const firstDay = new Date(_calYear, _calMonth, 1).getDay(); // 0=Sun
-  const daysInMo = new Date(_calYear, _calMonth+1, 0).getDate();
-  const daysInPrev= new Date(_calYear, _calMonth, 0).getDate();
-
-  // Build quick-lookup maps
-  const hdMap  = {}; // date-str → [names]
-  _hdData.forEach(h=>{ hdMap[h.date] = hdMap[h.date]||[]; hdMap[h.date].push(h.name); });
-  const evMap  = {}; // date-str → count
-  _evData.forEach(ev=>{
-    if(!ev.played){
-      const d=(ev.play_at_iso||ev.play_at.replace(' ','T')).slice(0,10);
-      evMap[d] = (evMap[d]||0)+1;
-    }
-  });
-
-  // Prev-month filler
-  for(let i=0;i<firstDay;i++){
-    const day = daysInPrev - firstDay + 1 + i;
-    html += `<div class="ev-cal-cell other-month"><div class="ev-cal-num">${day}</div></div>`;
-  }
-  // Current month
-  for(let day=1; day<=daysInMo; day++){
-    const mm   = String(_calMonth+1).padStart(2,'0');
-    const dd   = String(day).padStart(2,'0');
-    const dStr = `${_calYear}-${mm}-${dd}`;
-    const isToday   = dStr === today;
-    const holidays  = hdMap[dStr] || [];
-    const evCount   = evMap[dStr] || 0;
-    const hasHd     = holidays.length > 0;
-    const hasEv     = evCount > 0;
-    let cls = 'ev-cal-cell';
-    if(isToday)  cls += ' today';
-    if(hasHd)    cls += ' has-holiday';
-    if(hasEv)    cls += ' has-event';
-    const dots = [
-      ...holidays.slice(0,2).map(()=>'<span class="ev-cal-dot-h" title="Holiday"></span>'),
-      ...(hasEv?[`<span class="ev-cal-dot-e" title="${evCount} event(s)"></span>`]:[]),
-    ].join('');
-    const hdLabel = holidays.length ? `<span class="ev-cal-hd-name" title="${esc(holidays.join(', '))}">${esc(holidays[0])}</span>` : '';
-    const evLabel = hasEv ? `<span class="ev-cal-ev-count" title="${evCount} event(s) scheduled">📅 ${evCount}</span>` : '';
-    html += `<div class="${cls}" title="${esc(dStr)}${hasHd?' — '+holidays.join(', '):''}${hasEv?' ['+evCount+' event(s)]':''}">
-      <div class="ev-cal-num">${day}</div>
-      ${hdLabel}
-      ${evLabel}
-      <div class="ev-cal-dots">${dots}</div>
-    </div>`;
-  }
-  // Next-month filler
-  const total = firstDay + daysInMo;
-  const remainder = total % 7 === 0 ? 0 : 7 - (total % 7);
-  for(let i=1; i<=remainder; i++){
-    html += `<div class="ev-cal-cell other-month"><div class="ev-cal-num">${i}</div></div>`;
-  }
-  grid.innerHTML = html;
 }
 
 // ═══════════════════════════════════
@@ -2775,7 +2633,6 @@ async function loadEvents(){
   try{
     _evData = await fetch('/api/events').then(r=>r.json());
     renderEventsTable();
-    evCalRender();
   }catch(e){ console.warn('loadEvents:', e); }
 }
 
@@ -2857,10 +2714,6 @@ function _startEvTimers(){
   clearInterval(_evCountdown);
   _evTimer    = setInterval(()=>{ if(document.getElementById('ev-autoref')?.checked) loadEvents(); }, 15000);
   _evCountdown = setInterval(_tickCountdowns, 1000);
-  // Init calendar to current month
-  _calYear  = new Date().getFullYear();
-  _calMonth = new Date().getMonth();
-  evCalRender();
 }
 
 async function schedEvent(){
