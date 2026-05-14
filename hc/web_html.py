@@ -4506,7 +4506,7 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen })
 
       {/* Holiday label */}
       {holiday && (
-        <div style={{fontSize:"10px",color:"var(--color-text-danger)",marginBottom:"3px",
+        <div style={{fontSize:"13px",color:"var(--color-text-danger)",marginBottom:"3px",
           lineHeight:"1.3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
           title={holiday}>{holiday}</div>
       )}
@@ -4572,9 +4572,9 @@ function Sidebar({ month, year, events, holidays }) {
                 {ev.file_name || (ev.file_path||"").split("/").pop()}
               </div>
               {hol && (
-                <div style={{fontSize:"10px",color:"var(--color-text-danger)",marginTop:"3px",
+                <div style={{fontSize:"12px",color:"var(--color-text-danger)",marginTop:"3px",
                   display:"flex",alignItems:"center",gap:"3px"}}>
-                  <i className="ti ti-star-filled" aria-hidden="true" style={{fontSize:"9px"}}/> {hol}
+                  <i className="ti ti-star-filled" aria-hidden="true" style={{fontSize:"11px"}}/> {hol}
                 </div>
               )}
               <div style={{fontSize:"10px",color:"var(--color-text-tertiary)",marginTop:"2px",
@@ -4662,8 +4662,8 @@ function CreateModal({ date, holidays, streams, library, libraryLoading, onClose
           <p style={{margin:"3px 0 0",fontSize:"13px",color:"var(--color-text-secondary)"}}>
             {date.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}
             {holiday && (
-              <span style={{marginLeft:"8px",color:"var(--color-text-danger)",fontSize:"12px"}}>
-                <i className="ti ti-star-filled" aria-hidden="true" style={{fontSize:"11px",verticalAlign:"-1px",marginRight:"3px"}}/>
+              <span style={{marginLeft:"8px",color:"var(--color-text-danger)",fontSize:"13px"}}>
+                <i className="ti ti-star-filled" aria-hidden="true" style={{fontSize:"12px",verticalAlign:"-1px",marginRight:"3px"}}/>
                 {holiday}
               </span>
             )}
