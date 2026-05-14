@@ -1,27 +1,23 @@
 """
 hc/models.py  —  Core dataclasses and enums.
 
-v6.0 fixes vs new broken version
-──────────────────────────────────
-• rtsp_path   restored to return "stream" when stream_path is empty (old behaviour).
-              The new version returned "" which caused FFmpeg to push to
-              rtsp://127.0.0.1:<port>/  (empty path) while rtsp_url / rtsp_url_external
-              still showed /stream — a silent mismatch that broke all streams.
-• rtsp_url / rtsp_url_external / hls_url now all derive from rtsp_path so they
-  are always consistent with the URL FFmpeg actually pushes to.
-• mediamtx_cfg.py companion fix: spath = cfg.rtsp_path (no "~all" fallback needed
-  because rtsp_path is always non-empty).
-
-Kept from new version
+v6.1 changes vs v6.0
 ─────────────────────
-• WEEKDAY_MAP import + _int_weekdays() for robust weekday normalisation
-• clear_error() helper on StreamState
-• OneShotEvent.post_action has a default value of "" (backward-compatible)
-• All compliance fields, folder_source, initial_offset retained
+• StreamConfig gains compliance_alert_enabled (bool, default True).
+  When True (and compliance_enabled is True), the Web UI will surface
+  compliance errors as a pulsing side-banner every 10 seconds until the
+  operator acknowledges or disables alerts in Settings.
+
+• StreamState gains compliance_alert (Optional[str]) — the last compliance
+  error message to display in the Web UI — and compliance_alert_ts (float)
+  timestamp of when it was set.
+
+Everything else is unchanged from v6.0.
 """
 from __future__ import annotations
 
 import threading
+import time as _time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -60,7 +56,7 @@ class OneShotEvent:
     stream_name: str
     file_path:   Path
     play_at:     datetime
-    post_action: str  = ""      # default "" makes it optional (was required in v5)
+    post_action: str  = ""      # "" = return to compliance stream after event
     played:      bool = False
     start_pos:   str  = "00:00:00"
 
@@ -87,17 +83,16 @@ class StreamConfig:
     hls_enabled:    bool  = False
     row_index:      int   = 0
     folder_source:  Optional[Path] = None
-    compliance_enabled: bool = False
-    compliance_start:   str  = "06:00:00"
-    compliance_loop:    bool = False
+
+    # ── Compliance settings ───────────────────────────────────────────────────
+    compliance_enabled:       bool = False
+    compliance_start:         str  = "06:00:00"   # broadcast start time
+    compliance_loop:          bool = False         # loop seek for short videos
+    compliance_alert_enabled: bool = True          # show Web UI banner on error
 
     # ── Weekday helpers ───────────────────────────────────────────────────────
 
     def _int_weekdays(self) -> List[int]:
-        """
-        Always return weekdays as List[int] regardless of stored format.
-        Handles legacy str abbreviations ("mon", "tue" …) transparently.
-        """
         result: List[int] = []
         for d in self.weekdays:
             if isinstance(d, int):
@@ -116,21 +111,7 @@ class StreamConfig:
     def rtsp_path(self) -> str:
         """
         RTSP stream path segment — always non-empty.
-
-        • If stream_path is configured (e.g. "news") → returns "news"
-          (leading/trailing slashes stripped so the caller never gets "//news").
-        • If stream_path is empty / unset → returns "stream" (legacy default).
-
-        This value is used verbatim in the FFmpeg push URL:
-            rtsp://127.0.0.1:<port>/<rtsp_path>
-        and in the MediaMTX YAML paths block:
-            paths:
-              <rtsp_path>: {}
-
-        IMPORTANT: do NOT return "" here.  worker.py line 774 inlines this
-        directly into the FFmpeg command.  An empty string produces
-        rtsp://127.0.0.1:<port>/  which MediaMTX v1.9.1 does not accept
-        reliably (its ~all wildcard does not catch the bare root path).
+        Returns the configured stream_path (slashes stripped) or "stream".
         """
         if self.stream_path:
             return self.stream_path.strip("/")
@@ -138,12 +119,10 @@ class StreamConfig:
 
     @property
     def rtsp_url(self) -> str:
-        """Internal RTSP URL (loopback) — what FFmpeg pushes to."""
         return f"rtsp://127.0.0.1:{self.port}/{self.rtsp_path}"
 
     @property
     def rtsp_url_external(self) -> str:
-        """External RTSP URL shown to the operator / web UI."""
         from hc.utils import _local_ip
         ip = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
         return f"rtsp://{ip}:{self.port}/{self.rtsp_path}"
@@ -186,8 +165,8 @@ class StreamConfig:
 class StreamState:
     config:           StreamConfig
     status:           StreamStatus               = StreamStatus.STOPPED
-    mtx_proc:         object                     = None   # subprocess.Popen
-    ffmpeg_proc:      object                     = None   # subprocess.Popen
+    mtx_proc:         object                     = None
+    ffmpeg_proc:      object                     = None
     progress:         float                      = 0.0
     current_pos:      float                      = 0.0
     duration:         float                      = 0.0
@@ -206,6 +185,23 @@ class StreamState:
     log:              List[str]                  = field(default_factory=list)
     _lock:            threading.Lock             = field(default_factory=threading.Lock)
 
+    # ── Compliance alert state (Web UI banner) ────────────────────────────────
+    compliance_alert:    Optional[str]  = None   # current error message
+    compliance_alert_ts: float          = 0.0    # epoch time when alert was set
+
+    def set_compliance_alert(self, msg: Optional[str]) -> None:
+        """Set (or clear) the compliance alert. Thread-safe."""
+        with self._lock:
+            self.compliance_alert    = msg
+            self.compliance_alert_ts = _time.time() if msg else 0.0
+        if msg:
+            self.log_add(f"[COMPLIANCE ALERT] {msg}")
+
+    def clear_compliance_alert(self) -> None:
+        self.set_compliance_alert(None)
+
+    # ── General helpers ───────────────────────────────────────────────────────
+
     def log_add(self, msg: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         with self._lock:
@@ -214,7 +210,6 @@ class StreamState:
                 self.log.pop(0)
 
     def clear_error(self) -> None:
-        """Reset error state and auto-restart counter (e.g. after operator intervention)."""
         self.error_msg     = ""
         self.restart_count = 0
         if self.status == StreamStatus.ERROR:
