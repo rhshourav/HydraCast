@@ -248,6 +248,7 @@ class JSONManager:
                     file_path   = Path(r["file_path"]),
                     play_at     = datetime.fromisoformat(r["play_at"]),
                     played      = bool(r.get("played", False)),
+                    start_pos   = r.get("start_pos", "00:00:00") or "00:00:00",
                 )
                 # Restore optional broadcast_end
                 be_str = r.get("broadcast_end")
@@ -272,6 +273,7 @@ class JSONManager:
                 "file_path":   str(ev.file_path),
                 "play_at":     ev.play_at.isoformat(),
                 "played":      ev.played,
+                "start_pos":   getattr(ev, "start_pos", "00:00:00") or "00:00:00",
             }
             # broadcast_end is optional; persist only when present
             be = getattr(ev, "broadcast_end", None)
