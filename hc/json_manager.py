@@ -1,20 +1,17 @@
 """
 hc/json_manager.py  —  Replaces csv_manager.py entirely.
 
-All persistent configuration is stored as JSON files inside the /config/
-directory (resolved relative to the HydraCast base directory):
+v6.1 additions vs v6.0
+───────────────────────
+• compliance_alert_enabled serialised/deserialised (default True).
 
-    config/streams.json   — stream definitions  (was streams.csv)
-    config/events.json    — one-shot events      (was events.csv)
-
-Fixes vs original
+v6.0 fixes (kept)
 ─────────────────
-• _config_dir() uses CONFIG_DIR() (→ <base>/config/) not CONFIGS_DIR()
-  (→ <base>/configs/ — the MediaMTX YAML folder).
-• load() returns [] on first run instead of raising FileNotFoundError.
-• weekdays always normalised to List[int] (0=Mon…6=Sun).
-• compliance_loop default fixed from "" to False.
-• stream_path defaults to "" so root-mount streams work correctly.
+• _config_dir() uses CONFIG_DIR() (→ <base>/config/).
+• load() returns [] on first run.
+• weekdays always normalised to List[int].
+• compliance_loop default fixed to False.
+• stream_path defaults to "".
 """
 from __future__ import annotations
 
@@ -38,10 +35,6 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _config_dir() -> Path:
-    """
-    Return (and create if absent) <base>/config/ — user-facing JSON files.
-    NOTE: CONFIGS_DIR() points to <base>/configs/ (MediaMTX YAMLs) — different!
-    """
     d = CONFIG_DIR()
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -60,13 +53,6 @@ def _events_path() -> Path:
 # ---------------------------------------------------------------------------
 
 def _normalise_weekdays(raw) -> List[int]:
-    """
-    Accept weekdays in any form; always return List[int] (0=Mon...6=Sun).
-      List[int]  -> unchanged
-      List[str]  -> ["mon","wed"] -> [0, 2]
-      str        -> "mon|wed" / "all" / "weekdays" / "weekends"
-      empty/None -> all 7 days
-    """
     if not raw and raw != 0:
         return list(range(7))
 
@@ -139,19 +125,20 @@ def _playlist_from_json(raw: List[Dict[str, Any]]) -> List[PlaylistItem]:
 
 def _config_to_dict(cfg: StreamConfig) -> Dict[str, Any]:
     return {
-        "name":               cfg.name,
-        "port":               cfg.port,
-        "stream_path":        cfg.stream_path or "",
-        "enabled":            cfg.enabled,
-        "weekdays":           _normalise_weekdays(cfg.weekdays),
-        "shuffle":            cfg.shuffle,
-        "video_bitrate":      cfg.video_bitrate,
-        "audio_bitrate":      cfg.audio_bitrate,
-        "hls_enabled":        cfg.hls_enabled,
-        "compliance_enabled": cfg.compliance_enabled,
-        "compliance_start":   cfg.compliance_start,
-        "compliance_loop":    bool(cfg.compliance_loop),
-        "folder_source":      str(cfg.folder_source) if cfg.folder_source else None,
+        "name":                   cfg.name,
+        "port":                   cfg.port,
+        "stream_path":            cfg.stream_path or "",
+        "enabled":                cfg.enabled,
+        "weekdays":               _normalise_weekdays(cfg.weekdays),
+        "shuffle":                cfg.shuffle,
+        "video_bitrate":          cfg.video_bitrate,
+        "audio_bitrate":          cfg.audio_bitrate,
+        "hls_enabled":            cfg.hls_enabled,
+        "compliance_enabled":     cfg.compliance_enabled,
+        "compliance_start":       cfg.compliance_start,
+        "compliance_loop":        bool(cfg.compliance_loop),
+        "compliance_alert_enabled": bool(cfg.compliance_alert_enabled),
+        "folder_source":          str(cfg.folder_source) if cfg.folder_source else None,
         "playlist": (
             _playlist_to_json(cfg.playlist) if not cfg.folder_source else []
         ),
@@ -176,20 +163,21 @@ def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
         compliance_loop = bool(raw_loop) if raw_loop != "" else False
 
         return StreamConfig(
-            name               = d["name"],
-            port               = int(d["port"]),
-            stream_path        = d.get("stream_path", "") or "",
-            enabled            = bool(d.get("enabled", True)),
-            weekdays           = _normalise_weekdays(d.get("weekdays", [])),
-            shuffle            = bool(d.get("shuffle", False)),
-            video_bitrate      = d.get("video_bitrate", "2500k"),
-            audio_bitrate      = d.get("audio_bitrate", "128k"),
-            hls_enabled        = bool(d.get("hls_enabled", False)),
-            compliance_enabled = bool(d.get("compliance_enabled", False)),
-            compliance_start   = d.get("compliance_start", "06:00:00"),
-            compliance_loop    = compliance_loop,
-            folder_source      = folder_source,
-            playlist           = playlist,
+            name                   = d["name"],
+            port                   = int(d["port"]),
+            stream_path            = d.get("stream_path", "") or "",
+            enabled                = bool(d.get("enabled", True)),
+            weekdays               = _normalise_weekdays(d.get("weekdays", [])),
+            shuffle                = bool(d.get("shuffle", False)),
+            video_bitrate          = d.get("video_bitrate", "2500k"),
+            audio_bitrate          = d.get("audio_bitrate", "128k"),
+            hls_enabled            = bool(d.get("hls_enabled", False)),
+            compliance_enabled     = bool(d.get("compliance_enabled", False)),
+            compliance_start       = d.get("compliance_start", "06:00:00"),
+            compliance_loop        = compliance_loop,
+            compliance_alert_enabled = bool(d.get("compliance_alert_enabled", True)),
+            folder_source          = folder_source,
+            playlist               = playlist,
         )
     except Exception as exc:
         log.error(
@@ -207,10 +195,6 @@ class JSONManager:
 
     @classmethod
     def load(cls) -> List[StreamConfig]:
-        """
-        Load stream configs from config/streams.json.
-        Returns [] on first run (no file yet) so the app starts in web-only mode.
-        """
         p = _streams_path()
         if not p.exists():
             log.info("json_manager: no streams.json yet — starting with empty config.")
@@ -235,8 +219,6 @@ class JSONManager:
         p = _streams_path()
         data = [_config_to_dict(c) for c in configs]
         text = json.dumps(data, indent=2, ensure_ascii=False)
-        # Atomic write: write to a .tmp sibling then rename over the real file.
-        # A crash mid-write will leave the .tmp orphan, NOT a 0-byte streams.json.
         tmp = p.with_suffix(".json.tmp")
         try:
             tmp.write_text(text, encoding="utf-8")
