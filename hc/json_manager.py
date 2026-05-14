@@ -249,6 +249,7 @@ class JSONManager:
                     play_at     = datetime.fromisoformat(r["play_at"]),
                     played      = bool(r.get("played", False)),
                     start_pos   = r.get("start_pos", "00:00:00") or "00:00:00",
+                    loop_count  = int(r.get("loop_count", 0)),
                 )
                 # Restore optional broadcast_end
                 be_str = r.get("broadcast_end")
@@ -274,6 +275,7 @@ class JSONManager:
                 "play_at":     ev.play_at.isoformat(),
                 "played":      ev.played,
                 "start_pos":   getattr(ev, "start_pos", "00:00:00") or "00:00:00",
+                "loop_count":  getattr(ev, "loop_count", 0),
             }
             # broadcast_end is optional; persist only when present
             be = getattr(ev, "broadcast_end", None)
@@ -288,11 +290,6 @@ class JSONManager:
             if ev.event_id == event_id:
                 ev.played = True
                 break
-        cls._save_events(events)
-
-    @classmethod
-    def save_events(cls, events: List[OneShotEvent]) -> None:
-        """Public alias for _save_events — kept for backward compatibility."""
         cls._save_events(events)
 
     @classmethod
