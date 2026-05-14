@@ -1015,3 +1015,6 @@
 2026-05-13 17:23:11,554  INFO     HydraCast v5.3.0 started — 0 stream(s) configured.
 2026-05-13 17:23:11,570  INFO     Web UI → http://0.0.0.0:80
 2026-05-13 17:23:11,570  INFO     Web UI → http://192.168.99.174:80
+2026-05-14 11:37:30,480  INFO     HydraCast v5.3.0 started — 0 stream(s) configured.
+2026-05-14 11:37:30,524  INFO     Web UI → http://0.0.0.0:80
+2026-05-14 11:37:30,525  INFO     Web UI → http://192.168.19.44:80
