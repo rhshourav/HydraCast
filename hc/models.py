@@ -85,10 +85,16 @@ class StreamConfig:
     folder_source:  Optional[Path] = None
 
     # ── Compliance settings ───────────────────────────────────────────────────
-    compliance_enabled:       bool = False
-    compliance_start:         str  = "06:00:00"   # broadcast start time
-    compliance_loop:          bool = False         # loop seek for short videos
-    compliance_alert_enabled: bool = True          # show Web UI banner on error
+    compliance_enabled:         bool  = False
+    compliance_start:           str   = "06:00:00"   # broadcast start time
+    compliance_loop:            bool  = False         # loop seek for short videos
+    compliance_alert_enabled:   bool  = True          # show Web UI banner on error
+    # How often (seconds) the background thread re-checks the seek position.
+    # Minimum enforced at 60 s; default 2 hours.
+    compliance_resync_interval: float = 7200.0
+    # Maximum tolerated drift (seconds) before a hard resync is triggered.
+    # 0 = always resync on every periodic check regardless of drift.
+    compliance_drift_threshold: float = 30.0
 
     # ── Weekday helpers ───────────────────────────────────────────────────────
 
@@ -186,8 +192,10 @@ class StreamState:
     _lock:            threading.Lock             = field(default_factory=threading.Lock)
 
     # ── Compliance alert state (Web UI banner) ────────────────────────────────
-    compliance_alert:    Optional[str]  = None   # current error message
-    compliance_alert_ts: float          = 0.0    # epoch time when alert was set
+    compliance_alert:          Optional[str]  = None   # current error message
+    compliance_alert_ts:       float          = 0.0    # epoch time when alert was set
+    # Epoch time of the last periodic drift check (0 = never checked).
+    compliance_last_check_ts:  float          = 0.0
 
     def set_compliance_alert(self, msg: Optional[str]) -> None:
         """Set (or clear) the compliance alert. Thread-safe."""
