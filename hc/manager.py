@@ -394,6 +394,9 @@ class StreamManager:
     def _event_loop(self) -> None:
         # Track events currently being played so we can detect completion.
         _playing: Dict[str, datetime] = {}  # event_id → fired_at
+        # Track events that are due but whose stream isn't live yet, so we
+        # can retry them once the stream comes up (up to 5 minutes late).
+        _pending: Dict[str, datetime] = {}  # event_id → first_due_at
 
         while self._running:
             now = datetime.now()
@@ -403,6 +406,7 @@ class StreamManager:
                     # Check if event was playing and is now done → resume compliance
                     if ev.event_id in _playing:
                         fired_at = _playing.pop(ev.event_id)
+                        _pending.pop(ev.event_id, None)
                         for s in self.states:
                             if s.config.name == ev.stream_name and s.config.compliance_enabled:
                                 end_time = datetime.now()
@@ -412,27 +416,96 @@ class StreamManager:
                                     daemon=True,
                                     name=f"comp-ev-resume-{s.config.port}",
                                 ).start()
+                    _pending.pop(ev.event_id, None)
                     continue
 
                 delta = (ev.play_at - now).total_seconds()
-                if -10 <= delta <= 5:
-                    for s in self.states:
-                        if s.config.name == ev.stream_name:
-                            w = self._workers.get(s.config.name)
-                            if w:
-                                ev.played = True
-                                _playing[ev.event_id] = now
-                                JSONManager.mark_event_played(self.events, ev.event_id)
-                                self._glog.add(
-                                    f"[{s.config.name}] Firing one-shot: "
-                                    f"{ev.file_path.name}", "INFO")
-                                threading.Thread(
-                                    target=lambda w=w, ev=ev: w.play_oneshot(ev),
-                                    daemon=True,
-                                ).start()
-                            break
 
-            for _ in range(50):
+                # Mark event as pending (due) once we're within 5 s of play_at.
+                # Keep retrying for up to 5 minutes in case the stream starts late.
+                if delta <= 5:
+                    if ev.event_id not in _pending:
+                        if delta >= -300:
+                            # Due within the last 5 minutes — enter pending queue.
+                            _pending[ev.event_id] = now
+                        else:
+                            # More than 5 minutes overdue and never entered pending
+                            # (e.g. app was offline when it was supposed to fire).
+                            # Mark played so it doesn't fire stale.
+                            ev.played = True
+                            JSONManager.mark_event_played(self.events, ev.event_id)
+                            self._glog.add(
+                                f"[{ev.stream_name}] Skipping stale event "
+                                f"({ev.file_path.name}, "
+                                f"{abs(int(delta))//60}m overdue).",
+                                "WARN",
+                            )
+                            continue
+
+                if ev.event_id not in _pending:
+                    continue  # Not due yet
+
+                # Event is pending — try to fire it
+                first_due = _pending[ev.event_id]
+                overdue_secs = (now - first_due).total_seconds()
+
+                for s in self.states:
+                    if s.config.name != ev.stream_name:
+                        continue
+
+                    w = self._workers.get(s.config.name)
+                    stream_live = s.status in (StreamStatus.LIVE, StreamStatus.ONESHOT)
+
+                    if not stream_live:
+                        # Stream isn't live — auto-start it so the event can fire
+                        if overdue_secs < 30:
+                            # Give it up to 30 s for the stream to come up
+                            if s.status not in (StreamStatus.STARTING,):
+                                self._glog.add(
+                                    f"[{s.config.name}] Event due but stream not live "
+                                    f"— auto-starting for event: {ev.file_path.name}",
+                                    "WARN",
+                                )
+                                self.start_stream(s)
+                        elif overdue_secs < 300:
+                            # Still waiting for stream — log once per minute
+                            if int(overdue_secs) % 60 < 5:
+                                self._glog.add(
+                                    f"[{s.config.name}] Waiting for stream to start "
+                                    f"before firing event ({int(overdue_secs)}s elapsed).",
+                                    "WARN",
+                                )
+                        else:
+                            # 5-minute timeout — give up
+                            ev.played = True
+                            _pending.pop(ev.event_id, None)
+                            JSONManager.mark_event_played(self.events, ev.event_id)
+                            self._glog.add(
+                                f"[{s.config.name}] Event timed out — stream never "
+                                f"came live in 5 min: {ev.file_path.name}",
+                                "ERROR",
+                            )
+                        break
+
+                    # Stream is live — fire the event
+                    if w is None:
+                        w = self._worker(s)
+
+                    ev.played = True
+                    _playing[ev.event_id] = now
+                    _pending.pop(ev.event_id, None)
+                    JSONManager.mark_event_played(self.events, ev.event_id)
+                    self._glog.add(
+                        f"[{s.config.name}] Firing one-shot: "
+                        f"{ev.file_path.name}", "INFO")
+                    threading.Thread(
+                        target=lambda w=w, ev=ev: w.play_oneshot(ev),
+                        daemon=True,
+                        name=f"oneshot-fire-{s.config.port}",
+                    ).start()
+                    break
+
+            for _ in range(10):   # 1-second tick (was 5 s) — don't miss narrow windows
                 if not self._running:
                     return
                 time.sleep(0.1)
