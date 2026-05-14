@@ -255,7 +255,8 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             "/api/subdirs":        self._get_subdirs,
             "/api/files":          lambda: self._get_files(qs),
             "/api/events":         self._get_events,
-            "/api/holidays":       self._get_holidays,
+            "/api/holidays":       lambda: self._get_holidays(qs),
+            "/api/settings":       self._get_settings,
             "/api/logs":           lambda: self._get_logs(qs),
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
@@ -571,25 +572,49 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             })
         self._json(result)
 
-    def _get_holidays(self) -> None:
-        """Return Bangladesh public holidays for the current and next year."""
+    def _get_holidays(self, qs: Dict[str, Any]) -> None:
+        """Return public holidays for the requested year/country/subdiv."""
         try:
             import holidays as _hol
-            year = datetime.now().year
-            bd = _hol.Bangladesh(years=[year, year + 1])
-            result = sorted(
-                [{"date": str(d), "name": name} for d, name in bd.items()],
-                key=lambda x: x["date"],
-            )
-            self._json(result)
         except ImportError:
-            log.warning(
-                "holidays package not installed — run: pip install holidays>=0.45"
-            )
-            self._json([])
+            log.warning("holidays package not installed — run: pip install holidays>=0.45")
+            self._json({"error": "The 'holidays' Python package is not installed. Run: pip install holidays"}, 500)
+            return
+
+        from hc.web_settings_manager import load_settings
+        settings = load_settings()
+
+        try:
+            year    = int(qs.get("year",    [datetime.now().year])[0])
+            country = qs.get("country", [settings.get("holiday_country", "US")])[0].upper()
+            subdiv_raw = qs.get("subdiv", [settings.get("holiday_subdiv") or ""])[0]
+            subdiv  = subdiv_raw if subdiv_raw and subdiv_raw.lower() != "null" else None
+        except (ValueError, IndexError) as exc:
+            self._json({"error": f"Bad query parameters: {exc}"}, 400)
+            return
+
+        try:
+            kwargs: Dict[str, Any] = {"years": year}
+            if subdiv:
+                kwargs["subdiv"] = subdiv
+            h = _hol.country_holidays(country, **kwargs)
+            result = [
+                {"date": str(date), "name": name, "country": country}
+                for date, name in sorted(h.items())
+            ]
+            self._json(result)
         except Exception as exc:
-            log.error("_get_holidays error: %s", exc)
-            self._json([], 500)
+            log.error("_get_holidays: %s", exc)
+            self._json({"error": str(exc)}, 500)
+
+    def _get_settings(self) -> None:
+        """Return the persisted app settings (holiday_country, etc.)."""
+        from hc.web_settings_manager import load_settings
+        try:
+            self._json(load_settings())
+        except Exception as exc:
+            log.error("_get_settings: %s", exc)
+            self._json({"error": str(exc)}, 500)
 
     def _get_logs(self, qs: Dict[str, Any]) -> None:
         mgr = _WEB_MANAGER
@@ -1275,6 +1300,87 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
 
         elif action == "restore":
             self._handle_restore(data)
+
+        elif action == "settings":
+            # POST /api/settings — persist holiday country / subdiv preference
+            from hc.web_settings_manager import save_settings
+            try:
+                if not isinstance(data, dict):
+                    self._json({"error": "Request body must be a JSON object."}, 400)
+                    return
+                result = save_settings(data)
+                self._json(result)
+            except Exception as exc:
+                log.error("POST /api/settings: %s", exc)
+                self._json({"error": str(exc)}, 500)
+
+        elif action == "events/bulk":
+            # POST /api/events/bulk — create one OneShotEvent per stream entry
+            mgr = _WEB_MANAGER
+            if mgr is None:
+                self._json({"error": "Manager not ready — try again shortly."}, 503)
+                return
+            try:
+                play_at_str: str = data["play_at"]
+                streams_raw = data["streams"]
+                if not isinstance(streams_raw, list) or not streams_raw:
+                    raise ValueError("'streams' must be a non-empty list.")
+                play_at = datetime.fromisoformat(play_at_str)
+            except (KeyError, ValueError) as exc:
+                self._json({"error": f"Bad payload: {exc}"}, 400)
+                return
+
+            # Optional broadcast end time
+            broadcast_end = None
+            be_str = data.get("broadcast_end", "")
+            if be_str:
+                try:
+                    broadcast_end = datetime.fromisoformat(be_str)
+                    if broadcast_end <= play_at:
+                        log.warning("events/bulk: broadcast_end not after play_at — ignored")
+                        broadcast_end = None
+                except ValueError:
+                    log.warning("events/bulk: invalid broadcast_end %r — ignored", be_str)
+
+            created = []
+            errors  = []
+            for item in streams_raw:
+                stream_name = item.get("stream_name", "").strip()
+                file_path_s = item.get("file_path",   "").strip()
+                if not stream_name or not file_path_s:
+                    errors.append({"stream_name": stream_name or "?",
+                                   "error": "stream_name and file_path are required."})
+                    continue
+                if mgr.get_state(stream_name) is None:
+                    errors.append({"stream_name": stream_name,
+                                   "error": f"Stream '{stream_name}' not found."})
+                    log.warning("events/bulk: unknown stream: %s", stream_name)
+                    continue
+                try:
+                    ev = JSONManager.add_event(
+                        mgr.events,
+                        stream_name   = stream_name,
+                        file_path     = Path(file_path_s),
+                        play_at       = play_at,
+                        broadcast_end = broadcast_end,
+                    )
+                    ev_dict = {
+                        "event_id":    ev.event_id,
+                        "stream_name": ev.stream_name,
+                        "file_path":   str(ev.file_path),
+                        "play_at":     ev.play_at.isoformat(),
+                    }
+                    if broadcast_end is not None:
+                        ev_dict["broadcast_end"] = broadcast_end.isoformat()
+                    created.append(ev_dict)
+                    log.info("events/bulk: created event stream=%s file=%s at=%s",
+                             stream_name, file_path_s, play_at.isoformat())
+                except Exception as exc:
+                    errors.append({"stream_name": stream_name, "error": str(exc)})
+                    log.error("events/bulk: failed stream=%s: %s", stream_name, exc)
+
+            status = 400 if not created else (207 if errors else 200)
+            self._json({"created": created, "errors": errors}, status)
 
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
