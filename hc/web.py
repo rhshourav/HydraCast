@@ -53,4 +53,32 @@ class _WebModule(_sys.modules[__name__].__class__):
     def _WEB_MANAGER(self, value):
         _wh._WEB_MANAGER = value
 
+    @property
+    def _GLOG(self):
+        return _wh._GLOG
+
+    @_GLOG.setter
+    def _GLOG(self, value):
+        _wh._GLOG = value
+
+    @property
+    def _lib_cache(self):
+        return _wh._lib_cache
+
+    @_lib_cache.setter
+    def _lib_cache(self, value):
+        _wh._lib_cache = value
+
+    @property
+    def _lib_cache_ts(self):
+        return _wh._lib_cache_ts
+
+    @_lib_cache_ts.setter
+    def _lib_cache_ts(self, value):
+        _wh._lib_cache_ts = value
+
+    @property
+    def _LIB_CACHE_TTL(self):
+        return _wh._LIB_CACHE_TTL
+
 _sys.modules[__name__].__class__ = _WebModule
