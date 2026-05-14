@@ -1003,29 +1003,30 @@ select option{background:var(--bg3)}
   overflow:hidden;
 }
 .ev-cal-hdr{
-  display:flex;align-items:center;justify-content:space-between;
+  display:flex;align-items:center;
   padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--border);
+  gap:8px;
 }
 .ev-cal-title{
-  font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text);
+  font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--text);
 }
 .ev-cal-nav{
-  background:none;border:none;color:var(--text3);cursor:pointer;
-  font-size:16px;padding:2px 8px;border-radius:5px;transition:all 0.15s;
+  background:var(--bg4);border:1px solid var(--border);color:var(--text3);cursor:pointer;
+  font-size:16px;padding:3px 10px;border-radius:6px;transition:all 0.15s;line-height:1;
 }
-.ev-cal-nav:hover{background:var(--bg4);color:var(--text)}
+.ev-cal-nav:hover{background:rgba(184,115,51,0.12);color:var(--accent);border-color:var(--accent)}
 .ev-cal-grid{
   display:grid;grid-template-columns:repeat(7,1fr);
   border-collapse:collapse;
 }
 .ev-cal-day-lbl{
-  text-align:center;padding:6px 2px;font-size:10px;font-weight:700;
+  text-align:center;padding:7px 2px;font-size:10px;font-weight:700;
   text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);
   background:var(--bg3);border-bottom:1px solid var(--border);
   font-family:var(--font-display);
 }
 .ev-cal-cell{
-  position:relative;min-height:52px;padding:4px;
+  position:relative;min-height:62px;padding:5px 4px;
   border:1px solid var(--border);border-top:none;border-left:none;
   text-align:center;cursor:default;transition:background 0.15s;
   font-size:12px;font-family:var(--font-sans);
@@ -1037,15 +1038,23 @@ select option{background:var(--bg3)}
 .ev-cal-cell.today .ev-cal-num{
   background:var(--accent);color:#fff;border-radius:50%;
   width:22px;height:22px;line-height:22px;margin:0 auto;font-weight:700;
+  box-shadow:0 2px 8px rgba(184,115,51,0.4);
 }
-.ev-cal-cell.has-holiday{background:rgba(154,138,176,0.08)}
+.ev-cal-cell.has-holiday{background:rgba(154,138,176,0.10);border-color:rgba(154,138,176,0.2)}
 .ev-cal-cell.has-event{background:var(--blue-dim)}
-.ev-cal-cell.has-holiday.has-event{background:linear-gradient(135deg,rgba(154,138,176,0.12) 50%,rgba(122,159,194,0.12) 50%)}
+.ev-cal-cell.has-holiday.has-event{background:linear-gradient(160deg,rgba(154,138,176,0.14) 45%,rgba(122,159,194,0.14) 45%)}
 .ev-cal-num{font-size:12px;font-weight:500;color:var(--text2);line-height:22px}
-.ev-cal-dots{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;margin-top:2px;min-height:8px}
-.ev-cal-dot-h{width:6px;height:6px;border-radius:50%;background:var(--purple);flex-shrink:0}
-.ev-cal-dot-e{width:6px;height:6px;border-radius:50%;background:var(--blue);flex-shrink:0}
-.ev-cal-hd-name{font-size:9px;color:var(--purple);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;display:block}
+.ev-cal-dots{display:flex;gap:3px;justify-content:center;flex-wrap:wrap;margin-top:3px;min-height:8px}
+.ev-cal-dot-h{width:7px;height:7px;border-radius:50%;background:var(--purple);flex-shrink:0;box-shadow:0 0 4px rgba(154,138,176,0.6)}
+.ev-cal-dot-e{width:7px;height:7px;border-radius:50%;background:var(--blue);flex-shrink:0}
+.ev-cal-hd-name{
+  font-size:9px;color:var(--purple);line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;display:block;
+  margin-top:2px;font-weight:600;
+}
+.ev-cal-ev-count{
+  font-size:9px;color:var(--blue);line-height:1.2;display:block;margin-top:1px;font-weight:600;
+}
 
 </style>
 </head>
@@ -1348,25 +1357,51 @@ select option{background:var(--bg3)}
 
   <!-- ── One-Shot form ── -->
   <div class="card">
-    <div class="card-hdr"><h3>One-Shot Event</h3>
+    <div class="card-hdr">
+      <i class="fa fa-calendar-plus" style="color:var(--accent);margin-right:6px"></i>
+      <h3>One-Shot Event</h3>
       <span style="margin-left:auto;font-size:11px;color:var(--text3)">Select streams and assign a video to each</span>
     </div>
     <div class="card-body">
 
-      <!-- Row 1: datetime + position + after + submit -->
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:16px">
-        <div class="fg"><label>Play at (local time) *</label><input type="datetime-local" id="ev-dt"></div>
-        <div class="fg"><label>Start position (HH:MM:SS)</label><input type="text" id="ev-pos" value="00:00:00" placeholder="00:00:00"></div>
-        <div class="fg"><label>After playback</label>
+      <!-- Row 1: datetime + positions + after + submit -->
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(175px,1fr));margin-bottom:16px;gap:12px">
+        <div class="fg">
+          <label><i class="fa fa-clock" style="margin-right:4px;opacity:0.65"></i>Play at (local time) *</label>
+          <input type="datetime-local" id="ev-dt">
+        </div>
+        <div class="fg">
+          <label><i class="fa fa-step-forward" style="margin-right:4px;opacity:0.65"></i>Start position (HH:MM:SS)</label>
+          <input type="text" id="ev-pos" value="00:00:00" placeholder="00:00:00"
+                 pattern="\d{1,2}:\d{2}:\d{2}" title="Format: HH:MM:SS">
+        </div>
+        <div class="fg">
+          <label style="display:flex;align-items:center;gap:6px">
+            <i class="fa fa-step-backward" style="opacity:0.65"></i>End position
+            <span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span>
+          </label>
+          <input type="text" id="ev-end-pos" placeholder="leave blank = play to end"
+                 pattern="\d{1,2}:\d{2}:\d{2}" title="Stop playback at this position (HH:MM:SS). Leave blank to play to end.">
+        </div>
+        <div class="fg"><label><i class="fa fa-redo" style="margin-right:4px;opacity:0.65"></i>After playback</label>
           <select id="ev-post">
             <option value="resume">Resume playlist</option>
             <option value="stop">Stop stream</option>
             <option value="black">Black screen</option>
           </select>
         </div>
-        <div class="fg" style="justify-content:flex-end">
-          <label>&nbsp;</label>
-          <button class="btn g" onclick="schedEvent()" title="Schedule events for all checked streams">✓ Schedule All</button>
+        <div class="fg" style="justify-content:flex-end;align-self:flex-end">
+          <button class="btn g" onclick="schedEvent()" title="Schedule events for all checked streams"
+                  style="width:100%;justify-content:center;gap:8px;padding:9px 16px">
+            <i class="fa fa-check"></i> Schedule All
+          </button>
+        </div>
+      </div>
+      <!-- Progress bar for bulk scheduling -->
+      <div id="ev-sched-progress" style="display:none;margin-bottom:12px">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:5px" id="ev-sched-msg">Scheduling…</div>
+        <div style="height:4px;background:var(--bg3);border-radius:2px;overflow:hidden">
+          <div id="ev-sched-bar" style="height:100%;width:0%;background:var(--accent-gradient);border-radius:2px;transition:width 0.2s"></div>
         </div>
       </div>
 
@@ -1417,15 +1452,17 @@ select option{background:var(--bg3)}
       <table>
         <thead><tr>
           <th>Stream</th><th>File</th><th>Play At</th>
-          <th>Countdown</th><th>After</th><th>Status</th><th style="text-align:right">Actions</th>
+          <th>Countdown</th><th>Position</th><th>After</th><th>Status</th><th style="text-align:right">Actions</th>
         </tr></thead>
-        <tbody id="evtbl"><tr><td colspan="7"><div class="empty"><div class="empty-icon">📅</div>Loading…</div></td></tr></tbody>
+        <tbody id="evtbl"><tr><td colspan="8"><div class="empty"><div class="empty-icon">📅</div>Loading…</div></td></tr></tbody>
       </table>
     </div>
   </div>
 
   <!-- ── Mini Calendar ── -->
-  <div class="section-hdr"><h2>Calendar View</h2><span class="sep"></span>
+  <div class="section-hdr">
+    <h2>Calendar View</h2>
+    <span class="sep"></span>
     <span style="font-size:11px;color:var(--purple);display:flex;align-items:center;gap:5px">
       <span style="width:8px;height:8px;border-radius:50%;background:var(--purple);display:inline-block"></span> Holiday
     </span>
@@ -1438,6 +1475,17 @@ select option{background:var(--bg3)}
       <button class="ev-cal-nav" onclick="evCalMove(-1)" title="Previous month">&#8249;</button>
       <span class="ev-cal-title" id="ev-cal-title">—</span>
       <button class="ev-cal-nav" onclick="evCalMove(1)" title="Next month">&#8250;</button>
+      <div style="display:flex;align-items:center;gap:12px;margin-left:auto;font-size:11px">
+        <span style="display:flex;align-items:center;gap:5px;color:var(--purple)">
+          <span style="width:10px;height:10px;border-radius:50%;background:var(--purple);display:inline-block;flex-shrink:0"></span>
+          Holiday
+        </span>
+        <span style="display:flex;align-items:center;gap:5px;color:var(--blue)">
+          <span style="width:10px;height:10px;border-radius:50%;background:var(--blue);display:inline-block;flex-shrink:0"></span>
+          Event
+        </span>
+        <button class="btn b" style="padding:3px 10px;font-size:10px" onclick="evCalRender()" title="Refresh calendar">↻</button>
+      </div>
     </div>
     <div class="ev-cal-grid" id="ev-cal-grid"></div>
   </div>
@@ -2625,9 +2673,11 @@ function evCalRender(){
       ...(hasEv?[`<span class="ev-cal-dot-e" title="${evCount} event(s)"></span>`]:[]),
     ].join('');
     const hdLabel = holidays.length ? `<span class="ev-cal-hd-name" title="${esc(holidays.join(', '))}">${esc(holidays[0])}</span>` : '';
+    const evLabel = hasEv ? `<span class="ev-cal-ev-count" title="${evCount} event(s) scheduled">📅 ${evCount}</span>` : '';
     html += `<div class="${cls}" title="${esc(dStr)}${hasHd?' — '+holidays.join(', '):''}${hasEv?' ['+evCount+' event(s)]':''}">
       <div class="ev-cal-num">${day}</div>
       ${hdLabel}
+      ${evLabel}
       <div class="ev-cal-dots">${dots}</div>
     </div>`;
   }
@@ -2753,7 +2803,7 @@ function renderEventsTable(){
   });
   if(!rows.length){
     document.getElementById('evtbl').innerHTML =
-      `<tr><td colspan="7"><div class="empty"><div class="empty-icon">📅</div>No events${filterStream||filterStatus?' matching filter':' scheduled'}.</div></td></tr>`;
+      `<tr><td colspan="8"><div class="empty"><div class="empty-icon">📅</div>No events${filterStream||filterStatus?' matching filter':' scheduled'}.</div></td></tr>`;
     return;
   }
   const now = Date.now();
@@ -2767,11 +2817,15 @@ function renderEventsTable(){
       ? `<button class="btn" style="font-size:10px;padding:3px 8px;color:var(--yellow);border-color:rgba(201,168,120,0.4)"
            onclick="fireNow('${esc(ev.event_id)}')" title="Fire this event right now, skipping the scheduled time">▶ Now</button>`
       : '';
+    const posStr = ev.start_pos && ev.start_pos !== '00:00:00'
+      ? (ev.end_pos ? `${esc(ev.start_pos)} → ${esc(ev.end_pos)}` : `▶ ${esc(ev.start_pos)}`)
+      : (ev.end_pos ? `→ ${esc(ev.end_pos)}` : '<span style="color:var(--text3)">—</span>');
     return `<tr style="${rowStyle}">
       <td style="color:var(--accent-light)">${esc(ev.stream_name)}</td>
       <td class="td-muted" title="${esc(ev.file_path||ev.file_name)}">${esc(ev.file_name)}</td>
       <td class="td-muted" style="white-space:nowrap;font-family:var(--font-mono);font-size:11px">${esc(ev.play_at)}</td>
       <td class="ev-cd" data-secs="${secsNow}" style="font-size:11px;color:${cdColor};white-space:nowrap">${_fmtCountdown(secsNow)}</td>
+      <td class="td-muted" style="font-size:11px;font-family:var(--font-mono);white-space:nowrap">${posStr}</td>
       <td class="td-muted" style="font-size:11px">${esc(ev.post_action||'resume')}</td>
       <td><span class="badge ${ev.played?'STOPPED':'SCHED'}">${ev.played?'✓ Played':'⏰ Pending'}</span></td>
       <td style="text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end">
@@ -2807,35 +2861,88 @@ function _startEvTimers(){
 }
 
 async function schedEvent(){
-  const dt   = document.getElementById('ev-dt').value;
-  const pos  = document.getElementById('ev-pos').value||'00:00:00';
-  const post = document.getElementById('ev-post').value;
-  if(!dt){ toast('Set a date/time','err'); return; }
+  const dt      = document.getElementById('ev-dt').value;
+  const pos     = (document.getElementById('ev-pos').value||'00:00:00').trim();
+  const endPos  = (document.getElementById('ev-end-pos')?.value||'').trim();
+  const post    = document.getElementById('ev-post').value;
+
+  if(!dt){ toast('Set a date/time first','err'); return; }
+
+  // Validate start position format
+  const hmsRe = /^\d{1,2}:\d{2}:\d{2}$/;
+  const startPosVal = hmsRe.test(pos) ? pos : '00:00:00';
+  const endPosVal   = endPos && hmsRe.test(endPos) ? endPos : '';
 
   const checked = Array.from(document.querySelectorAll('.ev-stream-cb:checked'));
   if(!checked.length){ toast('Select at least one stream','err'); return; }
 
-  let scheduled = 0, errors = 0;
+  // Validate all files before starting any requests
+  const tasks = [];
+  const missingFile = [];
   for(const cb of checked){
-    const idx   = parseInt(cb.dataset.idx);
-    const stream= _evStreams[idx];
+    const idx    = parseInt(cb.dataset.idx);
+    const stream = _evStreams[idx];
     if(!stream) continue;
     const fileSel = document.getElementById('ev-file-'+idx);
-    const file    = fileSel ? fileSel.value : '';
-    if(!file){ toast(`No file selected for "${stream.name}"`, 'err'); errors++; continue; }
+    const file    = fileSel ? fileSel.value.trim() : '';
+    if(!file){ missingFile.push(stream.name); continue; }
+    tasks.push({stream, file});
+  }
+  if(missingFile.length){
+    toast(`No file for: ${missingFile.join(', ')}`, 'err');
+    return;
+  }
+
+  // Show progress bar
+  const progWrap = document.getElementById('ev-sched-progress');
+  const progBar  = document.getElementById('ev-sched-bar');
+  const progMsg  = document.getElementById('ev-sched-msg');
+  if(progWrap){ progWrap.style.display=''; progBar.style.width='0%'; }
+
+  let scheduled = 0, errors = 0;
+  const errMsgs = [];
+
+  for(let i=0; i<tasks.length; i++){
+    const {stream, file} = tasks[i];
+    if(progMsg) progMsg.textContent = `Scheduling ${stream.name} (${i+1}/${tasks.length})…`;
+    if(progBar) progBar.style.width = Math.round((i/tasks.length)*100)+'%';
     try{
+      const payload = {
+        stream_name: stream.name,
+        file_path:   file,
+        play_at:     dt,
+        start_pos:   startPosVal,
+        post_action: post,
+      };
+      if(endPosVal) payload.end_pos = endPosVal;
       const r = await fetch('/api/add_event',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({stream_name:stream.name,file_path:file,play_at:dt,start_pos:pos,post_action:post})
+        body: JSON.stringify(payload)
       });
       const j = await r.json();
       if(j.ok){ scheduled++; }
-      else{ toast(`${stream.name}: ${j.msg||'Error'}`, 'err'); errors++; }
-    }catch(e){ toast(`${stream.name}: Request failed`, 'err'); errors++; }
+      else{ errMsgs.push(`${stream.name}: ${j.msg||'Error'}`); errors++; }
+    }catch(e){
+      errMsgs.push(`${stream.name}: Network error`);
+      errors++;
+    }
   }
+
+  // Complete progress bar
+  if(progBar) progBar.style.width='100%';
+  if(progMsg){
+    progMsg.textContent = scheduled
+      ? `✓ Scheduled ${scheduled} event${scheduled>1?'s':''}${errors?' · '+errors+' failed':''}${errMsgs.length?' — '+errMsgs[0]:''}`
+      : `✕ All ${errors} failed`;
+    progMsg.style.color = errors ? 'var(--red)' : 'var(--green)';
+  }
+  setTimeout(()=>{ if(progWrap) progWrap.style.display='none'; if(progMsg) progMsg.style.color=''; }, 4000);
+
   if(scheduled > 0){
     toast(`Scheduled ${scheduled} event${scheduled>1?'s':''}${errors?' ('+errors+' failed)':''}`, errors?'info':'ok');
     await loadEvents();
+  } else if(errors > 0){
+    toast(errMsgs[0]||'All events failed to schedule', 'err');
   }
 }
 
@@ -4570,6 +4677,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "seconds_until": round(diff),
                 "post_action":   ev.post_action,
                 "start_pos":     ev.start_pos if hasattr(ev, "start_pos") else "00:00:00",
+                "end_pos":       ev.end_pos   if hasattr(ev, "end_pos")   else "",
                 "played":        ev.played,
             })
         self._json(result)
@@ -4946,12 +5054,16 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 file_path   = str(data.get("file_path",   "")).strip()
                 play_at     = str(data.get("play_at",     "")).strip()
                 start_pos   = str(data.get("start_pos",   "00:00:00")).strip()
+                end_pos     = str(data.get("end_pos",     "")).strip()
                 post_action = str(data.get("post_action", "resume")).strip()
                 notes       = str(data.get("notes", "")).strip()[:200]
                 if post_action not in ("resume", "stop", "black"):
                     post_action = "resume"
                 if not re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", start_pos):
                     start_pos = "00:00:00"
+                # end_pos is optional; validate if provided
+                if end_pos and not re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", end_pos):
+                    end_pos = ""
                 if not stream_name:
                     raise ValueError("Stream name is required")
                 if mgr.get_state(stream_name) is None:
@@ -4974,7 +5086,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 # Guard: reject exact duplicate (same stream+time+file)
                 if any(e.event_id == ev_id for e in mgr.events):
                     raise ValueError("An identical event is already scheduled")
-                ev = OneShotEvent(
+                ev_kwargs = dict(
                     event_id    = ev_id,
                     stream_name = stream_name,
                     file_path   = fp,
@@ -4982,6 +5094,13 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                     post_action = post_action,
                     start_pos   = start_pos,
                 )
+                # end_pos is stored as attribute if OneShotEvent supports it
+                ev = OneShotEvent(**ev_kwargs)
+                if end_pos:
+                    try:
+                        ev.end_pos = end_pos
+                    except AttributeError:
+                        pass
                 mgr.add_event(ev)
                 self._json({"ok": True, "msg": f"Event scheduled for {dt.strftime('%Y-%m-%d %H:%M')}"})
             except Exception as exc:
