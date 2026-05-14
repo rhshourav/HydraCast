@@ -443,13 +443,14 @@ class StreamWorker:
         self.state.oneshot_active = True
         self._kill_ffmpeg()
 
-        # Guard: start_pos may be absent on events loaded from old events.json
-        start_pos_str = getattr(event, "start_pos", "00:00:00") or "00:00:00"
         try:
-            h, m, s = start_pos_str.split(":")
+            h, m, s = event.start_pos.split(":")
             seek_secs = int(h) * 3600 + int(m) * 60 + float(s)
         except Exception:
             seek_secs = 0.0
+
+        # loop_count: -1 = infinite, 0 = once, N = N extra loops
+        loop_count = getattr(event, "loop_count", 0)
 
         # Cycle MediaMTX to clear old publisher session; same reason as
         # playlist advance — without this the new push gets 400 Bad Request.
@@ -458,9 +459,10 @@ class StreamWorker:
             self.state.oneshot_active = False
             return
 
-        item = PlaylistItem(file_path=event.file_path, start_position=start_pos_str)
+        item = PlaylistItem(file_path=event.file_path, start_position=event.start_pos)
         self.state.duration = probe_duration(item.file_path)
-        self._start_ffmpeg_with_retry(item, seek_secs)
+        # CRITICAL: pass oneshot=True so _start_ffmpeg never adds -stream_loop -1
+        self._start_ffmpeg_with_retry(item, seek_secs, oneshot=True, loop_count=loop_count)
 
         def _after() -> None:
             proc = self.state.ffmpeg_proc
@@ -974,9 +976,18 @@ class StreamWorker:
             self._log(self.state.error_msg, "ERROR")
             return False
 
-    def _start_ffmpeg(self, item: PlaylistItem, seek_pos: float) -> bool:
-        cfg       = self.state.config
-        loop_flag = ["-stream_loop", "-1"] if len(cfg.playlist) == 1 else []
+    def _start_ffmpeg(self, item: PlaylistItem, seek_pos: float,
+                      oneshot: bool = False, loop_count: int = -1) -> bool:
+        cfg = self.state.config
+        # One-shot events must NEVER loop — the _after() thread waits for proc.poll()
+        # and relies on FFmpeg exiting naturally after the file ends.
+        # loop_count=-1 means infinite; 0 means play once (no loop); N>0 means N extra loops.
+        if oneshot:
+            loop_flag = []          # play exactly once, then exit
+        elif loop_count == -1:
+            loop_flag = ["-stream_loop", "-1"] if len(cfg.playlist) == 1 else []
+        else:
+            loop_flag = ["-stream_loop", str(loop_count)] if loop_count > 0 else []
         # When stream_path is empty, push to the concrete path "stream".
         # Never use a bare rtsp://host:port/ (trailing slash = path "/") —
         # MediaMTX v1.9.1 treats "/" differently from a named path and returns
@@ -1073,6 +1084,7 @@ class StreamWorker:
     def _start_ffmpeg_with_retry(
         self, item: PlaylistItem, seek_pos: float,
         max_retries: int = 6, retry_delay: float = 2.0,
+        oneshot: bool = False, loop_count: int = -1,
     ) -> bool:
         """
         Launch FFmpeg and retry if MediaMTX returns 400 Bad Request.
@@ -1087,7 +1099,7 @@ class StreamWorker:
         """
         backoff = retry_delay
         for attempt in range(1, max_retries + 1):
-            if not self._start_ffmpeg(item, seek_pos):
+            if not self._start_ffmpeg(item, seek_pos, oneshot=oneshot, loop_count=loop_count):
                 return False  # binary/launch error — no point retrying
 
             proc = self.state.ffmpeg_proc
