@@ -254,6 +254,69 @@ def calculate_compliance_offset_after_event(
 
 
 # ---------------------------------------------------------------------------
+# Drift detection
+# ---------------------------------------------------------------------------
+
+def check_compliance_drift(
+    current_pos: float,
+    video_duration: float,
+    broadcast_start: str = DEFAULT_COMPLIANCE_START,
+    loop_calculation: bool = False,
+    drift_threshold: float = 30.0,
+    reference_time: Optional[datetime] = None,
+) -> Tuple[bool, float, float]:
+    """
+    Compare the current playback position against where compliance says it
+    should be and decide whether a hard resync is warranted.
+
+    Parameters
+    ----------
+    current_pos:
+        Current FFmpeg playback position in seconds (from StreamState.current_pos).
+    video_duration:
+        Total duration of the compliance video in seconds.
+    broadcast_start:
+        Wall-clock time that equals video position 00:00:00.
+    loop_calculation:
+        Passed through to calculate_compliance_offset unchanged.
+    drift_threshold:
+        Maximum tolerated drift in seconds before a resync is recommended.
+    reference_time:
+        Override "now" — useful for unit tests.
+
+    Returns
+    -------
+    (should_resync, drift_seconds, expected_pos)
+
+    should_resync:
+        True when abs(drift) > drift_threshold.
+    drift_seconds:
+        current_pos − expected_pos.  Positive means the stream is ahead of
+        schedule; negative means it is behind.
+    expected_pos:
+        The correct seek target right now.
+    """
+    if video_duration <= 0:
+        log.debug("check_compliance_drift: video_duration unknown — skip check")
+        return False, 0.0, 0.0
+
+    expected_pos, _ = calculate_compliance_offset(
+        video_duration=video_duration,
+        broadcast_start=broadcast_start,
+        loop_calculation=loop_calculation,
+        reference_time=reference_time,
+    )
+    drift = current_pos - expected_pos
+    should_resync = abs(drift) > drift_threshold
+    log.debug(
+        "compliance drift: current=%.1fs expected=%.1fs drift=%+.1fs "
+        "threshold=%.1fs resync=%s",
+        current_pos, expected_pos, drift, drift_threshold, should_resync,
+    )
+    return should_resync, drift, expected_pos
+
+
+# ---------------------------------------------------------------------------
 # Full compliance start helper (combines file selection + seek offset)
 # ---------------------------------------------------------------------------
 
