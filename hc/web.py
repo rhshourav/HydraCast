@@ -941,6 +941,112 @@ select option{background:var(--bg3)}
 .fm-dialog h4{font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text)}
 .fm-dialog-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
 
+/* ─────────── HOLIDAY POPUP ─────────── */
+.hd-popup{
+  position:absolute;right:0;top:calc(100% + 8px);
+  width:310px;max-height:340px;overflow-y:auto;
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  box-shadow:0 8px 32px var(--shadow);z-index:500;
+  animation:slideUp 0.18s ease both;
+  scrollbar-width:thin;
+}
+.hd-popup-hdr{
+  padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg3);
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;
+  color:var(--text3);font-family:var(--font-display);
+  border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+  position:sticky;top:0;z-index:1;
+}
+.hd-row{
+  padding:7px 14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;transition:background 0.15s;
+}
+.hd-row:last-child{border-bottom:none}
+.hd-row:hover{background:var(--bg3)}
+.hd-row.today{background:var(--green-dim) !important}
+.hd-row.past{opacity:0.42}
+.hd-date{font-family:var(--font-mono);font-size:11px;color:var(--accent-light);white-space:nowrap;min-width:82px}
+.hd-name{font-size:12px;color:var(--text2);flex:1;line-height:1.4}
+.hd-today-tag{font-size:10px;font-weight:700;color:var(--green);background:var(--green-dim);border:1px solid rgba(107,142,107,0.4);border-radius:20px;padding:1px 7px;white-space:nowrap}
+
+/* ─────────── MULTI-STREAM EVENT FORM ─────────── */
+.ev-stream-grid{
+  display:flex;flex-direction:column;gap:0;
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);
+  max-height:220px;overflow-y:auto;
+  scrollbar-width:thin;
+}
+.ev-stream-row{
+  display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;align-items:center;
+  padding:7px 12px;border-bottom:1px solid var(--border);
+  font-size:12px;transition:background 0.15s;
+}
+.ev-stream-row:last-child{border-bottom:none}
+.ev-stream-row:hover{background:var(--bg4)}
+.ev-stream-row.checked{background:rgba(184,115,51,0.06)}
+.ev-stream-row label{
+  display:flex;align-items:center;gap:7px;cursor:pointer;
+  font-size:12px;color:var(--text2);font-weight:500;
+  text-transform:none;letter-spacing:0;
+}
+.ev-stream-row select{
+  background:var(--bg);border:1px solid var(--border);color:var(--text);
+  border-radius:6px;padding:4px 8px;font:12px var(--font-sans);
+  width:100%;transition:border-color 0.2s;
+}
+.ev-stream-row select:focus{outline:none;border-color:var(--accent)}
+.ev-stream-row select:disabled{opacity:0.35;pointer-events:none}
+
+/* ─────────── MINI CALENDAR ─────────── */
+.ev-cal{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
+  overflow:hidden;
+}
+.ev-cal-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--border);
+}
+.ev-cal-title{
+  font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text);
+}
+.ev-cal-nav{
+  background:none;border:none;color:var(--text3);cursor:pointer;
+  font-size:16px;padding:2px 8px;border-radius:5px;transition:all 0.15s;
+}
+.ev-cal-nav:hover{background:var(--bg4);color:var(--text)}
+.ev-cal-grid{
+  display:grid;grid-template-columns:repeat(7,1fr);
+  border-collapse:collapse;
+}
+.ev-cal-day-lbl{
+  text-align:center;padding:6px 2px;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);
+  background:var(--bg3);border-bottom:1px solid var(--border);
+  font-family:var(--font-display);
+}
+.ev-cal-cell{
+  position:relative;min-height:52px;padding:4px;
+  border:1px solid var(--border);border-top:none;border-left:none;
+  text-align:center;cursor:default;transition:background 0.15s;
+  font-size:12px;font-family:var(--font-sans);
+}
+.ev-cal-cell:nth-child(7n){border-right:none}
+.ev-cal-cell:hover{background:var(--bg3)}
+.ev-cal-cell.other-month .ev-cal-num{opacity:0.28}
+.ev-cal-cell.today{background:rgba(184,115,51,0.09)}
+.ev-cal-cell.today .ev-cal-num{
+  background:var(--accent);color:#fff;border-radius:50%;
+  width:22px;height:22px;line-height:22px;margin:0 auto;font-weight:700;
+}
+.ev-cal-cell.has-holiday{background:rgba(154,138,176,0.08)}
+.ev-cal-cell.has-event{background:var(--blue-dim)}
+.ev-cal-cell.has-holiday.has-event{background:linear-gradient(135deg,rgba(154,138,176,0.12) 50%,rgba(122,159,194,0.12) 50%)}
+.ev-cal-num{font-size:12px;font-weight:500;color:var(--text2);line-height:22px}
+.ev-cal-dots{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;margin-top:2px;min-height:8px}
+.ev-cal-dot-h{width:6px;height:6px;border-radius:50%;background:var(--purple);flex-shrink:0}
+.ev-cal-dot-e{width:6px;height:6px;border-radius:50%;background:var(--blue);flex-shrink:0}
+.ev-cal-hd-name{font-size:9px;color:var(--purple);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;display:block}
+
 </style>
 </head>
 <body>
@@ -1008,6 +1114,20 @@ select option{background:var(--bg3)}
     <div class="stat-pill">CPU <b id="h-cpu">—</b></div>
     <div class="stat-pill">RAM <b id="h-ram">—</b></div>
     <div class="stat-pill" style="font-variant-numeric:tabular-nums"><b id="h-time">—</b></div>
+
+    <!-- ── Holidays pill ── -->
+    <div style="position:relative" id="hd-wrap">
+      <button class="stat-pill" id="hd-btn" onclick="toggleHolidays(event)"
+          title="Bangladesh Public Holidays"
+          style="cursor:pointer;user-select:none;border-color:rgba(154,138,176,0.35)">
+        🗓&nbsp;<b id="hd-next-label" style="color:var(--purple)">Holidays</b>
+      </button>
+      <div class="hd-popup" id="hd-popup" style="display:none">
+        <div class="hd-popup-hdr">🇧🇩 Bangladesh Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)"></span></div>
+        <div id="hd-list"><div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Loading…</div></div>
+      </div>
+    </div>
+
     <div class="hc-toggle-wrap" title="Toggle between dark and light mode">
       <input type="checkbox" class="hc-toggle-cb" id="hc-theme-cb">
       <label for="hc-theme-cb" class="hc-toggle-label" title="Toggle between dark and light mode">
@@ -1225,12 +1345,16 @@ select option{background:var(--bg3)}
 <!-- ══ EVENTS TAB ══ -->
 <div id="tab-events" class="tab-panel">
   <div class="section-hdr"><h2>Schedule Event</h2><span class="sep"></span></div>
+
+  <!-- ── One-Shot form ── -->
   <div class="card">
-    <div class="card-hdr"><h3>One-Shot Event</h3></div>
+    <div class="card-hdr"><h3>One-Shot Event</h3>
+      <span style="margin-left:auto;font-size:11px;color:var(--text3)">Select streams and assign a video to each</span>
+    </div>
     <div class="card-body">
-      <div class="form-grid" style="margin-bottom:12px">
-        <div class="fg"><label>Stream *</label><select id="ev-stream"></select></div>
-        <div class="fg"><label>Video File *</label><select id="ev-file"></select></div>
+
+      <!-- Row 1: datetime + position + after + submit -->
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:16px">
         <div class="fg"><label>Play at (local time) *</label><input type="datetime-local" id="ev-dt"></div>
         <div class="fg"><label>Start position (HH:MM:SS)</label><input type="text" id="ev-pos" value="00:00:00" placeholder="00:00:00"></div>
         <div class="fg"><label>After playback</label>
@@ -1242,12 +1366,29 @@ select option{background:var(--bg3)}
         </div>
         <div class="fg" style="justify-content:flex-end">
           <label>&nbsp;</label>
-          <button class="btn g" onclick="schedEvent()" title="Schedule the event at the specified date and time">✓ Schedule</button>
+          <button class="btn g" onclick="schedEvent()" title="Schedule events for all checked streams">✓ Schedule All</button>
         </div>
       </div>
+
+      <!-- Row 2: stream + file grid -->
+      <div style="margin-bottom:6px;display:flex;align-items:center;gap:10px">
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
+          <input type="checkbox" id="ev-sel-all" style="width:auto;accent-color:var(--accent)"
+                 onchange="evToggleAll(this.checked)" title="Select / deselect all streams">
+          <b>Select All Streams</b>
+        </label>
+        <span style="font-size:11px;color:var(--text3)" id="ev-sel-count"></span>
+      </div>
+
+      <!-- Stream rows (stream checkbox + file selector each) -->
+      <div class="ev-stream-grid" id="ev-stream-grid">
+        <div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Loading streams…</div>
+      </div>
+
     </div>
   </div>
 
+  <!-- ── Scheduled Events table ── -->
   <div class="section-hdr">
     <h2>Scheduled Events</h2>
     <span class="sep"></span>
@@ -1282,6 +1423,25 @@ select option{background:var(--bg3)}
       </table>
     </div>
   </div>
+
+  <!-- ── Mini Calendar ── -->
+  <div class="section-hdr"><h2>Calendar View</h2><span class="sep"></span>
+    <span style="font-size:11px;color:var(--purple);display:flex;align-items:center;gap:5px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--purple);display:inline-block"></span> Holiday
+    </span>
+    <span style="font-size:11px;color:var(--blue);display:flex;align-items:center;gap:5px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block"></span> Event
+    </span>
+  </div>
+  <div class="ev-cal" id="ev-cal">
+    <div class="ev-cal-hdr">
+      <button class="ev-cal-nav" onclick="evCalMove(-1)" title="Previous month">&#8249;</button>
+      <span class="ev-cal-title" id="ev-cal-title">—</span>
+      <button class="ev-cal-nav" onclick="evCalMove(1)" title="Next month">&#8250;</button>
+    </div>
+    <div class="ev-cal-grid" id="ev-cal-grid"></div>
+  </div>
+
 </div>
 
 <!-- ══ CONFIGURE TAB ══ -->
@@ -1757,7 +1917,7 @@ function _doSwitchTab(name,btn){
   if(name==='streams'){loadStreams();}
   else if(name==='logs'){fillLogStreamSel();loadLogs();}
   else if(name==='media'){loadSubdirs();loadFiles(_fmCurrentPath);}
-  else if(name==='events'){loadEvtForm();loadEvents();}
+  else if(name==='events'){loadEvtForm();loadEvents();if(!_hdLoaded)loadHolidays();_startEvTimers();}
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
   else if(name==='settings'){updateSysInfo();loadMailConfig();}
@@ -2340,11 +2500,154 @@ async function upOne(file){
 }
 
 // ═══════════════════════════════════
+// HOLIDAYS
+// ═══════════════════════════════════
+let _hdData = [];
+let _hdLoaded = false;
+
+function toggleHolidays(e){
+  if(e) e.stopPropagation();
+  const popup = document.getElementById('hd-popup');
+  const isOpen = popup.style.display !== 'none';
+  popup.style.display = isOpen ? 'none' : 'block';
+  if(!isOpen && !_hdLoaded) loadHolidays();
+}
+document.addEventListener('click', e=>{
+  const wrap = document.getElementById('hd-wrap');
+  if(wrap && !wrap.contains(e.target)){
+    const p = document.getElementById('hd-popup');
+    if(p) p.style.display = 'none';
+  }
+});
+
+async function loadHolidays(){
+  try{
+    const data = await fetch('/api/holidays').then(r=>r.json());
+    if(!Array.isArray(data)){ throw new Error('bad response'); }
+    _hdData = data;
+    _hdLoaded = true;
+    const today = new Date().toISOString().slice(0,10);
+    const yr    = today.slice(0,4);
+    document.getElementById('hd-year').textContent = yr;
+    // Set next upcoming holiday label in pill
+    const upcoming = _hdData.filter(h=>h.date >= today);
+    if(upcoming.length){
+      const next = upcoming[0];
+      const d = new Date(next.date + 'T00:00:00');
+      const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      document.getElementById('hd-next-label').textContent = label;
+    }
+    // Render list
+    const list = document.getElementById('hd-list');
+    if(!_hdData.length){
+      list.innerHTML='<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">No holiday data available</div>';
+      return;
+    }
+    list.innerHTML = _hdData.map(h=>{
+      const isPast   = h.date < today;
+      const isToday  = h.date === today;
+      return `<div class="hd-row${isPast?' past':''}${isToday?' today':''}">
+        <div class="hd-date">${esc(h.date)}</div>
+        <div class="hd-name">${esc(h.name)}</div>
+        ${isToday?'<div class="hd-today-tag">TODAY</div>':''}
+      </div>`;
+    }).join('');
+    // Refresh calendar if it's rendered
+    evCalRender();
+  }catch(e){
+    document.getElementById('hd-list').innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px">⚠ Failed to load holidays. Ensure the <code>holidays</code> Python package is installed.</div>';
+  }
+}
+
+// ═══════════════════════════════════
+// MINI CALENDAR
+// ═══════════════════════════════════
+let _calYear  = new Date().getFullYear();
+let _calMonth = new Date().getMonth(); // 0-based
+
+function evCalMove(delta){
+  _calMonth += delta;
+  if(_calMonth > 11){ _calMonth = 0; _calYear++; }
+  if(_calMonth < 0) { _calMonth = 11; _calYear--; }
+  evCalRender();
+}
+
+function evCalRender(){
+  const grid  = document.getElementById('ev-cal-grid');
+  const title = document.getElementById('ev-cal-title');
+  if(!grid) return;
+
+  const monthName = new Date(_calYear, _calMonth, 1)
+    .toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  title.textContent = monthName;
+
+  // Build day-header row
+  const dayLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html = dayLabels.map(d=>`<div class="ev-cal-day-lbl">${d}</div>`).join('');
+
+  const today    = new Date().toISOString().slice(0,10);
+  const firstDay = new Date(_calYear, _calMonth, 1).getDay(); // 0=Sun
+  const daysInMo = new Date(_calYear, _calMonth+1, 0).getDate();
+  const daysInPrev= new Date(_calYear, _calMonth, 0).getDate();
+
+  // Build quick-lookup maps
+  const hdMap  = {}; // date-str → [names]
+  _hdData.forEach(h=>{ hdMap[h.date] = hdMap[h.date]||[]; hdMap[h.date].push(h.name); });
+  const evMap  = {}; // date-str → count
+  _evData.forEach(ev=>{
+    if(!ev.played){
+      const d=(ev.play_at_iso||ev.play_at.replace(' ','T')).slice(0,10);
+      evMap[d] = (evMap[d]||0)+1;
+    }
+  });
+
+  // Prev-month filler
+  for(let i=0;i<firstDay;i++){
+    const day = daysInPrev - firstDay + 1 + i;
+    html += `<div class="ev-cal-cell other-month"><div class="ev-cal-num">${day}</div></div>`;
+  }
+  // Current month
+  for(let day=1; day<=daysInMo; day++){
+    const mm   = String(_calMonth+1).padStart(2,'0');
+    const dd   = String(day).padStart(2,'0');
+    const dStr = `${_calYear}-${mm}-${dd}`;
+    const isToday   = dStr === today;
+    const holidays  = hdMap[dStr] || [];
+    const evCount   = evMap[dStr] || 0;
+    const hasHd     = holidays.length > 0;
+    const hasEv     = evCount > 0;
+    let cls = 'ev-cal-cell';
+    if(isToday)  cls += ' today';
+    if(hasHd)    cls += ' has-holiday';
+    if(hasEv)    cls += ' has-event';
+    const dots = [
+      ...holidays.slice(0,2).map(()=>'<span class="ev-cal-dot-h" title="Holiday"></span>'),
+      ...(hasEv?[`<span class="ev-cal-dot-e" title="${evCount} event(s)"></span>`]:[]),
+    ].join('');
+    const hdLabel = holidays.length ? `<span class="ev-cal-hd-name" title="${esc(holidays.join(', '))}">${esc(holidays[0])}</span>` : '';
+    html += `<div class="${cls}" title="${esc(dStr)}${hasHd?' — '+holidays.join(', '):''}${hasEv?' ['+evCount+' event(s)]':''}">
+      <div class="ev-cal-num">${day}</div>
+      ${hdLabel}
+      <div class="ev-cal-dots">${dots}</div>
+    </div>`;
+  }
+  // Next-month filler
+  const total = firstDay + daysInMo;
+  const remainder = total % 7 === 0 ? 0 : 7 - (total % 7);
+  for(let i=1; i<=remainder; i++){
+    html += `<div class="ev-cal-cell other-month"><div class="ev-cal-num">${i}</div></div>`;
+  }
+  grid.innerHTML = html;
+}
+
+// ═══════════════════════════════════
 // EVENTS
 // ═══════════════════════════════════
 let _evData = [];          // cached event list from server
 let _evTimer = null;       // auto-refresh interval
 let _evCountdown = null;   // per-second countdown ticker
+let _evStreams = [];        // cached stream list
+let _evLib    = [];        // cached file library
 
 async function loadEvtForm(){
   try{
@@ -2352,26 +2655,76 @@ async function loadEvtForm(){
       fetch('/api/streams').then(r=>r.json()),
       fetch('/api/library').then(r=>r.json()),
     ]);
-    const streamSel = document.getElementById('ev-stream');
-    streamSel.innerHTML = streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
-    document.getElementById('ev-file').innerHTML =
-      lib.map(f=>`<option value="${esc(f.full_path)}">${esc(f.path)} (${esc(f.duration||'?')})</option>`).join('');
+    _evStreams = streams;
+    _evLib    = lib;
+
+    // Build stream-grid rows
+    const grid = document.getElementById('ev-stream-grid');
+    if(!streams.length){
+      grid.innerHTML = '<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">No streams configured.</div>';
+    } else {
+      const fileOpts = lib.map(f=>`<option value="${esc(f.full_path)}">${esc(f.path)} (${esc(f.duration||'?')})</option>`).join('');
+      grid.innerHTML = streams.map((s,i)=>`
+        <div class="ev-stream-row" id="ev-row-${i}">
+          <label>
+            <input type="checkbox" class="ev-stream-cb" data-idx="${i}"
+              style="width:auto;accent-color:var(--accent)"
+              onchange="evRowToggle(${i},this.checked)">
+            <span style="overflow:hidden;text-overflow:ellipsis;max-width:140px;white-space:nowrap"
+                  title="${esc(s.name)}">${esc(s.name)}</span>
+            <span style="font-size:10px;color:var(--text3)">:${s.port}</span>
+          </label>
+          <select id="ev-file-${i}" disabled title="Video file for ${esc(s.name)}">
+            ${fileOpts}
+          </select>
+        </div>`).join('');
+    }
+
+    // Set default datetime
     const dt=new Date(Date.now()+5*60000);
     document.getElementById('ev-dt').value=
       new Date(dt-dt.getTimezoneOffset()*60000).toISOString().slice(0,16);
+
     // Populate stream filter dropdown
     const fsel = document.getElementById('ev-filter-stream');
     const prev = fsel.value;
     fsel.innerHTML = '<option value="">All streams</option>' +
       streams.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
     if(prev) fsel.value = prev;
-  }catch(e){ log.warn && console.warn('loadEvtForm:', e); }
+
+    evUpdateSelCount();
+  }catch(e){ console.warn('loadEvtForm:', e); }
+}
+
+function evRowToggle(idx, checked){
+  const row = document.getElementById('ev-row-'+idx);
+  const sel = document.getElementById('ev-file-'+idx);
+  if(row){ row.classList.toggle('checked', checked); }
+  if(sel){ sel.disabled = !checked; }
+  evUpdateSelCount();
+}
+
+function evToggleAll(checked){
+  document.querySelectorAll('.ev-stream-cb').forEach((cb,i)=>{
+    cb.checked = checked;
+    evRowToggle(i, checked);
+  });
+}
+
+function evUpdateSelCount(){
+  const total   = document.querySelectorAll('.ev-stream-cb').length;
+  const checked = document.querySelectorAll('.ev-stream-cb:checked').length;
+  const el = document.getElementById('ev-sel-count');
+  if(el) el.textContent = checked ? `${checked} / ${total} selected` : '';
+  const allCb = document.getElementById('ev-sel-all');
+  if(allCb) allCb.checked = checked > 0 && checked === total;
 }
 
 async function loadEvents(){
   try{
     _evData = await fetch('/api/events').then(r=>r.json());
     renderEventsTable();
+    evCalRender();
   }catch(e){ console.warn('loadEvents:', e); }
 }
 
@@ -2447,19 +2800,43 @@ function _startEvTimers(){
   clearInterval(_evCountdown);
   _evTimer    = setInterval(()=>{ if(document.getElementById('ev-autoref')?.checked) loadEvents(); }, 15000);
   _evCountdown = setInterval(_tickCountdowns, 1000);
+  // Init calendar to current month
+  _calYear  = new Date().getFullYear();
+  _calMonth = new Date().getMonth();
+  evCalRender();
 }
 
 async function schedEvent(){
-  const stream = document.getElementById('ev-stream').value;
-  const file   = document.getElementById('ev-file').value;
-  const dt     = document.getElementById('ev-dt').value;
-  const pos    = document.getElementById('ev-pos').value||'00:00:00';
-  const post   = document.getElementById('ev-post').value;
-  if(!stream){ toast('Select a stream','err'); return; }
-  if(!file)  { toast('Select a file','err');   return; }
-  if(!dt)    { toast('Set a date/time','err'); return; }
-  const r = await api('add_event',{stream_name:stream,file_path:file,play_at:dt,start_pos:pos,post_action:post});
-  if(r?.ok) await loadEvents();
+  const dt   = document.getElementById('ev-dt').value;
+  const pos  = document.getElementById('ev-pos').value||'00:00:00';
+  const post = document.getElementById('ev-post').value;
+  if(!dt){ toast('Set a date/time','err'); return; }
+
+  const checked = Array.from(document.querySelectorAll('.ev-stream-cb:checked'));
+  if(!checked.length){ toast('Select at least one stream','err'); return; }
+
+  let scheduled = 0, errors = 0;
+  for(const cb of checked){
+    const idx   = parseInt(cb.dataset.idx);
+    const stream= _evStreams[idx];
+    if(!stream) continue;
+    const fileSel = document.getElementById('ev-file-'+idx);
+    const file    = fileSel ? fileSel.value : '';
+    if(!file){ toast(`No file selected for "${stream.name}"`, 'err'); errors++; continue; }
+    try{
+      const r = await fetch('/api/add_event',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({stream_name:stream.name,file_path:file,play_at:dt,start_pos:pos,post_action:post})
+      });
+      const j = await r.json();
+      if(j.ok){ scheduled++; }
+      else{ toast(`${stream.name}: ${j.msg||'Error'}`, 'err'); errors++; }
+    }catch(e){ toast(`${stream.name}: Request failed`, 'err'); errors++; }
+  }
+  if(scheduled > 0){
+    toast(`Scheduled ${scheduled} event${scheduled>1?'s':''}${errors?' ('+errors+' failed)':''}`, errors?'info':'ok');
+    await loadEvents();
+  }
 }
 
 async function delEvent(id){
@@ -3899,6 +4276,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             "/api/subdirs":        self._get_subdirs,
             "/api/files":          lambda: self._get_files(qs),
             "/api/events":         self._get_events,
+            "/api/holidays":       self._get_holidays,
             "/api/logs":           lambda: self._get_logs(qs),
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
@@ -4195,6 +4573,26 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "played":        ev.played,
             })
         self._json(result)
+
+    def _get_holidays(self) -> None:
+        """Return Bangladesh public holidays for the current and next year."""
+        try:
+            import holidays as _hol
+            year = datetime.now().year
+            bd = _hol.Bangladesh(years=[year, year + 1])
+            result = sorted(
+                [{"date": str(d), "name": name} for d, name in bd.items()],
+                key=lambda x: x["date"],
+            )
+            self._json(result)
+        except ImportError:
+            log.warning(
+                "holidays package not installed — run: pip install holidays>=0.45"
+            )
+            self._json([])
+        except Exception as exc:
+            log.error("_get_holidays error: %s", exc)
+            self._json([], 500)
 
     def _get_logs(self, qs: Dict[str, Any]) -> None:
         mgr = _WEB_MANAGER
