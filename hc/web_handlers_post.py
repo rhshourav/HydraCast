@@ -258,42 +258,10 @@ class _PostHandlersMixin:
                 # Persist
                 try:
                     from hc.json_manager import JSONManager
-                    JSONManager.save_events(mgr.events)
+                    JSONManager._save_events(mgr.events)
                 except Exception as _pe:
                     log.warning("update_event: could not persist: %s", _pe)
                 self._json({"ok": True, "msg": "Event updated"})
-            except Exception as exc:
-                self._json({"ok": False, "msg": str(exc)})
-                    raise ValueError("Stream name is required")
-                if mgr.get_state(stream_name) is None:
-                    raise ValueError(f"Stream '{stream_name}' not found")
-                dt = None
-                for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-                    try:
-                        dt = datetime.strptime(play_at, fmt); break
-                    except ValueError:
-                        continue
-                if dt is None:
-                    raise ValueError("Invalid datetime format")
-                fp   = Path(file_path)
-                safe = _safe_path(fp, MEDIA_DIR())
-                if safe is None and not fp.exists():
-                    raise ValueError("File not found or path outside media directory")
-                ev_id = hashlib.md5(
-                    f"{stream_name}{play_at}{file_path}".encode()
-                ).hexdigest()[:8]
-                if any(e.event_id == ev_id for e in mgr.events):
-                    raise ValueError("An identical event is already scheduled")
-                ev = OneShotEvent(
-                    event_id    = ev_id,
-                    stream_name = stream_name,
-                    file_path   = fp,
-                    play_at     = dt,
-                    post_action = post_action,
-                    start_pos   = start_pos,
-                )
-                mgr.add_event(ev)
-                self._json({"ok": True, "msg": f"Event scheduled for {dt.strftime('%Y-%m-%d %H:%M')}"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
