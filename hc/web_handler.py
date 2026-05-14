@@ -50,6 +50,17 @@ _SEC_HEADERS: Dict[str, str] = {
     "Referrer-Policy": "same-origin",
 }
 
+# Manager reference – set externally via:  import hc.web; hc.web._WEB_MANAGER = mgr
+_WEB_MANAGER: Any = None
+
+# Flat library cache (read/written by _get_library / _invalidate_lib_cache)
+_lib_cache:     Any   = None
+_lib_cache_ts:  float = 0.0
+_LIB_CACHE_TTL: float = 30.0
+
+# Global log buffer – set by hydracast.py after startup
+_GLOG: Any = None
+
 
 # =============================================================================
 # WebHandler
@@ -462,3 +473,30 @@ def _fmt_size(n: int) -> str:
             return f"{n:.0f} {unit}"
         n /= 1024
     return f"{n:.1f} PB"
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers — exported by hc.web and imported by web_handlers_post
+# ---------------------------------------------------------------------------
+
+def _get_library_cached():
+    """Return the current flat library cache list, or [] if not yet built."""
+    import hc.web_handler as _self
+    return _self._lib_cache or []
+
+
+def _invalidate_lib_cache() -> None:
+    """Bust the flat media-library cache so the next GET /api/library rebuilds it."""
+    import hc.web_handler as _self
+    _self._lib_cache    = None
+    _self._lib_cache_ts = 0.0
+
+
+def _notify_folder_upload(folder) -> None:
+    """Called after a successful file upload; clears the library cache."""
+    _invalidate_lib_cache()
+
+
+def _get_next_in_queue():
+    """Return the next queued playback item, or None (stub — extend as needed)."""
+    return None
