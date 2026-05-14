@@ -75,6 +75,7 @@ def _bootstrap() -> None:
         "google.auth":           "google-auth>=2.0",
         "google_auth_oauthlib":  "google-auth-oauthlib>=1.0",
         "googleapiclient":       "google-api-python-client>=2.0",
+        "holidays":              "holidays>=0.45",
     }
 
     def _is_available(mod: str) -> bool:
