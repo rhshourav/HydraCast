@@ -54,18 +54,29 @@ def set_base_dir(script_path: Path) -> None:
     for key in ("BIN", "CONFIG", "CONFIGS", "LOGS", "MEDIA"):
         _dirs[key].mkdir(parents=True, exist_ok=True)
 
+
 # ── Path accessors ─────────────────────────────────────────────────────────────
-def BASE_DIR()       -> Path: return _dirs["BASE"]
-def BIN_DIR()        -> Path: return _dirs["BIN"]
-def CONFIG_DIR()     -> Path: return _dirs["CONFIG"]          # config/ folder
-def CONFIGS_DIR()    -> Path: return _dirs["CONFIGS"]         # mediamtx yml folder
-def LOGS_DIR()       -> Path: return _dirs["LOGS"]
-def MEDIA_DIR()      -> Path: return _dirs["MEDIA"]
-def STREAMS_JSON()   -> Path: return _dirs["STREAMS_JSON"]    # config/streams.json
-def EVENTS_FILE()    -> Path: return _dirs["EVENTS_JSON"]     # config/events.json
+def _require(key: str) -> Path:
+    """Return _dirs[key] or raise a clear RuntimeError if set_base_dir() was never called."""
+    if key not in _dirs:
+        raise RuntimeError(
+            f"{key}_DIR() was called before set_base_dir(). "
+            "Ensure main.py calls set_base_dir(Path(__file__)) at startup."
+        )
+    return _dirs[key]
+
+
+def BASE_DIR()       -> Path: return _require("BASE")
+def BIN_DIR()        -> Path: return _require("BIN")
+def CONFIG_DIR()     -> Path: return _require("CONFIG")
+def CONFIGS_DIR()    -> Path: return _require("CONFIGS")
+def LOGS_DIR()       -> Path: return _require("LOGS")
+def MEDIA_DIR()      -> Path: return _require("MEDIA")
+def STREAMS_JSON()   -> Path: return _require("STREAMS_JSON")
+def EVENTS_FILE()    -> Path: return _require("EVENTS_JSON")
 # Legacy helpers (used only by migration code)
-def CSV_FILE()       -> Path: return _dirs["CSV"]             # old streams.csv
-def EVENTS_CSV()     -> Path: return _dirs["EVENTS_CSV"]      # old events.csv
+def CSV_FILE()       -> Path: return _require("CSV")
+def EVENTS_CSV()     -> Path: return _require("EVENTS_CSV")
 
 # ── Web / upload ──────────────────────────────────────────────────────────────
 WEB_PORT         = 80
