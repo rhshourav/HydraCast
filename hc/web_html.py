@@ -1644,6 +1644,87 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- ── Stream Source Selector ── -->
+  <div style="margin-top:4px">
+    <div class="section-hdr"><h2>Stream Source</h2><span class="sep"></span></div>
+    <div class="card card-body" style="padding:16px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">
+        Pick a stream, then choose a <b>folder</b> (auto-scanned) or individual <b>files</b> as its media source.
+        Changes are saved immediately and the stream is restarted.
+      </div>
+
+      <!-- Stream picker -->
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
+        <div class="fg">
+          <label>Stream</label>
+          <select id="ss-stream" onchange="ssLoadSource()" title="Pick the stream to modify">
+            <option value="">— select a stream —</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Source type</label>
+          <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;height:38px">
+            <button id="ss-tab-folder" class="nav-tab active"
+                    style="flex:1;border-radius:0;border:none;border-right:1px solid var(--border);font-size:12px;padding:0 14px"
+                    onclick="ssSwitchMode('folder')" title="Use a folder — all supported files inside are scanned automatically">
+              📁 Folder
+            </button>
+            <button id="ss-tab-files" class="nav-tab"
+                    style="flex:1;border-radius:0;border:none;font-size:12px;padding:0 14px"
+                    onclick="ssSwitchMode('files')" title="Pick one or more individual files from the media library">
+              🎬 Files
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- FOLDER mode -->
+      <div id="ss-panel-folder">
+        <div class="fg" style="margin-bottom:12px">
+          <label>Folder path (relative to media root)</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="ss-folder-select" style="flex:1" title="Choose a folder from the media library">
+              <option value="">— loading folders… —</option>
+            </select>
+            <button class="btn b" onclick="ssRefreshFolders()" title="Reload the folder list from the server" style="white-space:nowrap">↻ Refresh</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+          <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
+            <input type="checkbox" id="ss-shuffle" style="width:auto;accent-color:var(--accent)"> Shuffle playback
+          </label>
+        </div>
+      </div>
+
+      <!-- FILES mode -->
+      <div id="ss-panel-files" style="display:none">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <select id="ss-file-browser" style="flex:1;min-width:0" title="Browse available media files">
+            <option value="">— loading files… —</option>
+          </select>
+          <button class="btn b" onclick="ssAddFile()" title="Add the selected file to the list below" style="white-space:nowrap">＋ Add</button>
+          <button class="btn" onclick="ssRefreshFiles()" title="Reload file list from the server" style="white-space:nowrap">↻</button>
+        </div>
+        <!-- Selected files list -->
+        <div id="ss-file-list" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);min-height:64px;max-height:200px;overflow-y:auto">
+          <div id="ss-file-empty" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">No files selected yet.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;margin-bottom:4px">
+          <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
+            <input type="checkbox" id="ss-files-shuffle" style="width:auto;accent-color:var(--accent)"> Shuffle playback
+          </label>
+        </div>
+      </div>
+
+      <!-- Action row -->
+      <div style="display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap">
+        <button class="btn g" onclick="ssApply()" title="Save this source to the stream and restart it">💾 Apply &amp; Restart</button>
+        <button class="btn" onclick="ssClear()" title="Clear the selection">✕ Clear</button>
+        <span id="ss-status" style="font-size:11px;color:var(--text3)"></span>
+      </div>
+    </div>
+  </div>
+
   <!-- Danger Zone -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2 style="color:var(--red)">Danger Zone</h2><span class="sep"></span></div>
@@ -1777,7 +1858,7 @@ function _doSwitchTab(name,btn){
   else if(name==='events'){loadEvtForm();loadEvents();if(!_hdLoaded)loadHolidays();_startEvTimers();}
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
-  else if(name==='settings'){updateSysInfo();loadMailConfig();}
+  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();}
 }
 
 // ═══════════════════════════════════
@@ -3354,6 +3435,173 @@ function toggleComplianceAlerts(checked) {
 
 const _settings={autoref:true,autoscroll:true,compact:false,showrtsp:true,notifStart:true,notifErr:true,notifEvent:false};
 
+// ═══════════════════════════════════
+// STREAM SOURCE SELECTOR
+// ═══════════════════════════════════
+let _ssMode = 'folder';   // 'folder' | 'files'
+let _ssFiles = [];         // selected files in files-mode
+
+// Populate stream dropdown when Settings tab opens
+async function ssInit() {
+  const sel = document.getElementById('ss-stream');
+  if (!sel) return;
+  try {
+    const streams = await fetch('/api/streams').then(r => r.json());
+    sel.innerHTML = '<option value="">— select a stream —</option>' +
+      streams.map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">Failed to load streams</option>';
+  }
+  await ssRefreshFolders();
+  await ssRefreshFiles();
+}
+
+function ssSwitchMode(mode) {
+  _ssMode = mode;
+  document.getElementById('ss-panel-folder').style.display = mode === 'folder' ? '' : 'none';
+  document.getElementById('ss-panel-files').style.display  = mode === 'files'  ? '' : 'none';
+  document.getElementById('ss-tab-folder').classList.toggle('active', mode === 'folder');
+  document.getElementById('ss-tab-files').classList.toggle('active',  mode === 'files');
+}
+
+// Load current source for the selected stream into the UI
+async function ssLoadSource() {
+  const name = document.getElementById('ss-stream').value;
+  if (!name) return;
+  document.getElementById('ss-status').textContent = '';
+  try {
+    const cfgs = await fetch('/api/streams_config').then(r => r.json());
+    const cfg = cfgs.find(c => c.name === name);
+    if (!cfg) return;
+    if (cfg.folder_source) {
+      ssSwitchMode('folder');
+      // Try to select the matching folder option
+      const rel = cfg.folder_source.replace(/\\/g, '/');
+      const folderSel = document.getElementById('ss-folder-select');
+      // find option with value matching the tail of the path
+      const opt = Array.from(folderSel.options).find(o => rel.endsWith(o.value) || o.value === rel);
+      if (opt) folderSel.value = opt.value;
+      document.getElementById('ss-shuffle').checked = !!cfg.shuffle;
+    } else if (cfg.files) {
+      ssSwitchMode('files');
+      _ssFiles = cfg.files.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
+      ssRenderFileList();
+      document.getElementById('ss-files-shuffle').checked = !!cfg.shuffle;
+    }
+  } catch(e) {}
+}
+
+// Populate folder dropdown from /api/files
+async function ssRefreshFolders() {
+  const sel = document.getElementById('ss-folder-select');
+  if (!sel) return;
+  try {
+    const root = await fetch('/api/files?path=').then(r => r.json());
+    const dirs = root.dirs || [];
+    sel.innerHTML = '<option value="">— Media root (all files) —</option>' +
+      dirs.map(d => `<option value="${esc(d.path)}">${esc(d.name)}</option>`).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">Failed to load folders</option>';
+  }
+}
+
+// Populate file browser from /api/library
+async function ssRefreshFiles() {
+  const sel = document.getElementById('ss-file-browser');
+  if (!sel) return;
+  try {
+    const lib = await fetch('/api/library').then(r => r.json());
+    sel.innerHTML = '<option value="">— choose a file —</option>' +
+      lib.map(f => `<option value="${esc(f.path)}" title="${esc(f.duration||'')} · ${esc(f.size||'')}">${esc(f.path)}</option>`).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">Failed to load library</option>';
+  }
+}
+
+function ssAddFile() {
+  const sel = document.getElementById('ss-file-browser');
+  const val = sel.value;
+  if (!val) { toast('Pick a file first', 'err'); return; }
+  if (_ssFiles.includes(val)) { toast('Already added', 'info'); return; }
+  _ssFiles.push(val);
+  ssRenderFileList();
+}
+
+function ssRemoveFile(idx) {
+  _ssFiles.splice(idx, 1);
+  ssRenderFileList();
+}
+
+function ssRenderFileList() {
+  const wrap = document.getElementById('ss-file-list');
+  const empty = document.getElementById('ss-file-empty');
+  if (!_ssFiles.length) {
+    wrap.innerHTML = '';
+    wrap.appendChild(empty);
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  wrap.innerHTML = _ssFiles.map((f, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="flex:1;font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="${esc(f)}">${esc(f)}</span>
+      <button class="fm-action-btn del" onclick="ssRemoveFile(${i})" title="Remove from list">✕</button>
+    </div>`).join('') + `<div id="ss-file-empty" style="display:none;padding:20px;text-align:center;color:var(--text3);font-size:12px">No files selected yet.</div>`;
+}
+
+function ssClear() {
+  _ssFiles = [];
+  ssRenderFileList();
+  document.getElementById('ss-folder-select').value = '';
+  document.getElementById('ss-shuffle').checked = false;
+  document.getElementById('ss-files-shuffle').checked = false;
+  document.getElementById('ss-stream').value = '';
+  document.getElementById('ss-status').textContent = '';
+}
+
+async function ssApply() {
+  const name = document.getElementById('ss-stream').value;
+  if (!name) { toast('Select a stream first', 'err'); return; }
+  const st = document.getElementById('ss-status');
+
+  let payload;
+  if (_ssMode === 'folder') {
+    const folder = document.getElementById('ss-folder-select').value;
+    payload = {
+      name,
+      folder_source: folder || null,
+      files: '',
+      shuffle: document.getElementById('ss-shuffle').checked,
+    };
+  } else {
+    if (!_ssFiles.length) { toast('Add at least one file', 'err'); return; }
+    payload = {
+      name,
+      folder_source: null,
+      files: _ssFiles.join('\n'),
+      shuffle: document.getElementById('ss-files-shuffle').checked,
+    };
+  }
+
+  st.textContent = 'Saving…'; st.style.color = 'var(--yellow)';
+  try {
+    const r = await api('update_config', payload);
+    if (r?.ok) {
+      st.textContent = '✓ Saved — restarting stream…'; st.style.color = 'var(--green)';
+      toast('Stream source updated', 'ok');
+      // Restart stream so it picks up the new source
+      setTimeout(() => api('restart', {name}), 600);
+    } else {
+      st.textContent = '✕ ' + (r?.msg || 'Error'); st.style.color = 'var(--red)';
+      toast(r?.msg || 'Failed to save', 'err');
+    }
+  } catch(e) {
+    st.textContent = '✕ Request failed'; st.style.color = 'var(--red)';
+    toast('Save failed', 'err');
+  }
+}
+
 function toggleSetting(key,el){
   _settings[key]=!_settings[key];
   el.classList.toggle('on',_settings[key]);
@@ -3986,4 +4234,3 @@ function fmCloseDialogs() {
 </html>
 
 """
-
