@@ -49,93 +49,184 @@ def _events_path() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# JSON Manager
+# Weekday normalisation
+# ---------------------------------------------------------------------------
+
+def _normalise_weekdays(raw) -> List[int]:
+    if not raw and raw != 0:
+        return list(range(7))
+
+    if isinstance(raw, list):
+        result: List[int] = []
+        for item in raw:
+            if isinstance(item, int):
+                result.append(item)
+            else:
+                key = str(item).strip().lower()
+                val = WEEKDAY_MAP.get(key)
+                if isinstance(val, list):
+                    result.extend(val)
+                elif isinstance(val, int):
+                    result.append(val)
+        seen: set = set()
+        return [x for x in result if not (x in seen or seen.add(x))]
+
+    raw_s = str(raw).strip().lower()
+    if raw_s in ("all", "everyday", ""):
+        return list(range(7))
+    if raw_s == "weekdays":
+        return list(range(5))
+    if raw_s == "weekends":
+        return [5, 6]
+
+    result2: List[int] = []
+    for part in _re.split(r"[|,\s]+", raw_s):
+        part = part.strip()
+        val = WEEKDAY_MAP.get(part)
+        if isinstance(val, list):
+            result2.extend(val)
+        elif isinstance(val, int):
+            result2.append(val)
+    seen2: set = set()
+    deduped = [x for x in result2 if not (x in seen2 or seen2.add(x))]
+    return deduped if deduped else list(range(7))
+
+
+# ---------------------------------------------------------------------------
+# Serialisation helpers
+# ---------------------------------------------------------------------------
+
+def _playlist_to_json(items: List[PlaylistItem]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "file_path":      str(item.file_path),
+            "start_position": item.start_position,
+            "priority":       item.priority,
+        }
+        for item in items
+    ]
+
+
+def _playlist_from_json(raw: List[Dict[str, Any]]) -> List[PlaylistItem]:
+    out: List[PlaylistItem] = []
+    for r in raw:
+        try:
+            out.append(
+                PlaylistItem(
+                    file_path=Path(r["file_path"]),
+                    start_position=r.get("start_position", "00:00:00"),
+                    priority=int(r.get("priority", 0)),
+                )
+            )
+        except Exception as exc:
+            log.warning("json_manager: skipping bad playlist entry %s — %s", r, exc)
+    return out
+
+
+def _config_to_dict(cfg: StreamConfig) -> Dict[str, Any]:
+    return {
+        "name":                   cfg.name,
+        "port":                   cfg.port,
+        "stream_path":            cfg.stream_path or "",
+        "enabled":                cfg.enabled,
+        "weekdays":               _normalise_weekdays(cfg.weekdays),
+        "shuffle":                cfg.shuffle,
+        "video_bitrate":          cfg.video_bitrate,
+        "audio_bitrate":          cfg.audio_bitrate,
+        "hls_enabled":            cfg.hls_enabled,
+        "compliance_enabled":     cfg.compliance_enabled,
+        "compliance_start":       cfg.compliance_start,
+        "compliance_loop":        bool(cfg.compliance_loop),
+        "compliance_alert_enabled": bool(cfg.compliance_alert_enabled),
+        "folder_source":          str(cfg.folder_source) if cfg.folder_source else None,
+        "playlist": (
+            _playlist_to_json(cfg.playlist) if not cfg.folder_source else []
+        ),
+    }
+
+
+def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
+    try:
+        folder_source: Optional[Path] = None
+        playlist: List[PlaylistItem] = []
+
+        if d.get("folder_source"):
+            folder_source = Path(d["folder_source"])
+            items, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
+            for w in warnings:
+                log.warning("json_manager: %s", w)
+            playlist = items
+        elif d.get("playlist"):
+            playlist = _playlist_from_json(d["playlist"])
+
+        raw_loop = d.get("compliance_loop", False)
+        compliance_loop = bool(raw_loop) if raw_loop != "" else False
+
+        return StreamConfig(
+            name                   = d["name"],
+            port                   = int(d["port"]),
+            stream_path            = d.get("stream_path", "") or "",
+            enabled                = bool(d.get("enabled", True)),
+            weekdays               = _normalise_weekdays(d.get("weekdays", [])),
+            shuffle                = bool(d.get("shuffle", False)),
+            video_bitrate          = d.get("video_bitrate", "2500k"),
+            audio_bitrate          = d.get("audio_bitrate", "128k"),
+            hls_enabled            = bool(d.get("hls_enabled", False)),
+            compliance_enabled     = bool(d.get("compliance_enabled", False)),
+            compliance_start       = d.get("compliance_start", "06:00:00"),
+            compliance_loop        = compliance_loop,
+            compliance_alert_enabled = bool(d.get("compliance_alert_enabled", True)),
+            folder_source          = folder_source,
+            playlist               = playlist,
+        )
+    except Exception as exc:
+        log.error(
+            "json_manager: cannot parse stream entry %s — %s",
+            d.get("name", "?"), exc,
+        )
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Public API
 # ---------------------------------------------------------------------------
 
 class JSONManager:
-    """Handles loading/saving StreamConfig and OneShotEvent lists to JSON."""
 
     @classmethod
     def load(cls) -> List[StreamConfig]:
         p = _streams_path()
         if not p.exists():
+            log.info("json_manager: no streams.json yet — starting with empty config.")
             return []
+
         try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            return [cls._to_config(d) for d in data]
-        except Exception as exc:
-            log.error("Failed to load streams.json: %s", exc)
-            return []
+            raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"streams.json is not valid JSON: {exc}") from exc
+
+        configs: List[StreamConfig] = []
+        for entry in raw:
+            cfg = _config_from_dict(entry)
+            if cfg is not None:
+                configs.append(cfg)
+
+        log.info("json_manager: loaded %d stream(s) from '%s'", len(configs), p)
+        return configs
 
     @classmethod
     def save(cls, configs: List[StreamConfig]) -> None:
         p = _streams_path()
-        data = [cls._from_config(c) for c in configs]
-        p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    @classmethod
-    def _to_config(cls, d: Dict[str, Any]) -> StreamConfig:
-        # Default playlist setup
-        playlist_raw = d.get("playlist", [])
-        playlist = [
-            PlaylistItem(
-                file_path=Path(item["file_path"]),
-                duration=item.get("duration", 0.0)
-            ) for item in playlist_raw
-        ]
-
-        # Normalise weekdays to List[int]
-        wd = d.get("weekdays", [0,1,2,3,4,5,6])
-        if isinstance(wd, str):
-            # parse "0,1,2" or "mon,tue"
-            wd_list = []
-            for part in _re.split(r"[,\s]+", wd.lower()):
-                if part.isdigit():
-                    wd_list.append(int(part))
-                elif part in WEEKDAY_MAP:
-                    wd_list.append(WEEKDAY_MAP[part])
-            wd = sorted(list(set(wd_list)))
-
-        return StreamConfig(
-            name                     = d.get("name", "Unnamed"),
-            stream_path              = d.get("stream_path", ""),
-            folder_source            = Path(d["folder_source"]) if d.get("folder_source") else None,
-            sort_mode                = SortMode(d.get("sort_mode", "name_asc")),
-            playlist                 = playlist,
-            shuffle                  = d.get("shuffle", False),
-            loop                     = d.get("loop", True),
-            rtsp_port                = d.get("rtsp_port", 8554),
-            rtp_port_base            = d.get("rtp_port_base", 8000),
-            hls_enabled              = d.get("hls_enabled", False),
-            compliance_enabled       = d.get("compliance_enabled", False),
-            compliance_loop          = d.get("compliance_loop", False),
-            compliance_alert_enabled = d.get("compliance_alert_enabled", True),
-            weekdays                 = wd,
-        )
-
-    @classmethod
-    def _from_config(cls, c: StreamConfig) -> Dict[str, Any]:
-        return {
-            "name":                     c.name,
-            "stream_path":              c.stream_path,
-            "folder_source":            str(c.folder_source) if c.folder_source else "",
-            "sort_mode":                c.sort_mode.value,
-            "shuffle":                  c.shuffle,
-            "loop":                     c.loop,
-            "rtsp_port":                c.rtsp_port,
-            "rtp_port_base":            c.rtp_port_base,
-            "hls_enabled":              c.hls_enabled,
-            "compliance_enabled":       c.compliance_enabled,
-            "compliance_loop":          c.compliance_loop,
-            "compliance_alert_enabled": c.compliance_alert_enabled,
-            "weekdays":                 c.weekdays,
-            "playlist": [
-                {"file_path": str(item.file_path), "duration": item.duration}
-                for item in c.playlist
-            ],
-        }
-
-    # ── Events ────────────────────────────────────────────────────────────────
+        data = [_config_to_dict(c) for c in configs]
+        text = json.dumps(data, indent=2, ensure_ascii=False)
+        tmp = p.with_suffix(".json.tmp")
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(p)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
+        log.info("json_manager: saved %d stream(s) to '%s'", len(configs), p)
 
     @classmethod
     def load_events(cls) -> List[OneShotEvent]:
@@ -143,50 +234,47 @@ class JSONManager:
         if not p.exists():
             return []
         try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            events = []
-            for d in data:
-                try:
-                    be_str = d.get("broadcast_end")
-                    ev = OneShotEvent(
-                        event_id    = d.get("event_id", str(uuid.uuid4())),
-                        stream_name = d["stream_name"],
-                        file_path   = Path(d["file_path"]),
-                        play_at     = datetime.fromisoformat(d["play_at"]),
-                        played      = d.get("played", False),
-                        loop_count  = d.get("loop_count", 0),
-                        broadcast_end = datetime.fromisoformat(be_str) if be_str else None
-                    )
-                    events.append(ev)
-                except (KeyError, ValueError):
-                    continue
-            return events
-        except Exception as exc:
-            log.error("Failed to load events.json: %s", exc)
+            raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            log.error("json_manager: events.json is not valid JSON: %s", exc)
             return []
 
-    @classmethod
-    def save_events(cls, events: List[OneShotEvent]) -> None:
-        cls._save_events(events)
+        events: List[OneShotEvent] = []
+        for r in raw:
+            try:
+                ev = OneShotEvent(
+                    event_id    = r["event_id"],
+                    stream_name = r["stream_name"],
+                    file_path   = Path(r["file_path"]),
+                    play_at     = datetime.fromisoformat(r["play_at"]),
+                    played      = bool(r.get("played", False)),
+                    start_pos   = r.get("start_pos", "00:00:00") or "00:00:00",
+                    loop_count  = int(r.get("loop_count", 0)),
+                )
+                # Restore optional broadcast_end
+                be_str = r.get("broadcast_end")
+                if be_str:
+                    try:
+                        ev.broadcast_end = datetime.fromisoformat(be_str)
+                    except (ValueError, AttributeError):
+                        pass
+                events.append(ev)
+            except Exception as exc:
+                log.warning("json_manager: skipping bad event %s — %s", r, exc)
+        return events
 
     @classmethod
     def _save_events(cls, events: List[OneShotEvent]) -> None:
         p = _events_path()
-        data = []
-        # Only persist events that are in the future OR were played recently 
-        # (e.g. within the last hour) to keep the file clean.
-        now = datetime.now().timestamp()
+        data: List[Dict[str, Any]] = []
         for ev in events:
-            # If it's a one-off that already played long ago, skip it
-            if ev.played and (now - ev.play_at.timestamp()) > 3600:
-                continue
-            
-            d = {
+            d: Dict[str, Any] = {
                 "event_id":    ev.event_id,
                 "stream_name": ev.stream_name,
                 "file_path":   str(ev.file_path),
                 "play_at":     ev.play_at.isoformat(),
                 "played":      ev.played,
+                "start_pos":   getattr(ev, "start_pos", "00:00:00") or "00:00:00",
                 "loop_count":  getattr(ev, "loop_count", 0),
             }
             # broadcast_end is optional; persist only when present
@@ -223,7 +311,10 @@ class JSONManager:
             loop_count  = loop_count,
         )
         if broadcast_end is not None:
-            ev.broadcast_end = broadcast_end
+            try:
+                ev.broadcast_end = broadcast_end
+            except AttributeError:
+                log.debug("json_manager: OneShotEvent has no broadcast_end attr — skipped")
         events.append(ev)
         cls._save_events(events)
         return ev
