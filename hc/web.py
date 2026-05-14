@@ -1008,17 +1008,17 @@ select option{background:var(--bg3)}
     <div class="stat-pill">CPU <b id="h-cpu">—</b></div>
     <div class="stat-pill">RAM <b id="h-ram">—</b></div>
     <div class="stat-pill" style="font-variant-numeric:tabular-nums"><b id="h-time">—</b></div>
-    <div class="hc-toggle-wrap" title="Toggle dark/light mode">
+    <div class="hc-toggle-wrap" title="Toggle between dark and light mode">
       <input type="checkbox" class="hc-toggle-cb" id="hc-theme-cb">
-      <label for="hc-theme-cb" class="hc-toggle-label">
+      <label for="hc-theme-cb" class="hc-toggle-label" title="Toggle between dark and light mode">
         <i class="fas fa-moon"></i>
         <i class="fas fa-sun"></i>
         <span class="hc-toggle-ball"></span>
       </label>
     </div>
     <div class="topbar-btns">
-      <button class="hbtn g" onclick="api('start_all',{})">▶ All</button>
-      <button class="hbtn r" onclick="api('stop_all',{})">■ All</button>
+      <button class="hbtn g" onclick="api('start_all',{})" title="Start every stream">▶ All</button>
+      <button class="hbtn r" onclick="api('stop_all',{})" title="Stop every stream">■ All</button>
     </div>
   </div>
 </header>
@@ -1028,13 +1028,13 @@ select option{background:var(--bg3)}
   <div class="section-hdr">
     <h2>Live Streams</h2>
     <span class="sep"></span>
-    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer">
+    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer" title="Automatically refresh stream status every 2.5 seconds">
       <input type="checkbox" id="auto-ref" checked onchange="toggleAuto(this.checked)" style="width:auto">
       Auto-refresh
     </label>
-    <button class="btn b" onclick="loadStreams()">↻ Refresh</button>
+    <button class="btn b" onclick="loadStreams()" title="Refresh stream list now">↻ Refresh</button>
     <button class="btn" onclick="downloadUrlsCsv()" title="Download all stream URLs as a CSV file">⬇ URLs CSV</button>
-    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:5px;cursor:pointer" title="Include playlist filenames in the CSV">
+    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:5px;cursor:pointer" title="Include playlist filenames in the exported CSV">
       <input type="checkbox" id="csv-files" style="width:auto;accent-color:var(--accent)"> + filenames
     </label>
   </div>
@@ -1068,7 +1068,7 @@ select option{background:var(--bg3)}
   <div class="section-hdr">
     <h2>Stream Viewer</h2>
     <span class="sep"></span>
-    <button class="btn b" onclick="loadViewer()">↻ Refresh</button>
+    <button class="btn b" onclick="loadViewer()" title="Reload stream viewer cards">↻ Refresh</button>
   </div>
   <div id="viewer-grid" class="viewer-grid">
     <div class="empty"><div class="empty-icon">📺</div>Switch to this tab to load viewers…</div>
@@ -1080,17 +1080,17 @@ select option{background:var(--bg3)}
   <div class="section-hdr">
     <h2>Event Log</h2>
     <span class="sep"></span>
-    <select id="log-stream" style="width:160px" onchange="loadLogs()">
+    <select id="log-stream" style="width:160px" onchange="loadLogs()" title="Filter logs by a specific stream">
       <option value="">All streams</option>
     </select>
-    <select id="log-level" style="width:110px" onchange="loadLogs()">
+    <select id="log-level" style="width:110px" onchange="loadLogs()" title="Filter logs by severity level">
       <option value="ALL">ALL</option>
       <option value="INFO">INFO</option>
       <option value="WARN">WARN</option>
       <option value="ERROR">ERROR</option>
     </select>
-    <button class="btn b" onclick="loadLogs()">↻</button>
-    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer">
+    <button class="btn b" onclick="loadLogs()" title="Refresh log entries now">↻</button>
+    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer" title="Automatically scroll to the newest log entry">
       <input type="checkbox" id="log-auto" checked style="width:auto"> Auto-scroll
     </label>
   </div>
@@ -1104,8 +1104,8 @@ select option{background:var(--bg3)}
   <!-- Top bar: upload strip -->
   <div class="section-hdr">
     <h2>Media Library</h2><span class="sep"></span>
-    <button class="btn b" onclick="loadFiles(_fmCurrentPath)">↻ Refresh</button>
-    <button class="btn g" onclick="fmNewFolder()">＋ New Folder</button>
+    <button class="btn b" onclick="loadFiles(_fmCurrentPath)" title="Refresh the current folder listing">↻ Refresh</button>
+    <button class="btn g" onclick="fmNewFolder()" title="Create a new folder in the current directory">＋ New Folder</button>
   </div>
 
   <!-- Upload drop zone (collapsed bar at top) -->
@@ -1117,12 +1117,13 @@ select option{background:var(--bg3)}
       <div class="fg" style="min-width:180px;max-width:240px;margin:0">
         <select id="upload-subdir" style="margin:0"></select>
       </div>
-      <button class="btn" onclick="mkSubdir()">＋ Subfolder</button>
-      <button class="btn g" onclick="document.getElementById('fpick').click()" style="margin-left:auto">
+      <button class="btn" onclick="mkSubdir()" title="Create a new subfolder inside the selected upload directory">＋ Subfolder</button>
+      <button class="btn g" onclick="document.getElementById('fpick').click()" style="margin-left:auto" title="Browse your device and upload media files">
         Browse &amp; Upload…
       </button>
       <div id="dropzone-mini"
            style="display:flex;align-items:center;gap:8px;padding:7px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;color:var(--text3);font-size:12px;transition:all 0.2s"
+           title="Click or drag-and-drop files here to upload them to the selected folder"
            onclick="document.getElementById('fpick').click()"
            ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
            ondragleave="this.style.borderColor='var(--border)'"
@@ -1183,8 +1184,8 @@ select option{background:var(--bg3)}
              onkeydown="if(event.key==='Enter')fmDoRename()">
     </div>
     <div class="fm-dialog-footer">
-      <button class="btn" onclick="fmCloseDialogs()">Cancel</button>
-      <button class="btn g" onclick="fmDoRename()">Rename</button>
+      <button class="btn" onclick="fmCloseDialogs()" title="Close without renaming">Cancel</button>
+      <button class="btn g" onclick="fmDoRename()" title="Apply the new name">Rename</button>
     </div>
   </div>
 </div>
@@ -1197,8 +1198,8 @@ select option{background:var(--bg3)}
       <select id="fm-move-dest" style="width:100%"><option value="">Media (root)</option></select>
     </div>
     <div class="fm-dialog-footer">
-      <button class="btn" onclick="fmCloseDialogs()">Cancel</button>
-      <button class="btn y" onclick="fmDoMove()">Move</button>
+      <button class="btn" onclick="fmCloseDialogs()" title="Close without moving">Cancel</button>
+      <button class="btn y" onclick="fmDoMove()" title="Move the file or folder to the selected destination">Move</button>
     </div>
   </div>
 </div>
@@ -1215,8 +1216,8 @@ select option{background:var(--bg3)}
       <input type="text" id="fm-copy-name" placeholder="leave blank to keep same name">
     </div>
     <div class="fm-dialog-footer">
-      <button class="btn" onclick="fmCloseDialogs()">Cancel</button>
-      <button class="btn b" onclick="fmDoCopy()">Copy</button>
+      <button class="btn" onclick="fmCloseDialogs()" title="Close without copying">Cancel</button>
+      <button class="btn b" onclick="fmDoCopy()" title="Copy the file to the selected destination">Copy</button>
     </div>
   </div>
 </div>
@@ -1241,7 +1242,7 @@ select option{background:var(--bg3)}
         </div>
         <div class="fg" style="justify-content:flex-end">
           <label>&nbsp;</label>
-          <button class="btn g" onclick="schedEvent()">✓ Schedule</button>
+          <button class="btn g" onclick="schedEvent()" title="Schedule the event at the specified date and time">✓ Schedule</button>
         </div>
       </div>
     </div>
@@ -1251,20 +1252,22 @@ select option{background:var(--bg3)}
     <h2>Scheduled Events</h2>
     <span class="sep"></span>
     <select id="ev-filter-stream" onchange="renderEventsTable()"
+      title="Show events for a specific stream only"
       style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);
              border-radius:var(--radius);padding:5px 10px;font-size:12px;font-family:var(--font-sans)">
       <option value="">All streams</option>
     </select>
     <select id="ev-filter-status" onchange="renderEventsTable()"
+      title="Show only pending or already-played events"
       style="background:var(--bg3);border:1px solid var(--border);color:var(--text2);
              border-radius:var(--radius);padding:5px 10px;font-size:12px;font-family:var(--font-sans)">
       <option value="">All statuses</option>
       <option value="pending">Pending</option>
       <option value="played">Played</option>
     </select>
-    <button class="btn r" onclick="clearPlayed()">✕ Clear Played</button>
-    <button class="btn b" onclick="loadEvents()">↻</button>
-    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);cursor:pointer">
+    <button class="btn r" onclick="clearPlayed()" title="Remove all events that have already been played">✕ Clear Played</button>
+    <button class="btn b" onclick="loadEvents()" title="Refresh the events list now">↻</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);cursor:pointer" title="Auto-refresh the events list every few seconds">
       <input type="checkbox" id="ev-autoref" checked style="width:auto;accent-color:var(--accent)"> Live
     </label>
   </div>
@@ -1286,13 +1289,13 @@ select option{background:var(--bg3)}
   <div class="section-hdr">
     <h2>Stream Configuration</h2>
     <span class="sep"></span>
-    <button class="btn b" onclick="_guardNav(loadConfig)">&#x21BB; Reload</button>
+    <button class="btn b" onclick="_guardNav(loadConfig)" title="Reload stream configuration from disk">&#x21BB; Reload</button>
   </div>
   <div class="config-layout">
     <div class="config-sidebar">
       <div class="config-sidebar-hdr" style="display:flex;align-items:center;justify-content:space-between">
         <span>Streams</span>
-        <button class="btn g" style="padding:2px 8px;font-size:10px;border-radius:5px" onclick="_guardNav(showNewStreamForm)">&#xFF0B; New</button>
+        <button class="btn g" style="padding:2px 8px;font-size:10px;border-radius:5px" onclick="_guardNav(showNewStreamForm)" title="Add a new stream configuration">&#xFF0B; New</button>
       </div>
       <div id="config-stream-list"></div>
     </div>
@@ -1304,8 +1307,8 @@ select option{background:var(--bg3)}
         <div class="empty"><div class="empty-icon">⚙</div>Select a stream from the sidebar to configure it.</div>
       </div>
       <div class="config-main-footer" id="config-main-footer" style="display:none">
-        <button class="btn" onclick="cancelConfig()">Cancel</button>
-        <button class="btn g" onclick="saveConfig()">Save Changes</button>
+        <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
+        <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>
       </div>
     </div>
   </div>
@@ -1320,19 +1323,19 @@ select option{background:var(--bg3)}
       <h3>UI Preferences</h3>
       <div class="setting-row">
         <div><div class="setting-label">Auto-refresh streams</div><div class="setting-desc">Poll every 2.5 seconds</div></div>
-        <div class="toggle on" id="st-autoref" onclick="toggleSetting('autoref',this)"></div>
+        <div class="toggle on" id="st-autoref" onclick="toggleSetting('autoref',this)" title="Poll stream status every 2.5 seconds"></div>
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Auto-scroll logs</div><div class="setting-desc">Jump to newest log entry</div></div>
-        <div class="toggle on" id="st-autoscroll" onclick="toggleSetting('autoscroll',this)"></div>
+        <div class="toggle on" id="st-autoscroll" onclick="toggleSetting('autoscroll',this)" title="Automatically scroll the log view to the newest entry"></div>
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Compact stream table</div><div class="setting-desc">Reduce row padding</div></div>
-        <div class="toggle" id="st-compact" onclick="toggleSetting('compact',this)"></div>
+        <div class="toggle" id="st-compact" onclick="toggleSetting('compact',this)" title="Use smaller row padding to fit more streams on screen"></div>
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Show RTSP chip</div><div class="setting-desc">Display URL in stream table</div></div>
-        <div class="toggle on" id="st-showrtsp" onclick="toggleSetting('showrtsp',this)"></div>
+        <div class="toggle on" id="st-showrtsp" onclick="toggleSetting('showrtsp',this)" title="Show the RTSP URL column in the Streams table"></div>
       </div>
     </div>
 
@@ -1341,15 +1344,15 @@ select option{background:var(--bg3)}
       <h3>Notifications</h3>
       <div class="setting-row">
         <div><div class="setting-label">Toast on stream start</div><div class="setting-desc">Show notification when stream goes LIVE</div></div>
-        <div class="toggle on" id="st-notif-start" onclick="toggleSetting('notifStart',this)"></div>
+        <div class="toggle on" id="st-notif-start" onclick="toggleSetting('notifStart',this)" title="Show a toast notification when a stream goes LIVE"></div>
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Toast on stream error</div><div class="setting-desc">Alert when ERROR status detected</div></div>
-        <div class="toggle on" id="st-notif-err" onclick="toggleSetting('notifErr',this)"></div>
+        <div class="toggle on" id="st-notif-err" onclick="toggleSetting('notifErr',this)" title="Show a toast notification when a stream enters an ERROR state"></div>
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Event countdown alerts</div><div class="setting-desc">Warn 1 min before scheduled event</div></div>
-        <div class="toggle" id="st-notif-event" onclick="toggleSetting('notifEvent',this)"></div>
+        <div class="toggle" id="st-notif-event" onclick="toggleSetting('notifEvent',this)" title="Show a warning notification 1 minute before a scheduled event fires"></div>
       </div>
     </div>
 
@@ -1358,7 +1361,7 @@ select option{background:var(--bg3)}
       <h3>Refresh Intervals</h3>
       <div class="setting-row">
         <div class="setting-label">Stream poll interval</div>
-        <select id="st-poll-interval" onchange="applyPollInterval()" style="width:100px">
+        <select id="st-poll-interval" onchange="applyPollInterval()" style="width:100px" title="How often to poll the server for stream status updates">
           <option value="1500">1.5 s</option>
           <option value="2500" selected>2.5 s</option>
           <option value="5000">5 s</option>
@@ -1367,7 +1370,7 @@ select option{background:var(--bg3)}
       </div>
       <div class="setting-row">
         <div class="setting-label">System stats interval</div>
-        <select id="st-stats-interval" style="width:100px">
+        <select id="st-stats-interval" style="width:100px" title="How often to refresh CPU and RAM stats in the header">
           <option value="5000">5 s</option>
           <option value="8000" selected>8 s</option>
           <option value="15000">15 s</option>
@@ -1375,7 +1378,7 @@ select option{background:var(--bg3)}
       </div>
       <div class="setting-row">
         <div class="setting-label">Log auto-refresh</div>
-        <select id="st-log-interval" style="width:100px">
+        <select id="st-log-interval" style="width:100px" title="How often to reload the log view when Auto-scroll is on">
           <option value="2000">2 s</option>
           <option value="4000" selected>4 s</option>
           <option value="8000">8 s</option>
@@ -1403,7 +1406,7 @@ select option{background:var(--bg3)}
         <b id="sys-live" style="color:var(--green)">—</b>
       </div>
       <div class="setting-row" style="border:none;padding-top:12px">
-        <button class="btn b" onclick="updateSysInfo()" style="width:100%;justify-content:center">↻ Refresh Info</button>
+        <button class="btn b" onclick="updateSysInfo()" style="width:100%;justify-content:center" title="Refresh CPU, RAM and active stream count">↻ Refresh Info</button>
       </div>
     </div>
   </div>
@@ -1411,22 +1414,22 @@ select option{background:var(--bg3)}
   <!-- Mail Alerts -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2>Mail Alerts</h2><span class="sep"></span>
-      <button class="btn b" onclick="loadMailConfig()">↻ Load</button>
+      <button class="btn b" onclick="loadMailConfig()" title="Load saved mail alert settings from disk">↻ Load</button>
     </div>
     <div class="card card-body" style="padding:16px">
 
       <!-- Mode tabs -->
       <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border)">
         <button id="ml-tab-gmail" class="nav-tab active" onclick="switchMailMode('gmail_oauth2')"
-          style="padding:8px 18px;font-size:12px">
+          style="padding:8px 18px;font-size:12px" title="Use Gmail via OAuth2 — no password stored">
           <span class="tab-dot"></span>Gmail (OAuth2)
         </button>
         <button id="ml-tab-ms" class="nav-tab" onclick="switchMailMode('microsoft_oauth2')"
-          style="padding:8px 18px;font-size:12px">
+          style="padding:8px 18px;font-size:12px" title="Use Outlook / Office 365 via Microsoft OAuth2">
           <span class="tab-dot"></span>Microsoft (OAuth2)
         </button>
         <button id="ml-tab-smtp" class="nav-tab" onclick="switchMailMode('smtp')"
-          style="padding:8px 18px;font-size:12px">
+          style="padding:8px 18px;font-size:12px" title="Use Yahoo Mail, Gmail App Password, or a custom SMTP server">
           <span class="tab-dot"></span>SMTP (Yahoo / Custom)
         </button>
       </div>
@@ -1443,11 +1446,11 @@ select option{background:var(--bg3)}
             border:1px solid var(--border);font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
           <span id="ml-gmail-dot" style="width:9px;height:9px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
           <span id="ml-gmail-label">Not connected</span>
-          <button class="btn b" style="margin-left:auto" onclick="connectGmail()">🔗 Connect Gmail</button>
-          <button class="btn r" id="ml-gmail-revoke" style="display:none" onclick="revokeGmail()">✕ Disconnect</button>
+          <button class="btn b" style="margin-left:auto" onclick="connectGmail()" title="Open Google sign-in to authorise HydraCast to send email">🔗 Connect Gmail</button>
+          <button class="btn r" id="ml-gmail-revoke" style="display:none" onclick="revokeGmail()" title="Remove stored Gmail OAuth2 credentials">✕ Disconnect</button>
         </div>
         <div id="ml-gmail-poll-msg" style="font-size:11px;color:var(--yellow);margin-bottom:12px;display:none">
-          ⏳ Waiting for Google sign-in in browser… <button class="btn" style="margin-left:8px" onclick="checkOAuthStatus()">Check Status</button>
+          ⏳ Waiting for Google sign-in in browser… <button class="btn" style="margin-left:8px" onclick="checkOAuthStatus()" title="Check whether Google sign-in has completed">Check Status</button>
         </div>
       </div>
 
@@ -1474,8 +1477,8 @@ select option{background:var(--bg3)}
             border:1px solid var(--border);font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
           <span id="ml-ms-dot" style="width:9px;height:9px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
           <span id="ml-ms-label">Not connected</span>
-          <button class="btn b" style="margin-left:auto" onclick="connectMicrosoft()">🔗 Connect Microsoft</button>
-          <button class="btn r" id="ml-ms-revoke" style="display:none" onclick="revokeMicrosoft()">✕ Disconnect</button>
+          <button class="btn b" style="margin-left:auto" onclick="connectMicrosoft()" title="Start Microsoft device sign-in to authorise HydraCast to send email">🔗 Connect Microsoft</button>
+          <button class="btn r" id="ml-ms-revoke" style="display:none" onclick="revokeMicrosoft()" title="Remove stored Microsoft OAuth2 credentials">✕ Disconnect</button>
         </div>
         <div id="ml-ms-device-box" style="display:none;background:var(--bg3);border:1px solid rgba(251,191,36,0.5);
             border-radius:8px;padding:14px;margin-bottom:14px;font-size:12px">
@@ -1483,7 +1486,7 @@ select option{background:var(--bg3)}
           <div>1. Open <a id="ml-ms-uri" href="https://microsoft.com/devicelogin" target="_blank" style="color:var(--blue)">https://microsoft.com/devicelogin</a></div>
           <div style="margin:6px 0">2. Enter code: <code id="ml-ms-code" style="color:var(--accent-light);font-size:15px;font-weight:700;letter-spacing:3px">——————</code></div>
           <div style="color:var(--text3)">3. Sign in, then click Check Status below.</div>
-          <button class="btn" style="margin-top:10px" onclick="checkMsOAuthStatus()">↻ Check Status</button>
+          <button class="btn" style="margin-top:10px" onclick="checkMsOAuthStatus()" title="Check whether Microsoft device sign-in has completed">↻ Check Status</button>
         </div>
       </div>
 
@@ -1496,8 +1499,8 @@ select option{background:var(--bg3)}
         <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;
             font-size:11px;color:var(--text3);margin-bottom:14px">
           <b style="color:var(--text2)">Quick presets:</b>&nbsp;
-          <button class="btn" onclick="smtpPreset('yahoo')" style="font-size:10px">Yahoo</button>
-          <button class="btn" onclick="smtpPreset('gmail')" style="font-size:10px">Gmail SMTP</button>
+          <button class="btn" onclick="smtpPreset('yahoo')" style="font-size:10px" title="Fill in Yahoo Mail SMTP settings">Yahoo</button>
+          <button class="btn" onclick="smtpPreset('gmail')" style="font-size:10px" title="Fill in Gmail App Password SMTP settings">Gmail SMTP</button>
         </div>
         <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:12px">
           <div class="fg">
@@ -1552,10 +1555,10 @@ select option{background:var(--bg3)}
           </label>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          <button class="btn g" onclick="saveMailConfig()">💾 Save Config</button>
+          <button class="btn g" onclick="saveMailConfig()" title="Save mail alert configuration to disk">💾 Save Config</button>
           <div class="fg" style="flex-direction:row;gap:6px;align-items:center;flex:1;min-width:200px">
-            <input id="ml-test-to" placeholder="Test recipient (optional)" style="flex:1">
-            <button class="btn b" onclick="testMailAlert()">✉ Send Test</button>
+            <input id="ml-test-to" placeholder="Test recipient (optional)" style="flex:1" title="Optional: override the To address just for this test email">
+            <button class="btn b" onclick="testMailAlert()" title="Send a test email to verify your mail settings">✉ Send Test</button>
           </div>
         </div>
         <div id="ml-status" style="font-size:11px;color:var(--text3);margin-top:10px"></div>
@@ -1584,19 +1587,19 @@ select option{background:var(--bg3)}
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-streams" checked style="width:auto;accent-color:var(--accent)"> Streams
+              <input type="checkbox" id="bk-streams" checked style="width:auto;accent-color:var(--accent)" title="Include stream definitions in the backup"> Streams
             </label>
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-events" checked style="width:auto;accent-color:var(--accent)"> Events
+              <input type="checkbox" id="bk-events" checked style="width:auto;accent-color:var(--accent)" title="Include scheduled events in the backup"> Events
             </label>
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-mail" checked style="width:auto;accent-color:var(--accent)"> Mail config
+              <input type="checkbox" id="bk-mail" checked style="width:auto;accent-color:var(--accent)" title="Include mail alert configuration in the backup (password is excluded)"> Mail config
             </label>
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-resume" checked style="width:auto;accent-color:var(--accent)"> Resume positions
+              <input type="checkbox" id="bk-resume" checked style="width:auto;accent-color:var(--accent)" title="Include per-file resume positions in the backup"> Resume positions
             </label>
           </div>
-          <button class="btn g" onclick="downloadBackup()">⬇ Download Backup</button>
+          <button class="btn g" onclick="downloadBackup()" title="Download a .hc backup file containing the selected configuration">⬇ Download Backup</button>
           <div id="bk-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
         </div>
 
@@ -1608,6 +1611,7 @@ select option{background:var(--bg3)}
             <span style="color:var(--red);font-weight:600">All streams will be restarted after restore.</span>
           </div>
           <div id="restore-drop" style="border:2px dashed var(--border);border-radius:var(--radius);padding:24px 16px;text-align:center;cursor:pointer;color:var(--text3);transition:all 0.22s;background:var(--bg3)"
+            title="Click or drag-and-drop a .hc backup file to restore your configuration"
             onclick="document.getElementById('restore-file').click()"
             ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
             ondragleave="this.style.borderColor='var(--border)'"
@@ -1628,8 +1632,8 @@ select option{background:var(--bg3)}
     <div class="section-hdr"><h2 style="color:var(--red)">Danger Zone</h2><span class="sep"></span></div>
     <div class="card card-body" style="border-color:rgba(248,113,113,0.2);padding:16px">
       <div style="display:flex;flex-wrap:wrap;gap:10px">
-        <button class="btn r" onclick="if(confirm('Stop ALL streams?')) api('stop_all',{})">■ Stop All Streams</button>
-        <button class="btn r" onclick="if(confirm('Restart ALL streams?')) api('restart_all',{})">↺ Restart All</button>
+        <button class="btn r" onclick="if(confirm('Stop ALL streams?')) api('stop_all',{})" title="Immediately stop every running stream">■ Stop All Streams</button>
+        <button class="btn r" onclick="if(confirm('Restart ALL streams?')) api('restart_all',{})" title="Stop and restart every stream">↺ Restart All</button>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:10px">These actions affect all streams immediately.</div>
     </div>
@@ -1671,8 +1675,8 @@ select option{background:var(--bg3)}
       <input type="range" id="seek-slider" min="0" max="100" value="0" style="accent-color:var(--accent)">
     </div>
     <div class="modal-footer">
-      <button class="btn" onclick="closeSeek()">Cancel</button>
-      <button class="btn g" onclick="doSeek()">⏩ Seek</button>
+      <button class="btn" onclick="closeSeek()" title="Close without seeking">Cancel</button>
+      <button class="btn g" onclick="doSeek()" title="Jump the stream to the specified position">⏩ Seek</button>
     </div>
   </div>
 </div>
@@ -1686,9 +1690,9 @@ select option{background:var(--bg3)}
       What would you like to do?
     </div>
     <div class="modal-footer">
-      <button class="btn" onclick="handleUnsaved('cancel')">Stay Here</button>
-      <button class="btn r" onclick="handleUnsaved('discard')">Discard Changes</button>
-      <button class="btn g" onclick="handleUnsaved('save')">Save &amp; Continue</button>
+      <button class="btn" onclick="handleUnsaved('cancel')" title="Go back and keep editing">Stay Here</button>
+      <button class="btn r" onclick="handleUnsaved('discard')" title="Throw away unsaved edits and continue">Discard Changes</button>
+      <button class="btn g" onclick="handleUnsaved('save')" title="Save your changes, then continue">Save &amp; Continue</button>
     </div>
   </div>
 </div>
@@ -1915,23 +1919,23 @@ function _rowCells(s,i,showRtsp){
           <div style="display:flex;align-items:center;gap:5px">
             <span style="font-size:10px;font-weight:700;color:var(--accent-light);font-family:var(--font-mono);white-space:nowrap">RTSP</span>
             <span style="flex:1;font-size:11px;font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:3px 8px" title="${esc(s.rtsp_url)}">${esc(s.rtsp_url)}</span>
-            <button class="btn" style="padding:3px 8px;font-size:11px;flex-shrink:0" onclick="copyText('${esc(s.rtsp_url)}')">📋</button>
+            <button class="btn" style="padding:3px 8px;font-size:11px;flex-shrink:0" onclick="copyText('${esc(s.rtsp_url)}')" title="Copy RTSP URL to clipboard">📋</button>
           </div>`:'<span class="td-muted">—</span>'}
         ${s.hls_url?`
           <div style="display:flex;align-items:center;gap:5px">
             <span style="font-size:10px;font-weight:700;color:var(--cyan);font-family:var(--font-mono);white-space:nowrap">HLS</span>
             <span style="flex:1;font-size:11px;font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:3px 8px" title="${esc(s.hls_url)}">${esc(s.hls_url)}</span>
-            <button class="btn" style="padding:3px 8px;font-size:11px;flex-shrink:0;color:var(--cyan)" onclick="copyText('${esc(s.hls_url)}')">📋</button>
+            <button class="btn" style="padding:3px 8px;font-size:11px;flex-shrink:0;color:var(--cyan)" onclick="copyText('${esc(s.hls_url)}')" title="Copy HLS URL to clipboard">📋</button>
           </div>`:``}
       </div>
     </td>
     <td>
       <div class="btn-group">
-        <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})">▶</button>
-        <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})">■</button>
-        <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})">↺</button>
-        ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})">⏭</button>`:''}
-        ${s.status==='LIVE'?`<button class="btn b" onclick="openSeek('${esc(s.name)}',${s.duration||0},${s.current_secs||0})">⏩</button>`:''}
+        <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})" title="Start this stream">▶</button>
+        <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})" title="Stop this stream">■</button>
+        <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})" title="Restart this stream">↺</button>
+        ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭</button>`:''}
+        ${s.status==='LIVE'?`<button class="btn b" onclick="openSeek('${esc(s.name)}',${s.duration||0},${s.current_secs||0})" title="Jump to a specific position in the current file">⏩</button>`:''}
       </div>
       ${s.error_msg?`<div style="font-size:10px;color:var(--red);margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.error_msg)}">⚠ ${esc(s.error_msg)}</div>`:''}
     </td>`;
@@ -2106,7 +2110,7 @@ async function loadViewer(){
             <div class="stat-item"><b class="vc-pct-${esc(s.name)}">${pct}%</b></div>
           </div>
           <div class="btn-group">
-            <button class="btn b vc-copy-${esc(s.name)}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.hls||this.dataset.rtsp)">📋</button>
+            <button class="btn b vc-copy-${esc(s.name)}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.hls||this.dataset.rtsp)" title="Copy stream URL to clipboard">📋</button>
           </div>
         </div>
         <div style="padding:0 14px 10px">
@@ -2408,7 +2412,7 @@ function renderEventsTable(){
     const rowStyle = imminent ? 'background:rgba(201,168,120,0.06)' : '';
     const fireBtn  = !ev.played
       ? `<button class="btn" style="font-size:10px;padding:3px 8px;color:var(--yellow);border-color:rgba(201,168,120,0.4)"
-           onclick="fireNow('${esc(ev.event_id)}')" title="Fire immediately">▶ Now</button>`
+           onclick="fireNow('${esc(ev.event_id)}')" title="Fire this event right now, skipping the scheduled time">▶ Now</button>`
       : '';
     return `<tr style="${rowStyle}">
       <td style="color:var(--accent-light)">${esc(ev.stream_name)}</td>
@@ -2419,7 +2423,7 @@ function renderEventsTable(){
       <td><span class="badge ${ev.played?'STOPPED':'SCHED'}">${ev.played?'✓ Played':'⏰ Pending'}</span></td>
       <td style="text-align:right;white-space:nowrap;display:flex;gap:4px;justify-content:flex-end">
         ${fireBtn}
-        <button class="btn r" style="font-size:10px;padding:3px 8px" onclick="delEvent('${esc(ev.event_id)}')">✕</button>
+        <button class="btn r" style="font-size:10px;padding:3px 8px" onclick="delEvent('${esc(ev.event_id)}')" title="Delete this scheduled event">✕</button>
       </td>
     </tr>`;
   }).join('');
@@ -2555,15 +2559,15 @@ function renderConfigEditor(s){
       <div class="config-section-title">Playback</div>
       <div style="display:flex;flex-wrap:wrap;gap:16px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-shuffle" ${s.shuffle?'checked':''} style="width:auto;accent-color:var(--accent)">
+          <input type="checkbox" id="cfg-shuffle" ${s.shuffle?'checked':''} style="width:auto;accent-color:var(--accent)" title="Play files in a random order instead of sequentially">
           Shuffle playlist
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-enabled" ${s.enabled!==false?'checked':''} style="width:auto;accent-color:var(--accent)">
+          <input type="checkbox" id="cfg-enabled" ${s.enabled!==false?'checked':''} style="width:auto;accent-color:var(--accent)" title="Enable or disable this stream — disabled streams will not start automatically">
           Stream enabled
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-hls" ${s.hls_enabled?'checked':''} style="width:auto;accent-color:var(--accent)">
+          <input type="checkbox" id="cfg-hls" ${s.hls_enabled?'checked':''} style="width:auto;accent-color:var(--accent)" title="Also serve this stream over HLS (HTTP Live Streaming) in addition to RTSP">
           HLS enabled
         </label>
       </div>
@@ -2583,7 +2587,8 @@ function renderConfigEditor(s){
       <div class="config-section-title">Compliance (Broadcast Sync)</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-comp-en" ${s.compliance_enabled?'checked':''} style="width:auto;accent-color:var(--accent)">
+          <input type="checkbox" id="cfg-comp-en" ${s.compliance_enabled?'checked':''} style="width:auto;accent-color:var(--accent)"
+            title="Sync playback position to real-world clock so viewers see what a linear broadcast would show right now">
           Enable compliance mode (broadcast-sync seek on start)
         </label>
         <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
@@ -2593,7 +2598,8 @@ function renderConfigEditor(s){
           </div>
         </div>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-comp-loop" ${s.compliance_loop?'checked':''} style="width:auto;accent-color:var(--accent)">
+          <input type="checkbox" id="cfg-comp-loop" ${s.compliance_loop?'checked':''} style="width:auto;accent-color:var(--accent)"
+            title="When the video is shorter than 24 h, calculate the seek position within the current loop iteration">
           Loop calculation (seek within loops for videos shorter than 24 h)
         </label>
         <div style="font-size:10px;color:var(--text3)">
@@ -2608,10 +2614,10 @@ function renderConfigEditor(s){
     <div class="config-section">
       <div class="config-section-title">Stream Actions</div>
       <div class="btn-group">
-        <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})">▶ Start</button>
-        <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})">■ Stop</button>
-        <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})">↺ Restart</button>
-        ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})">⏭ Skip</button>`:''}
+        <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})" title="Start this stream">▶ Start</button>
+        <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})" title="Stop this stream">■ Stop</button>
+        <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})" title="Restart this stream">↺ Restart</button>
+        ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭ Skip</button>`:''}
       </div>
     </div>`;
 
@@ -2623,8 +2629,8 @@ function renderConfigEditor(s){
 
 function _restoreFooter(){
   document.getElementById('config-main-footer').innerHTML=`
-    <button class="btn" onclick="cancelConfig()">Cancel</button>
-    <button class="btn g" onclick="saveConfig()">Save Changes</button>`;
+    <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
+    <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>`;
 }
 
 function cancelConfig(){
@@ -2770,7 +2776,7 @@ function _renderPLTable(cid){
       +'<td style="width:106px"><input type="text" value="'+esc(item.start)+'" placeholder="00:00:00"'
         +' oninput="_plUpd('+i+',&apos;s&apos;,this.value)" style="width:94px;font-family:var(--font-mono);font-size:11px"></td>'
       +'<td style="width:40px;text-align:right"><button class="btn r" style="padding:2px 7px;font-size:10px"'
-        +' onclick="_plRemove('+i+',&apos;'+cid+'&apos;)">&#x2715;</button></td>'
+        +' title="Remove this file from the playlist" onclick="_plRemove('+i+',&apos;'+cid+'&apos;)">&#x2715;</button></td>'
       +'</tr>';
   }).join('');
 
@@ -2779,9 +2785,9 @@ function _renderPLTable(cid){
       +'<div class="pl-toolbar">'
         +'<span class="pl-toolbar-label"><i class="fa fa-list-ol" style="margin-right:5px;opacity:0.65"></i>'
         +_playlistItems.length+' file'+(_playlistItems.length!==1?'s':'')+'</span>'
-        +'<button class="btn b" style="padding:3px 10px;font-size:10px" onclick="_plSort(&apos;'+cid+'&apos;)">'
+        +'<button class="btn b" style="padding:3px 10px;font-size:10px" title="Sort files by priority (highest first)" onclick="_plSort(&apos;'+cid+'&apos;)">'
           +'<i class="fa fa-sort-numeric-up" style="margin-right:4px"></i>Sort by Priority</button>'
-        +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plRawView(&apos;'+cid+'&apos;)">'
+        +'<button class="btn" style="padding:3px 10px;font-size:10px" title="View or edit the raw playlist text" onclick="_plRawView(&apos;'+cid+'&apos;)">'
           +'<i class="fa fa-code" style="margin-right:4px"></i>Raw</button>'
       +'</div>'
       +(_playlistItems.length>0
@@ -2801,7 +2807,7 @@ function _renderPLTable(cid){
         +'<input type="text" id="'+cid+'-new" placeholder="/path/to/video.mp4  (optional: path@HH:MM:SS#priority)"'
           +' onkeydown="if(event.key===&apos;Enter&apos;)_plAdd(&apos;'+cid+'&apos;)">'
         +'<button class="btn g" style="padding:5px 12px;font-size:11px;white-space:nowrap"'
-          +' onclick="_plAdd(&apos;'+cid+'&apos;)"><i class="fa fa-plus"></i> Add</button>'
+          +' title="Add this file path to the playlist" onclick="_plAdd(&apos;'+cid+'&apos;)"><i class="fa fa-plus"></i> Add</button>'
       +'</div>'
     +'</div>';
 }
@@ -2845,7 +2851,7 @@ function _plRawView(cid){
     '<div class="pl-editor">'
       +'<div class="pl-toolbar">'
         +'<span class="pl-toolbar-label"><i class="fa fa-code" style="margin-right:5px;opacity:0.65"></i>Raw edit</span>'
-        +'<button class="btn" style="padding:3px 10px;font-size:10px" onclick="_plTableView(&apos;'+cid+'&apos;)">'
+        +'<button class="btn" style="padding:3px 10px;font-size:10px" title="Switch back to the visual playlist table editor" onclick="_plTableView(&apos;'+cid+'&apos;)">'
           +'<i class="fa fa-table" style="margin-right:4px"></i>Back to Table</button>'
       +'</div>'
       +'<div style="padding:12px">'
@@ -2885,8 +2891,8 @@ function showNewStreamForm(){
     <div class="config-section">
       <div class="config-section-title">Playlist Source</div>
       <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)">
-        <button id="new-src-tab-files" class="nav-tab active" onclick="switchNewSrcTab('files')" style="padding:7px 16px;font-size:12px"><span class="tab-dot"></span>File List</button>
-        <button id="new-src-tab-folder" class="nav-tab" onclick="switchNewSrcTab('folder')" style="padding:7px 16px;font-size:12px"><span class="tab-dot"></span>Folder Source</button>
+        <button id="new-src-tab-files" class="nav-tab active" onclick="switchNewSrcTab('files')" style="padding:7px 16px;font-size:12px" title="Build the playlist by adding individual files"><span class="tab-dot"></span>File List</button>
+        <button id="new-src-tab-folder" class="nav-tab" onclick="switchNewSrcTab('folder')" style="padding:7px 16px;font-size:12px" title="Use an entire folder as the playlist source — all media files inside will play in order"><span class="tab-dot"></span>Folder Source</button>
       </div>
       <div id="new-src-files">
         <div id="new-pl-wrap"></div>
@@ -2919,13 +2925,13 @@ function showNewStreamForm(){
       <div class="config-section-title">Options</div>
       <div style="display:flex;flex-wrap:wrap;gap:16px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="new-shuffle" style="width:auto;accent-color:var(--accent)">Shuffle playlist
+          <input type="checkbox" id="new-shuffle" style="width:auto;accent-color:var(--accent)" title="Play files in a random order instead of sequentially">Shuffle playlist
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="new-enabled" checked style="width:auto;accent-color:var(--accent)">Enabled
+          <input type="checkbox" id="new-enabled" checked style="width:auto;accent-color:var(--accent)" title="Enable this stream — uncheck to create it without starting it">Enabled
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="new-hls" style="width:auto;accent-color:var(--accent)">HLS enabled
+          <input type="checkbox" id="new-hls" style="width:auto;accent-color:var(--accent)" title="Also serve this stream over HLS (HTTP Live Streaming) in addition to RTSP">HLS enabled
         </label>
       </div>
     </div>
@@ -2934,6 +2940,7 @@ function showNewStreamForm(){
       <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);font-weight:500;margin-bottom:12px">
           <input type="checkbox" id="new-comp-en" style="width:auto;accent-color:var(--accent)"
+            title="Sync playback position to real-world clock so viewers see what a linear broadcast would show right now"
             onchange="document.getElementById('new-comp-fields').style.display=this.checked?'':'none'">
           Enable compliance mode
         </label>
@@ -2949,11 +2956,13 @@ function showNewStreamForm(){
             </div>
           </div>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2);margin-bottom:8px">
-            <input type="checkbox" id="new-comp-loop" style="width:auto;accent-color:var(--accent)">
+            <input type="checkbox" id="new-comp-loop" style="width:auto;accent-color:var(--accent)"
+              title="When the video is shorter than 24 h, calculate the seek position within the current loop iteration">
             Loop calculation — seek within loops for videos shorter than 24 h
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-            <input type="checkbox" id="new-comp-strict" style="width:auto;accent-color:var(--accent)">
+            <input type="checkbox" id="new-comp-strict" style="width:auto;accent-color:var(--accent)"
+              title="Stop the stream entirely if the calculated seek offset exceeds the video duration (prevents silent looping)">
             Strict mode — stop stream if seek offset exceeds video duration
           </label>
           <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.7;border-top:1px solid var(--border);padding-top:10px">
@@ -2967,8 +2976,8 @@ function showNewStreamForm(){
     </div>`;
   // Swap footer buttons for Create mode
   document.getElementById('config-main-footer').innerHTML=`
-    <button class="btn" onclick="cancelConfig()">Cancel</button>
-    <button class="btn g" onclick="submitNewStream()">&#x2713; Create Stream</button>`;
+    <button class="btn" onclick="cancelConfig()" title="Discard and go back without creating a stream">Cancel</button>
+    <button class="btn g" onclick="submitNewStream()" title="Create this new stream and save it to configuration">&#x2713; Create Stream</button>`;
   document.getElementById('config-main-footer').style.display='flex';
   _clearDirty();
   renderPlaylistEditor('new-pl-wrap', '');
@@ -3521,10 +3530,13 @@ async function loadFiles(path) {
           <span class="fm-row-meta">${dir.items} item${dir.items!==1?'s':''}</span>
           <div class="fm-row-actions">
             <button class="fm-action-btn"
+                    title="Rename this folder"
                     onclick="fmStartRename('${dir.path}','${dir.name}',true)">✏ Rename</button>
             <button class="fm-action-btn mv"
+                    title="Move this folder to a different location"
                     onclick="fmStartMove('${dir.path}','${dir.name}',true)">↗ Move</button>
             <button class="fm-action-btn del"
+                    title="Permanently delete this folder and all its contents"
                     onclick="fmDeleteDir('${dir.path}','${dir.name}')">🗑 Delete</button>
           </div>
         </div>`);
@@ -3543,12 +3555,16 @@ async function loadFiles(path) {
           <span class="fm-row-meta">${f.size}</span>
           <div class="fm-row-actions">
             <button class="fm-action-btn"
+                    title="Rename this file"
                     onclick="fmStartRename('${f.path}','${f.name}',false)">✏ Rename</button>
             <button class="fm-action-btn mv"
+                    title="Move this file to a different folder"
                     onclick="fmStartMove('${f.path}','${f.name}',false)">↗ Move</button>
             <button class="fm-action-btn cp"
+                    title="Copy this file to another folder"
                     onclick="fmStartCopy('${f.path}','${f.name}')">⎘ Copy</button>
             <button class="fm-action-btn del"
+                    title="Permanently delete this file"
                     onclick="fmDelete('${f.path}','${f.name}')">🗑 Delete</button>
           </div>
         </div>`);
