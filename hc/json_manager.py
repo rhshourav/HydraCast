@@ -242,15 +242,21 @@ class JSONManager:
         events: List[OneShotEvent] = []
         for r in raw:
             try:
-                events.append(
-                    OneShotEvent(
-                        event_id    = r["event_id"],
-                        stream_name = r["stream_name"],
-                        file_path   = Path(r["file_path"]),
-                        play_at     = datetime.fromisoformat(r["play_at"]),
-                        played      = bool(r.get("played", False)),
-                    )
+                ev = OneShotEvent(
+                    event_id    = r["event_id"],
+                    stream_name = r["stream_name"],
+                    file_path   = Path(r["file_path"]),
+                    play_at     = datetime.fromisoformat(r["play_at"]),
+                    played      = bool(r.get("played", False)),
                 )
+                # Restore optional broadcast_end
+                be_str = r.get("broadcast_end")
+                if be_str:
+                    try:
+                        ev.broadcast_end = datetime.fromisoformat(be_str)
+                    except (ValueError, AttributeError):
+                        pass
+                events.append(ev)
             except Exception as exc:
                 log.warning("json_manager: skipping bad event %s — %s", r, exc)
         return events
@@ -258,16 +264,20 @@ class JSONManager:
     @classmethod
     def _save_events(cls, events: List[OneShotEvent]) -> None:
         p = _events_path()
-        data = [
-            {
+        data: List[Dict[str, Any]] = []
+        for ev in events:
+            d: Dict[str, Any] = {
                 "event_id":    ev.event_id,
                 "stream_name": ev.stream_name,
                 "file_path":   str(ev.file_path),
                 "play_at":     ev.play_at.isoformat(),
                 "played":      ev.played,
             }
-            for ev in events
-        ]
+            # broadcast_end is optional; persist only when present
+            be = getattr(ev, "broadcast_end", None)
+            if be is not None:
+                d["broadcast_end"] = be.isoformat()
+            data.append(d)
         p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     @classmethod
@@ -285,6 +295,7 @@ class JSONManager:
         stream_name: str,
         file_path: Path,
         play_at: datetime,
+        broadcast_end: Optional[datetime] = None,
     ) -> OneShotEvent:
         ev = OneShotEvent(
             event_id    = str(uuid.uuid4()),
@@ -293,6 +304,11 @@ class JSONManager:
             play_at     = play_at,
             played      = False,
         )
+        if broadcast_end is not None:
+            try:
+                ev.broadcast_end = broadcast_end
+            except AttributeError:
+                log.debug("json_manager: OneShotEvent has no broadcast_end attr — skipped")
         events.append(ev)
         cls._save_events(events)
         return ev
