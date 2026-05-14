@@ -4562,22 +4562,42 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
 // ---------------------------------------------------------------------------
 // Sidebar — event list for the current month
 // ---------------------------------------------------------------------------
-function Sidebar({ month, year, events, holidays, onEdit, onDelete }) {
+function Sidebar({ month, year, events, holidays, onEdit, onDelete, hidePlayed, onToggleHidePlayed }) {
   const monthPfx = `${year}-${String(month+1).padStart(2,"0")}`;
   const evts = events
     .filter(e => getEventDate(e).startsWith(monthPfx))
     .sort((a,b) => (getEventDate(a)+getEventTime(a)).localeCompare(getEventDate(b)+getEventTime(b)));
 
+  const playedCount = evts.filter(e => e.played).length;
+  const visible = hidePlayed ? evts.filter(e => !e.played) : evts;
+
   return (
     <aside style={{width:"230px",borderLeft:"0.5px solid var(--color-border-tertiary)",
       flexShrink:0,overflowY:"auto",maxHeight:"calc(100vh - 180px)"}}>
       <div style={{padding:"10px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",
-        display:"flex",justifyContent:"space-between",alignItems:"center",
         position:"sticky",top:0,background:"var(--color-background-primary)",zIndex:1}}>
-        <span style={{fontSize:"12px",fontWeight:"500",color:"var(--color-text-secondary)"}}>
-          {MONTHS[month]} events
-        </span>
-        <span style={{fontSize:"12px",color:"var(--color-text-tertiary)"}}>{evts.length}</span>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom: playedCount > 0 ? "6px" : 0}}>
+          <span style={{fontSize:"12px",fontWeight:"500",color:"var(--color-text-secondary)"}}>
+            {MONTHS[month]} events
+          </span>
+          <span style={{fontSize:"12px",color:"var(--color-text-tertiary)"}}>{evts.length}</span>
+        </div>
+        {playedCount > 0 && (
+          <button
+            onClick={onToggleHidePlayed}
+            title={hidePlayed ? "Show played events in list" : "Hide played events from list (still shown on calendar)"}
+            style={{
+              width:"100%",fontSize:"10px",padding:"3px 8px",
+              display:"flex",alignItems:"center",justifyContent:"center",gap:"4px",
+              background: hidePlayed ? "var(--color-background-success)" : "transparent",
+              color:      hidePlayed ? "var(--color-text-success)"       : "var(--color-text-secondary)",
+              border:`0.5px solid ${hidePlayed ? "var(--color-border-success)" : "var(--color-border-tertiary)"}`,
+              borderRadius:"var(--border-radius-sm)",cursor:"pointer",
+            }}>
+            <i className={`ti ti-${hidePlayed ? "eye" : "eye-off"}`} style={{fontSize:"10px"}}/>
+            {hidePlayed ? `Show ${playedCount} played` : `Hide ${playedCount} played`}
+          </button>
+        )}
       </div>
 
       {evts.length === 0 ? (
@@ -4585,8 +4605,14 @@ function Sidebar({ month, year, events, holidays, onEdit, onDelete }) {
           textAlign:"center",lineHeight:"1.6",margin:0}}>
           No events this month.<br/>Click any future date to schedule.
         </p>
+      ) : visible.length === 0 ? (
+        <p style={{padding:"20px 14px",fontSize:"12px",color:"var(--color-text-tertiary)",
+          textAlign:"center",lineHeight:"1.6",margin:0}}>
+          All {playedCount} event{playedCount!==1?"s":""} played.<br/>
+          <span style={{fontSize:"11px",opacity:0.7}}>Events still shown on calendar.</span>
+        </p>
       ) : (
-        evts.map((ev,i) => {
+        visible.map((ev,i) => {
           const ds  = getEventDate(ev);
           const ts  = getEventTime(ev);
           const hol = holidays[ds];
@@ -5269,6 +5295,7 @@ function EventsCalendar() {
   const [multiMode,  setMultiMode]  = useState(false);
   const [editEv,     setEditEv]     = useState(null);
   const [toast,      setToast]      = useState(null);
+  const [hidePlayed, setHidePlayed] = useState(false);
   const libLoaded = useRef(false);
   const toastRef  = useRef(null);
 
@@ -5588,6 +5615,8 @@ function EventsCalendar() {
           holidays={holidays}
           onEdit={openEdit}
           onDelete={handleDelete}
+          hidePlayed={hidePlayed}
+          onToggleHidePlayed={()=>setHidePlayed(h=>!h)}
         />
       </div>
     </div>
