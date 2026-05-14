@@ -174,9 +174,21 @@ _HTML = r"""
 #events-calendar-root select[size]{padding:4px 6px}
 
 /* ─────────── KEYFRAMES ─────────── */
+@keyframes toastIn{
+  from{opacity:0;transform:translateX(-50%) translateY(12px) scale(0.92)}
+  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+}
 @keyframes pulse{
   0%,100%{opacity:1;transform:scale(1)}
   50%{opacity:0.45;transform:scale(0.82)}
+}
+/* ── Calendar day cell hover glow ── */
+#events-calendar-root .cal-day-cell{
+  transition:background 0.15s, box-shadow 0.15s;
+}
+#events-calendar-root .cal-day-cell:hover{
+  box-shadow:inset 0 0 0 2px var(--accent);
+  z-index:1;
 }
 @keyframes fadeSlideIn{
   from{opacity:0;transform:translateY(10px)}
@@ -4422,8 +4434,8 @@ function EventChip({ ev, onEdit }) {
       onClick={e => { e.stopPropagation(); onEdit(ev); }}
       title={`${ev.stream_name} — ${ev.file_name || ev.file_path}\nClick to edit`}
       style={{
-        borderRadius:"3px", padding:"2px 5px", marginBottom:"2px",
-        fontSize:"10px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+        borderRadius:"4px", padding:"3px 6px", marginBottom:"3px",
+        fontSize:"11px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
         cursor: played ? "default" : "pointer",
         background: played ? "var(--color-background-success)" : "var(--color-background-info)",
         border:`0.5px solid ${played ? "var(--color-border-success)" : "var(--color-border-info)"}`,
@@ -4444,7 +4456,7 @@ function EventChip({ ev, onEdit }) {
 function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, selectedDates, onToggleSelect, multiSelect }) {
   if (!day) return (
     <div style={{
-      minHeight:"100px",
+      minHeight:"120px",
       borderRight:"0.5px solid var(--color-border-tertiary)",
       borderBottom:"0.5px solid var(--color-border-tertiary)",
     }}/>
@@ -4456,6 +4468,7 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
   const holiday = holidays[ds];
   const dayEvts = eventsByDate[ds] || [];
   const isSelected = selectedDates && selectedDates.has(ds);
+  const hasEvents = dayEvts.length > 0;
 
   const baseBg = isSelected
     ? "var(--color-background-success)"
@@ -4466,7 +4479,7 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
         : "transparent";
 
   const handleClick = () => {
-    if (isPast && !isToday) return;  // block past dates
+    if (isPast && !isToday) return;
     if (multiSelect) {
       onToggleSelect(ds);
     } else {
@@ -4482,18 +4495,19 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
       aria-label={`${MONTHS[month]} ${day}, ${year}${holiday ? `, ${holiday}` : ""}${isPast && !isToday ? " (past)" : ""}`}
       onKeyDown={e => e.key === "Enter" && handleClick()}
       style={{
-        minHeight:"100px", padding:"6px 7px",
+        minHeight:"120px", padding:"8px 9px",
         borderRight:"0.5px solid var(--color-border-tertiary)",
         borderBottom:"0.5px solid var(--color-border-tertiary)",
         background: baseBg,
         cursor: isPast && !isToday ? "not-allowed" : "pointer",
-        opacity: isPast && !isToday ? 0.4 : 1,
-        transition:"background 0.1s",
+        opacity: isPast && !isToday ? 0.38 : 1,
+        transition:"background 0.15s, box-shadow 0.15s",
         outline:"none",
         position:"relative",
+        boxShadow: isToday ? "inset 0 0 0 2px var(--color-text-info)" : hasEvents && !isPast ? "inset 0 0 0 1px var(--color-border-info)" : "none",
       }}
-      onMouseEnter={e => { if (!isPast || isToday) e.currentTarget.style.background = isSelected ? "var(--color-background-success)" : "var(--color-background-secondary)"; }}
-      onMouseLeave={e => { e.currentTarget.style.background = baseBg; }}
+      onMouseEnter={e => { if (!isPast || isToday) { e.currentTarget.style.background = isSelected ? "var(--color-background-success)" : "var(--color-background-secondary)"; e.currentTarget.style.boxShadow = `inset 0 0 0 2px var(--accent)`; }}}
+      onMouseLeave={e => { e.currentTarget.style.background = baseBg; e.currentTarget.style.boxShadow = isToday ? "inset 0 0 0 2px var(--color-text-info)" : hasEvents && !isPast ? "inset 0 0 0 1px var(--color-border-info)" : "none"; }}
     >
       {/* Multi-select indicator */}
       {multiSelect && !isPast && (
@@ -4510,26 +4524,26 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
       )}
 
       {/* Day number */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"3px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
         <span style={{
-          fontSize:"13px",
-          fontWeight: isToday ? "500" : "400",
-          width:"22px",height:"22px",
+          fontSize:"15px",
+          fontWeight: isToday ? "700" : "500",
+          width:"26px", height:"26px",
           borderRadius:"50%",
-          display:"flex",alignItems:"center",justifyContent:"center",
+          display:"flex", alignItems:"center", justifyContent:"center",
           background: isToday ? "var(--color-text-info)" : "transparent",
-          color: isToday ? "#fff" : "var(--color-text-primary)",
+          color: isToday ? "#fff" : isPast ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
           flexShrink:0,
         }}>{day}</span>
         {holiday && (
-          <i className="ti ti-star-filled"
-             style={{fontSize:"10px",color:"var(--color-text-danger)",marginTop:"4px"}}/>
+          <i className="ti ti-star-filled" aria-hidden="true"
+             style={{fontSize:"12px",color:"var(--color-text-danger)",marginTop:"5px"}}/>
         )}
       </div>
 
       {holiday && (
-        <div style={{fontSize:"9px",color:"var(--color-text-danger)",marginBottom:"3px",
-          lineHeight:"1.3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+        <div style={{fontSize:"10px",color:"var(--color-text-danger)",marginBottom:"4px",
+          lineHeight:"1.3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:"500"}}
           title={holiday}>{holiday}</div>
       )}
 
@@ -4537,7 +4551,7 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
         <EventChip key={i} ev={ev} onEdit={()=>{}}/>
       ))}
       {dayEvts.length > 3 && (
-        <div style={{fontSize:"9px",color:"var(--color-text-tertiary)"}}>
+        <div style={{fontSize:"10px",color:"var(--color-text-tertiary)",fontWeight:"500"}}>
           +{dayEvts.length - 3} more
         </div>
       )}
@@ -5333,6 +5347,10 @@ function EventsCalendar() {
     const d = getEventDate(ev);
     if (d) (eventsByDate[d] = eventsByDate[d] || []).push(ev);
   });
+  // Sort each day's events ascending by time
+  Object.keys(eventsByDate).forEach(d => {
+    eventsByDate[d].sort((a,b) => getEventTime(a).localeCompare(getEventTime(b)));
+  });
 
   // Handlers
   const prevMonth = () => month===0 ? (setMonth(11),setYear(y=>y-1)) : setMonth(m=>m-1);
@@ -5415,15 +5433,19 @@ function EventsCalendar() {
 
   return (
     <div style={{position:"relative",display:"flex",flexDirection:"column",height:"100%",minHeight:"680px"}}>
-      {/* Toast */}
+      {/* Toast — bottom center */}
       {toast && (
         <div style={{
-          position:"absolute",top:"12px",right:"12px",zIndex:200,
-          padding:"9px 16px",borderRadius:"var(--border-radius-md)",
+          position:"fixed",bottom:"28px",left:"50%",transform:"translateX(-50%)",
+          zIndex:2000,
+          padding:"10px 22px",borderRadius:"999px",
           background: toast.type==="error" ? "var(--color-background-danger)" : "var(--color-background-success)",
           color:      toast.type==="error" ? "var(--color-text-danger)"      : "var(--color-text-success)",
-          border:`0.5px solid ${toast.type==="error" ? "var(--color-border-danger)" : "var(--color-border-success)"}`,
-          fontSize:"13px",fontWeight:"500",boxShadow:"0 2px 12px rgba(0,0,0,0.18)",
+          border:`1px solid ${toast.type==="error" ? "var(--color-border-danger)" : "var(--color-border-success)"}`,
+          fontSize:"13px",fontWeight:"600",
+          boxShadow:"0 4px 24px rgba(0,0,0,0.28)",
+          whiteSpace:"nowrap",
+          animation:"toastIn 0.22s cubic-bezier(0.34,1.56,0.64,1)",
         }}>{toast.msg}</div>
       )}
 
@@ -5433,7 +5455,9 @@ function EventsCalendar() {
           onClick={e=>{ if(e.target===e.currentTarget) setModal(null); }}
           style={{
             position:"fixed",inset:0,zIndex:1000,
-            background:"rgba(0,0,0,0.36)",
+            background:"rgba(0,0,0,0.48)",
+            backdropFilter:"blur(6px)",
+            WebkitBackdropFilter:"blur(6px)",
             display:"flex",alignItems:"flex-start",justifyContent:"center",
             paddingTop:"60px",overflowY:"auto",
           }}>
@@ -5475,7 +5499,7 @@ function EventsCalendar() {
             style={{width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center"}}>
             <i className="ti ti-chevron-left" style={{fontSize:"15px"}}/>
           </button>
-          <span style={{fontSize:"15px",fontWeight:"500",minWidth:"180px",textAlign:"center",letterSpacing:"-0.01em"}}>
+          <span style={{fontSize:"18px",fontWeight:"600",minWidth:"200px",textAlign:"center",letterSpacing:"-0.02em"}}>
             {MONTHS[month]} {year}
           </span>
           <button onClick={nextMonth} aria-label="Next month"
@@ -5530,8 +5554,9 @@ function EventsCalendar() {
             borderBottom:"0.5px solid var(--color-border-tertiary)",
             position:"sticky",top:0,background:"var(--color-background-primary)",zIndex:2}}>
             {DAYS_SHORT.map(d => (
-              <div key={d} style={{padding:"8px 0",textAlign:"center",fontSize:"11px",fontWeight:"500",
-                color:"var(--color-text-secondary)",borderRight:"0.5px solid var(--color-border-tertiary)"}}>
+              <div key={d} style={{padding:"10px 0",textAlign:"center",fontSize:"13px",fontWeight:"600",
+                color:"var(--color-text-secondary)",borderRight:"0.5px solid var(--color-border-tertiary)",
+                letterSpacing:"0.03em"}}>
                 {d}
               </div>
             ))}
