@@ -19,6 +19,13 @@ FIX (v5.0.6 / v6.0):
     list was introduced in a later release; using it in v1.9.1 raises
     ERR: json: unknown field "hlsAllowOrigins".
 
+  • hlsPartDuration: 0s  — disables Low-Latency HLS (LL-HLS).
+    MediaMTX v1.9.1 enables LL-HLS by default (hlsPartDuration > 0).
+    LL-HLS is incompatible with hlsVariant: mpegts, which causes MediaMTX
+    to log "Low-Latency HLS requires at least 7 segments" every 10 s for
+    the entire stream lifetime.  Setting hlsPartDuration: 0s disables LL-HLS
+    and silences this error completely.
+
 Previously fixed:
   v5.0.5 — hlsAlwaysRemux: true, removed `source: publisher` from paths
   v5.0.4 — rtmp/srt/webrtc: false (correct v1.9.1 disable keys)
@@ -107,6 +114,7 @@ class MediaMTXConfig:
                 f"hlsVariant: mpegts\n"
                 f"hlsSegmentCount: 7\n"
                 f"hlsSegmentDuration: 4s\n"
+                f"hlsPartDuration: 0s\n"
                 f"hlsAllowOrigin: '*'\n"
             )
         else:
