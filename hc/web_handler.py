@@ -765,7 +765,7 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
     # ── POST dispatch ────────────────────────────────────────────────────────
     def _dispatch(self, action: str, data: Dict[str, Any]) -> None:
         # File-manager actions are handled by _FileManagerMixin
-        _FILE_OPS = {"file_rename", "file_delete", "file_delete_dir", "file_move", "file_copy"}
+        _FILE_OPS = {"file_mkdir", "file_rename", "file_delete", "file_delete_dir", "file_move", "file_copy"}
         if action in _FILE_OPS:
             self._handle_file_op(action, data)
             return
@@ -1533,5 +1533,3 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
         except Exception as exc:
             log.error("Restore error: %s", exc)
             self._json({"ok": False, "msg": f"Restore error: {exc}"}, 500)
-
-
