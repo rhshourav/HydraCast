@@ -149,9 +149,18 @@ class _CalendarHandlersMixin:
             if not isinstance(streams_raw, list) or not streams_raw:
                 raise ValueError("'streams' must be a non-empty list.")
             play_at = datetime.fromisoformat(play_at_str)
+            if play_at <= datetime.now():
+                raise ValueError("Cannot schedule events in the past.")
         except (KeyError, ValueError) as exc:
             self._json({"error": f"Bad payload: {exc}"}, 400)
             return
+
+        # --- loop_count (0=once, -1=infinite, N=N extra loops) ---
+        loop_count: int = 0
+        try:
+            loop_count = int(payload.get("loop_count", 0))
+        except (TypeError, ValueError):
+            loop_count = 0
 
         # --- optional broadcast end time ---
         broadcast_end: _Opt[datetime] = None
@@ -200,6 +209,7 @@ class _CalendarHandlersMixin:
                     file_path     = Path(file_path_s),
                     play_at       = play_at,
                     broadcast_end = broadcast_end,
+                    loop_count    = loop_count,
                 )
                 ev_dict: Dict[str, Any] = {
                     "event_id":    ev.event_id,
