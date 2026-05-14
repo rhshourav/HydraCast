@@ -2971,8 +2971,37 @@ function renderConfigEditor(s){
             title="When the video is shorter than 24 h, calculate the seek position within the current loop iteration">
           Loop calculation (seek within loops for videos shorter than 24 h)
         </label>
-        <div style="font-size:10px;color:var(--text3)">
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-top:4px">
+          <div class="fg">
+            <label title="How often (seconds) HydraCast re-checks position against the expected broadcast offset. Minimum 60 s.">Resync interval (seconds)</label>
+            <input id="cfg-comp-resync-interval" type="number" min="60" step="60"
+                   value="${s.compliance_resync_interval??7200}" placeholder="7200">
+          </div>
+          <div class="fg">
+            <label title="Maximum tolerated drift (seconds) before a hard resync is triggered. 0 = always resync on every check.">Drift threshold (seconds)</label>
+            <input id="cfg-comp-drift-threshold" type="number" min="0" step="1"
+                   value="${s.compliance_drift_threshold??30}" placeholder="30">
+          </div>
+        </div>
+        <div class="st-comp-row" style="margin-top:2px">
+          <label for="cfg-comp-alert" style="flex:1;font-size:12px;color:var(--text2);cursor:pointer;text-transform:none;letter-spacing:0">
+            Show banner alerts when compliance file is missing or seek fails
+            <small>Displays a pulsing error banner in the Web UI until dismissed</small>
+          </label>
+          <input type="checkbox" id="cfg-comp-alert" ${s.compliance_alert_enabled!==false?'checked':''}
+                 style="width:auto;accent-color:var(--accent);flex-shrink:0">
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+          <button class="btn" style="font-size:11px;padding:4px 12px"
+                  title="Immediately seek this stream to its correct compliance position right now"
+                  onclick="complianceResyncNow('${esc(s.name)}',this)">
+            &#x21BA; Resync Now
+          </button>
+          <span id="cfg-comp-resync-status" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px">
           When enabled, HydraCast calculates the correct playback seek offset so the stream matches a continuous linear broadcast that started at the configured time today.
+          Periodic drift checks run every <em>resync interval</em> seconds and trigger a hard seek when drift exceeds the threshold.
         </div>
       </div>
     </div>
@@ -3074,6 +3103,8 @@ async function saveConfig(){
     compliance_start:document.getElementById('cfg-comp-start')?.value||'06:00:00',
     compliance_loop:document.getElementById('cfg-comp-loop')?.checked||false,
     compliance_alert_enabled:document.getElementById('cfg-comp-alert')?.checked!==false,
+    compliance_resync_interval:parseFloat(document.getElementById('cfg-comp-resync-interval')?.value)||7200,
+    compliance_drift_threshold:parseFloat(document.getElementById('cfg-comp-drift-threshold')?.value)||30,
   };
   const r=await api('update_config',payload);
   if(r?.ok){_clearDirty();loadConfig();}
@@ -3821,6 +3852,28 @@ function _dismissCompAlert(streamName) {
   delete _compAlertActive[streamName];
   // Allow re-display after 60 s if still unresolved
   setTimeout(() => { /* passive — next loadStreams tick re-evaluates */ }, 60000);
+}
+
+async function complianceResyncNow(streamName, btn) {
+  const statusEl = document.getElementById('cfg-comp-resync-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) { statusEl.textContent = 'Resyncing…'; statusEl.style.color = 'var(--yellow)'; }
+  try {
+    const r = await api('compliance_resync', {name: streamName});
+    if (r?.ok) {
+      if (statusEl) { statusEl.textContent = '✓ Resync initiated'; statusEl.style.color = 'var(--green)'; }
+      toast('Compliance resync initiated', 'ok');
+    } else {
+      if (statusEl) { statusEl.textContent = '✕ ' + (r?.msg||'Failed'); statusEl.style.color = 'var(--red)'; }
+      toast(r?.msg || 'Resync failed', 'err');
+    }
+  } catch(e) {
+    if (statusEl) { statusEl.textContent = '✕ Request failed'; statusEl.style.color = 'var(--red)'; }
+    toast('Resync request failed', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+    setTimeout(() => { if (statusEl) { statusEl.textContent = ''; statusEl.style.color = ''; } }, 4000);
+  }
 }
 
 function toggleComplianceAlerts(checked) {
