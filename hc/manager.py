@@ -1,26 +1,5 @@
 """
 hc/manager.py  —  StreamManager: orchestrates workers, scheduler, event loop.
-
-v6.1 changes (compliance v2)
-─────────────────────────────
-• _event_loop: after firing a one-shot event the loop watches for its
-  completion, then calls _resume_compliance() which:
-    – selects the correct day-tagged compliance file
-    – calculates an accurate seek offset (post-event resume)
-    – injects seek_target into the StreamState so the worker picks it up
-    – sets or clears compliance_alert on the state (Web UI banner)
-
-• compliance_alert_enabled is respected: if False, no alert banner is set.
-
-• reload_csv now syncs compliance_alert_enabled.
-
-v6.0 changes (kept)
-────────────────────
-• Replaced csv_manager.CSVManager with json_manager.JSONManager.
-• Added start/stop/restart/get_worker/add_event/remove_event/remove_events/
-  fire_event_now/reload_from_configs methods.
-• add_stream / remove_stream for runtime Web UI management.
-• FolderWatcherRegistry for live folder monitoring.
 """
 from __future__ import annotations
 
@@ -50,6 +29,7 @@ class StreamManager:
         self._event_t: Optional[threading.Thread] = None
         self.events:   List[OneShotEvent]         = JSONManager.load_events()
         self._fw_registry = FolderWatcherRegistry(glog)
+        self._playing_events: Dict[str, datetime] = {}
 
     # ── Worker factory ─────────────────────────────────────────────────────────
     def _worker(self, state: StreamState) -> StreamWorker:
@@ -83,7 +63,6 @@ class StreamManager:
         state.playlist_index = 0
         state.playlist_order = []
 
-        # Compliance: select today's file and set initial seek offset
         if state.config.compliance_enabled:
             self._apply_compliance_start(state)
 
@@ -136,26 +115,15 @@ class StreamManager:
             self.stop_stream(s)
 
     # ── Compliance helpers ────────────────────────────────────────────────────
-
-    def _apply_compliance_start(
-        self,
-        state: StreamState,
-        reference_time: Optional[datetime] = None,
-    ) -> None:
-        """
-        Select the correct day-tagged file, compute the seek offset, and
-        inject both into *state* so the worker starts at the right position.
-        Sets a compliance alert if anything goes wrong.
-        """
+    def _apply_compliance_start(self, state: StreamState, reference_time: Optional[datetime] = None) -> None:
         from hc.compliance import prepare_compliance_start
-
         cfg = state.config
         try:
             item, seek, explanation, alert = prepare_compliance_start(
                 playlist        = cfg.playlist,
                 broadcast_start = cfg.compliance_start,
                 loop_calculation= cfg.compliance_loop,
-                video_duration  = state.duration,   # 0 on first start — OK
+                video_duration  = state.duration,
                 reference_time  = reference_time,
             )
         except Exception as exc:
@@ -171,7 +139,6 @@ class StreamManager:
             state.clear_compliance_alert()
 
         if item is not None:
-            # Pin the playlist to the selected item so the worker starts here.
             try:
                 idx = cfg.playlist.index(item)
                 state.playlist_index = idx
@@ -183,20 +150,8 @@ class StreamManager:
             state.seek_target    = seek
             log.info("[%s] Compliance seek: %s", cfg.name, explanation)
 
-    def _resume_compliance(
-        self,
-        state: StreamState,
-        event_end_time: datetime,
-    ) -> None:
-        """
-        Called after a one-shot event finishes.  Reselects the compliance file
-        for today and seeks to the correct position as of *event_end_time*.
-        """
-        from hc.compliance import (
-            select_compliance_file,
-            calculate_compliance_offset_after_event,
-        )
-
+    def _resume_compliance(self, state: StreamState, event_end_time: datetime) -> None:
+        from hc.compliance import select_compliance_file, calculate_compliance_offset_after_event
         cfg = state.config
         if not cfg.compliance_enabled:
             return
@@ -226,7 +181,6 @@ class StreamManager:
             state.seek_target = seek
             log.info("[%s] Post-event compliance resume: %s", cfg.name, explanation)
 
-        # Ask the worker to restart from the new position
         w = self._workers.get(cfg.name)
         if w:
             threading.Thread(
@@ -269,6 +223,7 @@ class StreamManager:
                 w = self._workers.get(s.config.name)
                 if w:
                     ev.played = True
+                    self._playing_events[ev.event_id] = datetime.now()
                     JSONManager.mark_event_played(self.events, ev_id)
                     self._glog.add(
                         f"[{s.config.name}] Manual fire: {ev.file_path.name}", "INFO"
@@ -357,7 +312,6 @@ class StreamManager:
         state.log_add(msg)
         self._glog.add(msg, "INFO")
 
-    # ── Hot JSON reload (TUI L key) ───────────────────────────────────────────
     def reload_csv(self) -> None:
         try:
             new_configs: List[StreamConfig] = JSONManager.load()
@@ -367,7 +321,7 @@ class StreamManager:
         self.reload_from_configs(new_configs)
         self._glog.add("streams.json reloaded.", "INFO")
 
-    # ── Scheduler loop ────────────────────────────────────────────────────────
+    # ── Scheduler & Event loops ───────────────────────────────────────────────
     def _scheduler_loop(self) -> None:
         while self._running:
             for s in self.states:
@@ -390,12 +344,7 @@ class StreamManager:
                     return
                 time.sleep(0.1)
 
-    # ── One-shot event loop ───────────────────────────────────────────────────
     def _event_loop(self) -> None:
-        # Track events currently being played so we can detect completion.
-        _playing: Dict[str, datetime] = {}  # event_id → fired_at
-        # Track events that are due but whose stream isn't live yet, so we
-        # can retry them once the stream comes up (up to 5 minutes late).
         _pending: Dict[str, datetime] = {}  # event_id → first_due_at
 
         while self._running:
@@ -403,49 +352,47 @@ class StreamManager:
 
             for ev in self.events:
                 if ev.played:
-                    # Check if event was playing and is now done → resume compliance
-                    if ev.event_id in _playing:
-                        fired_at = _playing.pop(ev.event_id)
-                        _pending.pop(ev.event_id, None)
+                    if ev.event_id in self._playing_events:
+                        fired_at = self._playing_events[ev.event_id]
+                        # Give the worker 2 seconds to set the oneshot_active flag
+                        if (now - fired_at).total_seconds() < 2.0:
+                            continue
+
                         for s in self.states:
-                            if s.config.name == ev.stream_name and s.config.compliance_enabled:
-                                end_time = datetime.now()
-                                threading.Thread(
-                                    target=self._resume_compliance,
-                                    args=(s, end_time),
-                                    daemon=True,
-                                    name=f"comp-ev-resume-{s.config.port}",
-                                ).start()
-                    _pending.pop(ev.event_id, None)
+                            if s.config.name == ev.stream_name:
+                                if not getattr(s, "oneshot_active", False):
+                                    self._playing_events.pop(ev.event_id, None)
+                                    if s.config.compliance_enabled and getattr(ev, "post_action", "resume") in ("resume", ""):
+                                        end_time = datetime.now()
+                                        threading.Thread(
+                                            target=self._resume_compliance,
+                                            args=(s, end_time),
+                                            daemon=True,
+                                            name=f"comp-ev-resume-{s.config.port}",
+                                        ).start()
+                                break
+                        _pending.pop(ev.event_id, None)
                     continue
 
                 delta = (ev.play_at - now).total_seconds()
 
-                # Mark event as pending (due) once we're within 5 s of play_at.
-                # Keep retrying for up to 5 minutes in case the stream starts late.
                 if delta <= 5:
                     if ev.event_id not in _pending:
                         if delta >= -300:
-                            # Due within the last 5 minutes — enter pending queue.
                             _pending[ev.event_id] = now
                         else:
-                            # More than 5 minutes overdue and never entered pending
-                            # (e.g. app was offline when it was supposed to fire).
-                            # Mark played so it doesn't fire stale.
                             ev.played = True
                             JSONManager.mark_event_played(self.events, ev.event_id)
                             self._glog.add(
                                 f"[{ev.stream_name}] Skipping stale event "
-                                f"({ev.file_path.name}, "
-                                f"{abs(int(delta))//60}m overdue).",
+                                f"({ev.file_path.name}, {abs(int(delta))//60}m overdue).",
                                 "WARN",
                             )
                             continue
 
                 if ev.event_id not in _pending:
-                    continue  # Not due yet
+                    continue  
 
-                # Event is pending — try to fire it
                 first_due = _pending[ev.event_id]
                 overdue_secs = (now - first_due).total_seconds()
 
@@ -457,9 +404,7 @@ class StreamManager:
                     stream_live = s.status in (StreamStatus.LIVE, StreamStatus.ONESHOT)
 
                     if not stream_live:
-                        # Stream isn't live — auto-start it so the event can fire
                         if overdue_secs < 30:
-                            # Give it up to 30 s for the stream to come up
                             if s.status not in (StreamStatus.STARTING,):
                                 self._glog.add(
                                     f"[{s.config.name}] Event due but stream not live "
@@ -468,7 +413,6 @@ class StreamManager:
                                 )
                                 self.start_stream(s)
                         elif overdue_secs < 300:
-                            # Still waiting for stream — log once per minute
                             if int(overdue_secs) % 60 < 5:
                                 self._glog.add(
                                     f"[{s.config.name}] Waiting for stream to start "
@@ -476,7 +420,6 @@ class StreamManager:
                                     "WARN",
                                 )
                         else:
-                            # 5-minute timeout — give up
                             ev.played = True
                             _pending.pop(ev.event_id, None)
                             JSONManager.mark_event_played(self.events, ev.event_id)
@@ -487,17 +430,14 @@ class StreamManager:
                             )
                         break
 
-                    # Stream is live — fire the event
                     if w is None:
                         w = self._worker(s)
 
                     ev.played = True
-                    _playing[ev.event_id] = now
+                    self._playing_events[ev.event_id] = now
                     _pending.pop(ev.event_id, None)
                     JSONManager.mark_event_played(self.events, ev.event_id)
-                    self._glog.add(
-                        f"[{s.config.name}] Firing one-shot: "
-                        f"{ev.file_path.name}", "INFO")
+                    self._glog.add(f"[{s.config.name}] Firing one-shot: {ev.file_path.name}", "INFO")
                     threading.Thread(
                         target=lambda w=w, ev=ev: w.play_oneshot(ev),
                         daemon=True,
@@ -505,7 +445,7 @@ class StreamManager:
                     ).start()
                     break
 
-            for _ in range(10):   # 1-second tick (was 5 s) — don't miss narrow windows
+            for _ in range(10):
                 if not self._running:
                     return
                 time.sleep(0.1)
@@ -532,7 +472,6 @@ class StreamManager:
                 break
             time.sleep(0.2)
 
-    # ── Queries ───────────────────────────────────────────────────────────────
     def get_state(self, name: str) -> Optional[StreamState]:
         for s in self.states:
             if s.config.name == name:
