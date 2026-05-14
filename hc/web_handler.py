@@ -1052,6 +1052,99 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             removed = mgr.remove_event(ev_id)
             self._json({"ok": removed, "msg": "Event deleted" if removed else "Event not found"})
 
+        elif action == "update_event":
+            try:
+                ev_id = str(data.get("event_id", "")).strip()
+                if not ev_id:
+                    raise ValueError("Missing event_id")
+                ev = next((e for e in mgr.events if e.event_id == ev_id), None)
+                if ev is None:
+                    raise ValueError(f"Event '{ev_id}' not found")
+                if ev.played:
+                    raise ValueError("Cannot edit an already-played event")
+                if "stream_name" in data:
+                    sn = str(data["stream_name"]).strip()
+                    if mgr.get_state(sn) is None:
+                        raise ValueError(f"Stream '{sn}' not found")
+                    ev.stream_name = sn
+                if "file_path" in data:
+                    fp = Path(str(data["file_path"]).strip())
+                    safe = _safe_path(fp, MEDIA_DIR())
+                    if safe is None and not fp.exists():
+                        raise ValueError("File not found or path outside media directory")
+                    ev.file_path = fp
+                if "play_at" in data:
+                    play_at_s = str(data["play_at"]).strip()
+                    dt = None
+                    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                        try:
+                            dt = datetime.strptime(play_at_s, fmt); break
+                        except ValueError:
+                            continue
+                    if dt is None:
+                        raise ValueError("Invalid datetime format")
+                    if dt <= datetime.now():
+                        raise ValueError("Cannot reschedule an event to the past")
+                    ev.play_at = dt
+                if "post_action" in data:
+                    ev.post_action = str(data["post_action"]).strip()
+                if "start_pos" in data:
+                    sp = str(data["start_pos"]).strip()
+                    ev.start_pos = sp if re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", sp) else "00:00:00"
+                if "loop_count" in data:
+                    ev.loop_count = int(data["loop_count"])
+                JSONManager._save_events(mgr.events)
+                self._json({"ok": True, "msg": "Event updated"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "schedule_event":
+            try:
+                stream_name = str(data.get("stream_name", "")).strip()
+                file_path   = str(data.get("file_path",   "")).strip()
+                play_at     = str(data.get("play_at",     "")).strip()
+                post_action = str(data.get("post_action", "resume")).strip()
+                start_pos   = str(data.get("start_pos",   "00:00:00")).strip()
+                loop_count  = int(data.get("loop_count",  0))
+                if not re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", start_pos):
+                    start_pos = "00:00:00"
+                if not stream_name:
+                    raise ValueError("Stream name is required")
+                if mgr.get_state(stream_name) is None:
+                    raise ValueError(f"Stream '{stream_name}' not found")
+                dt = None
+                for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        dt = datetime.strptime(play_at, fmt); break
+                    except ValueError:
+                        continue
+                if dt is None:
+                    raise ValueError("Invalid datetime format")
+                if dt <= datetime.now():
+                    raise ValueError("Cannot schedule an event in the past")
+                fp   = Path(file_path)
+                safe = _safe_path(fp, MEDIA_DIR())
+                if safe is None and not fp.exists():
+                    raise ValueError("File not found or path outside media directory")
+                ev_id = hashlib.md5(
+                    f"{stream_name}{play_at}{file_path}".encode()
+                ).hexdigest()[:8]
+                if any(e.event_id == ev_id for e in mgr.events):
+                    raise ValueError("An identical event is already scheduled")
+                ev = OneShotEvent(
+                    event_id    = ev_id,
+                    stream_name = stream_name,
+                    file_path   = fp,
+                    play_at     = dt,
+                    post_action = post_action,
+                    start_pos   = start_pos,
+                    loop_count  = loop_count,
+                )
+                mgr.add_event(ev)
+                self._json({"ok": True, "msg": f"Event scheduled for {dt.strftime('%Y-%m-%d %H:%M')}"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
         elif action == "create_stream":
             try:
                 name_s = str(data.get("name", "")).strip()
