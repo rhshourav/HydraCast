@@ -4392,11 +4392,12 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "audio_bitrate":  cfg.audio_bitrate,
                 "speed":          st.speed,
                 "app_ver":        APP_VER,
-                # current file being played (name only, safe fallback)
-                "current_file":   getattr(st, "current_file", None),
-                # next queued (pending, not yet fired) event for this stream.
-                # Only meaningful when status != ONESHOT; during ONESHOT the
-                # worker already sets current_file to the event file being played.
+                # current file being played (name only, safe fallback).
+                # current_file may be a method or a plain attribute depending on
+                # the StreamState implementation — handle both.
+                "current_file":   (st.current_file() if callable(st.current_file) else st.current_file)
+                                  if hasattr(st, "current_file") else None,
+                # active unplayed event for this stream, if any
                 "active_event":   next(
                     (ev.file_path.name for ev in mgr.events
                      if ev.stream_name == cfg.name and not ev.played),
