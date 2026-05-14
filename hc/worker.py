@@ -867,6 +867,18 @@ class StreamWorker:
 
         self._log(f"Launching MediaMTX | config={cfg_file} | log={log_f}")
 
+        # Truncate the YAML log before each launch so _tail_log() only returns
+        # output from *this* run.  Without this, stale entries from the previous
+        # MediaMTX instance (e.g. LL-HLS warnings) pollute the error tail and
+        # hide the real cause of a startup failure (e.g. "address already in use").
+        # This is safe: MediaMTX opens the file in append mode on startup, so
+        # truncating it here does not conflict with the FILE_SHARE_VIOLATION fix
+        # that keeps Python from opening log_f for writing simultaneously.
+        try:
+            log_f.write_text("", encoding="utf-8")
+        except OSError:
+            pass  # Non-fatal; stale log content is a cosmetic issue only.
+
         try:
             # Open the CRASH log OUTSIDE a with-block so the handle stays open
             # for the lifetime of the MediaMTX process.  Using a with-block
@@ -1476,7 +1488,28 @@ class StreamWorker:
         """
         cfg = self.state.config
         self._kill_mediamtx()
-        time.sleep(0.2)
+        # Wait for the RTSP port (and HLS port when HLS is enabled) to be fully
+        # released before restarting.  0.2 s is insufficient on Windows — the OS
+        # keeps the listening socket in TIME_WAIT for several seconds after the
+        # process exits, causing the next MediaMTX launch to fail with "address
+        # already in use" (exit code 1).  Poll until free (max 8 s), then force-
+        # kill any orphan still holding a port and wait a final 0.5 s.
+        _wait_ports = [cfg.port]
+        if cfg.hls_enabled:
+            _wait_ports.append(cfg.hls_port)
+        _deadline = time.time() + 8.0
+        while time.time() < _deadline:
+            if all(not _port_in_use(p) for p in _wait_ports):
+                break
+            time.sleep(0.2)
+        else:
+            for _p in _wait_ports:
+                if _port_in_use(_p):
+                    self._log(
+                        f"Port {_p} still in use after 8 s — force-killing orphan.", "WARN"
+                    )
+                    _kill_orphan_on_port(_p)
+            time.sleep(0.5)
         try:
             mtx_cfg = MediaMTXConfig.write(self.state)
         except Exception as exc:
