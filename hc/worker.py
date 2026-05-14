@@ -443,8 +443,10 @@ class StreamWorker:
         self.state.oneshot_active = True
         self._kill_ffmpeg()
 
+        # Guard: start_pos may be absent on events loaded from old events.json
+        start_pos_str = getattr(event, "start_pos", "00:00:00") or "00:00:00"
         try:
-            h, m, s = event.start_pos.split(":")
+            h, m, s = start_pos_str.split(":")
             seek_secs = int(h) * 3600 + int(m) * 60 + float(s)
         except Exception:
             seek_secs = 0.0
@@ -456,7 +458,7 @@ class StreamWorker:
             self.state.oneshot_active = False
             return
 
-        item = PlaylistItem(file_path=event.file_path, start_position=event.start_pos)
+        item = PlaylistItem(file_path=event.file_path, start_position=start_pos_str)
         self.state.duration = probe_duration(item.file_path)
         self._start_ffmpeg_with_retry(item, seek_secs)
 
