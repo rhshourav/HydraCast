@@ -59,6 +59,7 @@ class OneShotEvent:
     post_action: str  = ""      # "" = return to compliance stream after event
     played:      bool = False
     start_pos:   str  = "00:00:00"
+    loop_count:  int  = 0       # 0 = play once; -1 = loop indefinitely; N>0 = N extra loops
 
 
 @dataclass
