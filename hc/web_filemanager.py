@@ -171,8 +171,22 @@ class _FileManagerMixin:
         """
         from hc.utils import _fmt_size
 
+        # Guard: MEDIA_DIR() raises RuntimeError if set_base_dir() was never called.
+        try:
+            media = MEDIA_DIR()
+        except RuntimeError as exc:
+            log.error("_get_files: %s", exc)
+            self._json({"error": str(exc)}, 500)
+            return
+
+        if not media.exists():
+            log.error("_get_files: media directory does not exist: %s", media)
+            self._json({"error": f"Media directory does not exist: {media}"}, 500)
+            return
+
+        log.debug("_get_files: serving from '%s'", media)
+
         rel_raw = qs.get("path", [""])[0].strip().lstrip("/\\")
-        media   = MEDIA_DIR()
 
         if rel_raw:
             target = media / rel_raw
@@ -189,10 +203,14 @@ class _FileManagerMixin:
             for entry in sorted(safe.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
                 rel = str(entry.relative_to(media))
                 if entry.is_dir():
+                    try:
+                        item_count = sum(1 for _ in entry.iterdir())
+                    except OSError:
+                        item_count = 0
                     dirs.append({
                         "name":  entry.name,
                         "path":  rel,
-                        "items": sum(1 for _ in entry.iterdir()),
+                        "items": item_count,
                     })
                 elif entry.is_file():
                     ext = entry.suffix.lower()
@@ -273,6 +291,9 @@ class _FileManagerMixin:
             self._json({"ok": False, "msg": f"'{new_name}' already exists in this folder"})
             return
 
+        # FIX: capture is_dir BEFORE rename so the check survives the fs operation.
+        is_dir = src.is_dir()
+
         try:
             src.rename(dst)
         except Exception as exc:
@@ -282,7 +303,7 @@ class _FileManagerMixin:
         _invalidate_lib_cache()
         mgr = _WEB_MANAGER
 
-        if src.is_dir() or dst.is_dir():
+        if is_dir:
             n = _update_folder_in_playlists(src, dst, mgr)
         else:
             n = _update_stream_playlists(src, dst, mgr)
@@ -388,6 +409,7 @@ class _FileManagerMixin:
             self._json({"ok": False, "msg": f"'{src.name}' already exists in destination"})
             return
 
+        # FIX: capture is_dir BEFORE the move operation.
         is_dir = src.is_dir()
         try:
             shutil.move(str(src), str(dst))
