@@ -1459,36 +1459,7 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
-  <!-- ── Mini Calendar ── -->
-  <div class="section-hdr">
-    <h2>Calendar View</h2>
-    <span class="sep"></span>
-    <span style="font-size:11px;color:var(--purple);display:flex;align-items:center;gap:5px">
-      <span style="width:8px;height:8px;border-radius:50%;background:var(--purple);display:inline-block"></span> Holiday
-    </span>
-    <span style="font-size:11px;color:var(--blue);display:flex;align-items:center;gap:5px">
-      <span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block"></span> Event
-    </span>
-  </div>
-  <div class="ev-cal" id="ev-cal">
-    <div class="ev-cal-hdr">
-      <button class="ev-cal-nav" onclick="evCalMove(-1)" title="Previous month">&#8249;</button>
-      <span class="ev-cal-title" id="ev-cal-title">—</span>
-      <button class="ev-cal-nav" onclick="evCalMove(1)" title="Next month">&#8250;</button>
-      <div style="display:flex;align-items:center;gap:12px;margin-left:auto;font-size:11px">
-        <span style="display:flex;align-items:center;gap:5px;color:var(--purple)">
-          <span style="width:10px;height:10px;border-radius:50%;background:var(--purple);display:inline-block;flex-shrink:0"></span>
-          Holiday
-        </span>
-        <span style="display:flex;align-items:center;gap:5px;color:var(--blue)">
-          <span style="width:10px;height:10px;border-radius:50%;background:var(--blue);display:inline-block;flex-shrink:0"></span>
-          Event
-        </span>
-        <button class="btn b" style="padding:3px 10px;font-size:10px" onclick="evCalRender()" title="Refresh calendar">↻</button>
-      </div>
-    </div>
-    <div class="ev-cal-grid" id="ev-cal-grid"></div>
-  </div>
+
 
 </div>
 
@@ -2081,26 +2052,36 @@ function _sigOf(s){
          s.error_msg||'',
          s.playlist_count||0,
          s.enabled?1:0,
-         s.shuffle?1:0].join('|');
+         s.shuffle?1:0,
+         s.active_event||'',
+         s.current_file||''].join('|');
 }
 
 function _rowCells(s,i,showRtsp){
   const pct=Math.max(0,Math.min(100,+s.progress)).toFixed(1);
   const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
   const status=s.status||'STOPPED';
+  const isEvent = status==='ONESHOT';
+  const nowPlayingFile = isEvent ? s.active_event : s.current_file;
   return `
     <td class="td-muted">${i+1}</td>
     <td>
       <span class="td-name">${esc(s.name)}</span>
       ${s.shuffle?`<span class="tag-shuf">SHUF</span>`:''}
       ${!s.enabled?`<span class="tag-dis">OFF</span>`:''}
-      ${status==='ONESHOT'?`<span style="font-size:10px;font-weight:700;color:var(--purple);background:var(--purple-dim);border:1px solid rgba(154,138,176,0.4);border-radius:4px;padding:2px 7px;margin-left:4px">🎬 EVENT</span>`:''}
+      ${isEvent?`<span style="font-size:10px;font-weight:700;color:var(--purple);background:var(--purple-dim);border:1px solid rgba(154,138,176,0.4);border-radius:4px;padding:2px 7px;margin-left:4px">🎬 EVENT</span>`:''}
       ${s.playlist_count>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(${s.playlist_count} files)</span>`:''}
+      ${nowPlayingFile?`
+      <div style="margin-top:4px;display:flex;align-items:center;gap:5px;max-width:260px">
+        <span style="font-size:10px;flex-shrink:0;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'🎬':'▶'}</span>
+        <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 7px"
+              title="${esc(nowPlayingFile)}">${esc(nowPlayingFile)}</span>
+      </div>`:''}
       ${s.next_in_queue&&s.next_in_queue.length?`
   <div style="margin-top:3px;display:flex;flex-direction:column;gap:1px">
-    ${s.next_in_queue.map((name,i)=>`
+    ${s.next_in_queue.map((name,qi)=>`
       <div style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">
-        <span style="color:var(--accent-light);font-family:var(--font-mono);font-weight:600;flex-shrink:0">+${i+1}</span>
+        <span style="color:var(--accent-light);font-family:var(--font-mono);font-weight:600;flex-shrink:0">+${qi+1}</span>
         <span style="overflow:hidden;text-overflow:ellipsis">${esc(name)}</span>
       </div>`).join('')}
   </div>`:''}
@@ -2108,11 +2089,11 @@ function _rowCells(s,i,showRtsp){
     <td style="color:var(--accent-light)">:${s.port}</td>
     <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
     <td style="min-width:140px">
-      ${status==='ONESHOT'?`
+      ${isEvent?`
         <div style="position:relative;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden">
           <div style="position:absolute;inset:0;background:linear-gradient(90deg,var(--purple),rgba(154,138,176,0.3),var(--purple));background-size:200% 100%;animation:shimmer 1.4s linear infinite"></div>
         </div>
-        <div class="prog-label" style="color:var(--purple)">🎬 ${s.active_event?esc(s.active_event):'Event playing…'} ${s.time_remaining?'· '+fmtRemaining(s.time_remaining)+' left':pct+'%'}</div>
+        <div class="prog-label" style="color:var(--purple)">🎬 Event ${s.time_remaining?'· '+fmtRemaining(s.time_remaining)+' left':pct+'%'}</div>
       `:`
         <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
         <div class="prog-label">${pct}%${s.time_remaining?' · '+fmtRemaining(s.time_remaining)+' left':''}</div>
@@ -2290,12 +2271,14 @@ async function loadViewer(){
   data.forEach((s,idx)=>{
     const status=s.status||'STOPPED';
     const isLive=status==='LIVE';
+    const isEvent=status==='ONESHOT';
     const pct=(+s.progress||0).toFixed(1);
+    const nowFile = isEvent ? s.active_event : s.current_file;
 
     if(!existing[s.name]){
       // ── First render: create the full card ──
       const div=document.createElement('div');
-      div.className='stream-card'+(isLive?' is-live':'');
+      div.className='stream-card'+(isLive||isEvent?' is-live':'');
       div.dataset.vname=s.name;
       div.innerHTML=`
         <div class="stream-card-header">
@@ -2303,9 +2286,14 @@ async function loadViewer(){
           <span class="stream-card-title">${esc(s.name)}</span>
           <span style="font-size:11px;color:var(--accent-light)">:${s.port}</span>
         </div>
+        ${nowFile?`<div class="vc-nowplaying-${esc(s.name)}" style="padding:5px 14px 0;display:flex;align-items:center;gap:5px;min-width:0">
+          <span style="font-size:10px;flex-shrink:0;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'🎬':'▶'}</span>
+          <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
+                title="${esc(nowFile)}">${esc(nowFile)}</span>
+        </div>`:`<div class="vc-nowplaying-${esc(s.name)}" style="padding:5px 14px 0;height:22px"></div>`}
         <div class="stream-preview" id="vp-${esc(s.name)}">
           <div class="stream-overlay" id="vo-${esc(s.name)}">
-            ${isLive?`
+            ${isLive||isEvent?`
               <div class="stream-play-btn" onclick="loadHLSStream('${esc(s.name)}','${esc(s.hls_url||'')}','${esc(s.rtsp_url||'')}')" title="Click to load stream">▶</div>
               <div style="font-size:10px;color:var(--text3)">Click to preview</div>
             `:`<div style="font-size:12px;color:var(--text3)">Stream offline</div>`}
@@ -2323,7 +2311,7 @@ async function loadViewer(){
         </div>
         <div style="padding:0 14px 10px">
           <div class="prog vc-prog-${esc(s.name)}" style="height:5px;border-radius:3px">
-            <div class="prog-fill vc-progfill-${esc(s.name)}" style="width:${pct}%;background:${+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)'}"></div>
+            <div class="prog-fill vc-progfill-${esc(s.name)}" style="width:${pct}%;background:${isEvent?'var(--purple)':+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)'}"></div>
           </div>
         </div>`;
       // Insert in correct order
@@ -2334,24 +2322,37 @@ async function loadViewer(){
     } else {
       // ── Subsequent renders: only update text/status, leave preview untouched ──
       const card=existing[s.name];
-      card.className='stream-card'+(isLive?' is-live':'');
-      const badge=card.querySelector('.vc-badge-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      card.className='stream-card'+(isLive||isEvent?' is-live':'');
+      const safeName=s.name.replace(/[^a-zA-Z0-9_-]/g,'');
+      const badge=card.querySelector('.vc-badge-'+safeName);
       if(badge){badge.className='badge '+esc(status);badge.textContent=status;}
-      const pctEl=card.querySelector('.vc-pct-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      const pctEl=card.querySelector('.vc-pct-'+safeName);
       if(pctEl)pctEl.textContent=pct+'%';
-      const fpsEl=card.querySelector('.vc-fps-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      const fpsEl=card.querySelector('.vc-fps-'+safeName);
       if(fpsEl)fpsEl.textContent=s.fps>0?Math.round(s.fps)+'fps':'—';
-      const posEl=card.querySelector('.vc-pos-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      const posEl=card.querySelector('.vc-pos-'+safeName);
       if(posEl)posEl.textContent=s.position||'—';
-      const pfill=card.querySelector('.vc-progfill-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
-      if(pfill){pfill.style.width=pct+'%';pfill.style.background=+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)';}
-      const copyBtn=card.querySelector('.vc-copy-'+s.name.replace(/[^a-zA-Z0-9_-]/g,''));
+      const pfill=card.querySelector('.vc-progfill-'+safeName);
+      if(pfill){pfill.style.width=pct+'%';pfill.style.background=isEvent?'var(--purple)':+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)';}
+      const copyBtn=card.querySelector('.vc-copy-'+safeName);
       if(copyBtn){if(s.hls_url)copyBtn.dataset.hls=s.hls_url;if(s.rtsp_url)copyBtn.dataset.rtsp=s.rtsp_url;}
+      // Update now-playing chip
+      const npEl=card.querySelector('.vc-nowplaying-'+safeName);
+      if(npEl){
+        if(nowFile){
+          npEl.style.display='flex';
+          npEl.innerHTML=`<span style="font-size:10px;flex-shrink:0;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'🎬':'▶'}</span>
+            <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
+                  title="${esc(nowFile)}">${esc(nowFile)}</span>`;
+        } else {
+          npEl.innerHTML='';
+        }
+      }
       // Update offline overlay only if preview has no video playing
       const preview=document.getElementById('vp-'+s.name);
       const overlay=document.getElementById('vo-'+s.name);
       if(overlay&&!preview?.querySelector('video')){
-        overlay.innerHTML=isLive?`
+        overlay.innerHTML=isLive||isEvent?`
           <div class="stream-play-btn" onclick="loadHLSStream('${esc(s.name)}','${esc(s.hls_url||'')}','${esc(s.rtsp_url||'')}')" title="Click to load stream">▶</div>
           <div style="font-size:10px;color:var(--text3)">Click to preview</div>
         `:`<div style="font-size:12px;color:var(--text3)">Stream offline</div>`;
@@ -2813,6 +2814,7 @@ function renderEventsTable(){
     const past     = !ev.played && secsNow < 0;
     const cdColor  = ev.played ? 'var(--text3)' : imminent ? 'var(--yellow)' : past ? 'var(--red)' : 'var(--accent-light)';
     const rowStyle = imminent ? 'background:rgba(201,168,120,0.06)' : '';
+    const cdText   = ev.played ? '—' : _fmtCountdown(secsNow);
     const fireBtn  = !ev.played
       ? `<button class="btn" style="font-size:10px;padding:3px 8px;color:var(--yellow);border-color:rgba(201,168,120,0.4)"
            onclick="fireNow('${esc(ev.event_id)}')" title="Fire this event right now, skipping the scheduled time">▶ Now</button>`
@@ -2824,7 +2826,7 @@ function renderEventsTable(){
       <td style="color:var(--accent-light)">${esc(ev.stream_name)}</td>
       <td class="td-muted" title="${esc(ev.file_path||ev.file_name)}">${esc(ev.file_name)}</td>
       <td class="td-muted" style="white-space:nowrap;font-family:var(--font-mono);font-size:11px">${esc(ev.play_at)}</td>
-      <td class="ev-cd" data-secs="${secsNow}" style="font-size:11px;color:${cdColor};white-space:nowrap">${_fmtCountdown(secsNow)}</td>
+      <td class="ev-cd" data-secs="${secsNow}" data-played="${ev.played?1:0}" style="font-size:11px;color:${cdColor};white-space:nowrap">${cdText}</td>
       <td class="td-muted" style="font-size:11px;font-family:var(--font-mono);white-space:nowrap">${posStr}</td>
       <td class="td-muted" style="font-size:11px">${esc(ev.post_action||'resume')}</td>
       <td><span class="badge ${ev.played?'STOPPED':'SCHED'}">${ev.played?'✓ Played':'⏰ Pending'}</span></td>
@@ -2839,6 +2841,7 @@ function renderEventsTable(){
 function _tickCountdowns(){
   // Update only the countdown cells every second — no full re-render
   document.querySelectorAll('.ev-cd').forEach(cell=>{
+    if(cell.dataset.played==='1'){ cell.textContent='—'; return; }
     let s = parseInt(cell.dataset.secs, 10);
     s--;
     cell.dataset.secs = s;
