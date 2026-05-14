@@ -104,7 +104,8 @@ class MediaMTXConfig:
                 f"hls: true\n"
                 f"hlsAddress: {addr}:{cfg.hls_port}\n"
                 f"hlsAlwaysRemux: true\n"
-                f"hlsSegmentCount: 6\n"
+                f"hlsVariant: mpegts\n"
+                f"hlsSegmentCount: 7\n"
                 f"hlsSegmentDuration: 4s\n"
                 f"hlsAllowOrigin: '*'\n"
             )
@@ -122,16 +123,16 @@ class MediaMTXConfig:
         )
 
         yaml_text = (
-            f"# HydraCast v{APP_VER} - {cfg.name} (:{port})\n"
-            f"# Stream path: /{spath}   RTSP push: rtsp://127.0.0.1:{port}/{spath}\n"
-            f"# RTP port {rtp_base} (even)  RTCP port {rtp_base+1} (odd)\n"
+            f"# HydraCast v{APP_VER} — {cfg.name} (:{port})\n"
+            f"# Stream path: /{spath}   RTSP push → rtsp://127.0.0.1:{port}/{spath}\n"
+            f"# RTP port {rtp_base} (even ✓)  RTCP port {rtp_base+1} (odd ✓)\n"
             f"# rtmp/srt/webrtc: false prevents port-1935/8890/8889 collisions\n"
             f"logLevel: error\n"
             f"logDestinations: [file]\n"
             f"logFile: {str(log_f).replace(chr(92), '/')}\n"
             f"\n"
             f"rtspAddress: {addr}:{port}\n"
-            f"rtpAddress: {rtp_addr}\n"
+            f"rtpAddress:  {rtp_addr}\n"
             f"rtcpAddress: {rtcp_addr}\n"
             f"readTimeout: 15s\n"
             f"writeTimeout: 15s\n"
@@ -147,7 +148,7 @@ class MediaMTXConfig:
         )
 
         try:
-            cfg_f.write_text(yaml_text, encoding="ascii")
+            cfg_f.write_text(yaml_text, encoding="utf-8")
             log.info("[%s] Config written successfully: %s", cfg.name, cfg_f)
         except Exception as exc:
             log.error("[%s] FAILED to write config %s: %s", cfg.name, cfg_f, exc)
