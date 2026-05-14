@@ -2003,7 +2003,7 @@ function _rowCells(s,i,showRtsp){
   const pct=Math.max(0,Math.min(100,+s.progress)).toFixed(1);
   const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
   const status=s.status||'STOPPED';
-  const isEvent = status==='ONESHOT';
+  const isEvent = status==='ONESHOT' || !!s.oneshot_active;
   const nowPlayingFile = s.current_file || (isEvent ? s.active_event : null);
   return `
     <td class="td-muted">${i+1}</td>
@@ -2211,11 +2211,10 @@ async function loadViewer(){
   data.forEach((s,idx)=>{
     const status=s.status||'STOPPED';
     const isLive=status==='LIVE';
-    const isEvent=status==='ONESHOT';
+    const isEvent=status==='ONESHOT' || !!s.oneshot_active;
     const pct=(+s.progress||0).toFixed(1);
-    // current_file is always set by the worker regardless of mode (playlist or oneshot).
-    // active_event holds the *next pending* event (not yet fired); use it as a fallback
-    // only when current_file is absent (e.g. stream just started, worker not yet reporting).
+    // current_file is set by the worker for both playlist and oneshot modes.
+    // active_event is a fallback for the brief window before the worker reports.
     const nowFile = s.current_file || (isEvent ? s.active_event : null);
 
     if(!existing[s.name]){
@@ -4392,16 +4391,20 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 "audio_bitrate":  cfg.audio_bitrate,
                 "speed":          st.speed,
                 "app_ver":        APP_VER,
-                # current file being played (name only, safe fallback).
-                # current_file may be a method or a plain attribute depending on
-                # the StreamState implementation — handle both.
-                "current_file":   (st.current_file() if callable(st.current_file) else st.current_file)
-                                  if hasattr(st, "current_file") else None,
-                # active unplayed event for this stream, if any
+                # Whether a one-shot event is actively playing right now
+                "oneshot_active": bool(getattr(st, "oneshot_active", False)),
+                # Active (currently playing or next pending) event for this stream
                 "active_event":   next(
                     (ev.file_path.name for ev in mgr.events
                      if ev.stream_name == cfg.name and not ev.played),
                     None
+                ),
+                # current_file() is a method on StreamState — call it safely.
+                # During oneshot it returns the event file; during playlist the current item.
+                "current_file":   (
+                    st.current_file()
+                    if callable(getattr(st, "current_file", None))
+                    else getattr(st, "current_file", None)
                 ),
                 # next 2 upcoming playlist items
                 "next_in_queue":  _get_next_in_queue(st, cfg, n=2),
