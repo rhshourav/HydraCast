@@ -298,6 +298,7 @@ class JSONManager:
         file_path: Path,
         play_at: datetime,
         broadcast_end: Optional[datetime] = None,
+        loop_count: int = 0,
     ) -> OneShotEvent:
         ev = OneShotEvent(
             event_id    = str(uuid.uuid4()),
@@ -305,6 +306,7 @@ class JSONManager:
             file_path   = file_path,
             play_at     = play_at,
             played      = False,
+            loop_count  = loop_count,
         )
         if broadcast_end is not None:
             try:
