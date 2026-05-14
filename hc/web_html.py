@@ -1746,7 +1746,7 @@ select option{background:var(--bg3)}
   <span class="footer-sep">·</span>
   <span id="ft-ver">—</span>
   <span class="footer-sep">·</span>
-  <a href="https://github.com/rhshourav/HydraCast"
+  <a href="https://github.com/rhshourav"
      target="_blank" rel="noopener"
      class="author-badge">
     <img class="author-ico"
