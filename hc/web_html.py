@@ -1780,6 +1780,57 @@ select option{background:var(--bg3)}
 </div>
 
 <!-- ══ UNSAVED CHANGES MODAL ══ -->
+<!-- ══ MEDIA BROWSER MODAL ══ -->
+<div class="modal-bg" id="mb-modal" onclick="if(event.target===this)mbClose()">
+  <div class="modal" style="width:min(760px,96vw);max-width:none;padding:0;display:flex;flex-direction:column;max-height:88vh">
+
+    <!-- Header -->
+    <div style="padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0">
+      <span id="mb-mode-icon" style="font-size:20px">📁</span>
+      <div style="flex:1;min-width:0">
+        <h3 style="font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:2px" id="mb-title">Browse Media</h3>
+        <div id="mb-subtitle" style="font-size:11px;color:var(--text3)">Select a folder or file</div>
+      </div>
+      <button class="btn" onclick="mbClose()" title="Close browser" style="padding:5px 11px">✕</button>
+    </div>
+
+    <!-- Breadcrumb -->
+    <div style="padding:8px 16px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0">
+      <div id="mb-breadcrumb" style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;flex:1;min-width:0;font-size:12px"></div>
+      <button class="btn" onclick="mbRefresh()" title="Reload this folder" style="padding:3px 9px;font-size:11px;flex-shrink:0">↻</button>
+    </div>
+
+    <!-- Body: sidebar + file list -->
+    <div style="display:grid;grid-template-columns:180px 1fr;flex:1;overflow:hidden;min-height:0">
+
+      <!-- Sidebar: top-level folders -->
+      <div style="border-right:1px solid var(--border);overflow-y:auto;background:var(--bg2)">
+        <div style="padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border)">Folders</div>
+        <div id="mb-sidebar"></div>
+      </div>
+
+      <!-- Main listing -->
+      <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--bg2)">
+        <!-- Listing -->
+        <div id="mb-listing" style="flex:1;overflow-y:auto"></div>
+        <!-- Status bar -->
+        <div id="mb-status-bar" style="padding:6px 14px;font-size:11px;color:var(--text3);border-top:1px solid var(--border);background:var(--bg3);flex-shrink:0"></div>
+      </div>
+    </div>
+
+    <!-- Footer: current selection + action -->
+    <div style="padding:12px 18px;border-top:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px">Selection</div>
+        <div id="mb-selection-display" style="font-size:12px;font-family:var(--font-mono);color:var(--accent-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+             title="">Nothing selected</div>
+      </div>
+      <button class="btn" onclick="mbClose()" style="white-space:nowrap">Cancel</button>
+      <button class="btn g" id="mb-confirm-btn" onclick="mbConfirm()" style="white-space:nowrap" disabled>✓ Use Selection</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="unsaved-modal">
   <div class="modal">
     <h3>&#x26A0;&#xFE0F; Unsaved Changes</h3>
@@ -2924,8 +2975,41 @@ function renderConfigEditor(s){
       </div>
     </div>
     <div class="config-section">
-      <div class="config-section-title">Playlist Files</div>
-      <div id="cfg-pl-wrap"></div>
+      <div class="config-section-title">Playlist Source</div>
+      <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)">
+        <button id="cfg-src-tab-files" class="nav-tab ${!s.folder_source?'active':''}"
+                onclick="switchCfgSrcTab('files')" style="padding:7px 16px;font-size:12px"
+                title="Build the playlist by adding individual files">
+          <span class="tab-dot"></span>File List
+        </button>
+        <button id="cfg-src-tab-folder" class="nav-tab ${s.folder_source?'active':''}"
+                onclick="switchCfgSrcTab('folder')" style="padding:7px 16px;font-size:12px"
+                title="Use an entire folder as the playlist source — all media files inside will play in order">
+          <span class="tab-dot"></span>Folder Source
+        </button>
+      </div>
+      <div id="cfg-src-files" style="display:${!s.folder_source?'':'none'}">
+        <div id="cfg-pl-wrap"></div>
+      </div>
+      <div id="cfg-src-folder" style="display:${s.folder_source?'':'none'}">
+        <div class="fg">
+          <label>Folder Path</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="cfg-folder" value="${esc(s.folder_source||'')}"
+                   placeholder="/media/shows  or  media/news" style="flex:1;min-width:0"
+                   oninput="_markDirty()">
+            <button class="btn b" style="white-space:nowrap;flex-shrink:0"
+                    title="Browse the media library to pick a folder"
+                    onclick="mbOpen('folder','cfg-folder')">
+              <i class="fa fa-folder-open" style="margin-right:5px"></i>Browse
+            </button>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:6px">
+          HydraCast will scan the folder and auto-rebuild the playlist when files change.
+          Day-tags (_mon_, _tue_, …) are detected automatically.
+        </div>
+      </div>
     </div>
     <div class="config-section">
       <div class="config-section-title">Stream Actions</div>
@@ -2966,6 +3050,12 @@ async function saveConfig(){
   const wdChecked=Array.from(document.querySelectorAll('.cfg-wd:checked')).map(el=>+el.value);
   const wdMap=['mon','tue','wed','thu','fri','sat','sun'];
   const weekdaysStr=wdChecked.length===7?'all':wdChecked.map(i=>wdMap[i]).join('|')||'all';
+  // Detect source mode
+  const isFolderMode=document.getElementById('cfg-src-folder')?.style.display!=='none';
+  const folderPath=isFolderMode?(document.getElementById('cfg-folder')?.value||'').trim():'';
+  const files=isFolderMode?'':_plGetStr('cfg-pl-wrap');
+  if(isFolderMode&&!folderPath){toast('Folder path is required for folder source','err');return;}
+  if(!isFolderMode&&!files){toast('At least one file path is required','err');return;}
   const payload={
     name:_configSelected,
     port:parseInt(document.getElementById('cfg-port')?.value||0),
@@ -2975,7 +3065,8 @@ async function saveConfig(){
     shuffle:document.getElementById('cfg-shuffle')?.checked||false,
     enabled:document.getElementById('cfg-enabled')?.checked!==false,
     hls_enabled:document.getElementById('cfg-hls')?.checked||false,
-    files:_plGetStr('cfg-pl-wrap'),
+    files,
+    folder_source:folderPath||null,
     weekdays:weekdaysStr,
     compliance_enabled:document.getElementById('cfg-comp-en')?.checked||false,
     compliance_start:document.getElementById('cfg-comp-start')?.value||'06:00:00',
@@ -2984,6 +3075,14 @@ async function saveConfig(){
   };
   const r=await api('update_config',payload);
   if(r?.ok){_clearDirty();loadConfig();}
+}
+
+function switchCfgSrcTab(mode){
+  document.getElementById('cfg-src-files').style.display=mode==='files'?'':'none';
+  document.getElementById('cfg-src-folder').style.display=mode==='folder'?'':'none';
+  document.getElementById('cfg-src-tab-files').classList.toggle('active',mode==='files');
+  document.getElementById('cfg-src-tab-folder').classList.toggle('active',mode==='folder');
+  _markDirty();
 }
 
 // ═══════════════════════════════════
@@ -3123,6 +3222,9 @@ function _renderPLTable(cid){
       +'<div class="pl-add-row">'
         +'<input type="text" id="'+cid+'-new" placeholder="/path/to/video.mp4  (optional: path@HH:MM:SS#priority)"'
           +' onkeydown="if(event.key===&apos;Enter&apos;)_plAdd(&apos;'+cid+'&apos;)">'
+        +'<button class="btn b" style="padding:5px 10px;font-size:11px;white-space:nowrap;flex-shrink:0"'
+          +' title="Browse the media library to pick a file" onclick="mbOpen(&apos;files&apos;,&apos;'+cid+'&apos;)">'
+          +'<i class="fa fa-folder-open" style="margin-right:4px"></i>Browse</button>'
         +'<button class="btn g" style="padding:5px 12px;font-size:11px;white-space:nowrap"'
           +' title="Add this file path to the playlist" onclick="_plAdd(&apos;'+cid+'&apos;)"><i class="fa fa-plus"></i> Add</button>'
       +'</div>'
@@ -3217,7 +3319,14 @@ function showNewStreamForm(){
       <div id="new-src-folder" style="display:none">
         <div class="fg">
           <label>Folder Path</label>
-          <input id="new-folder" placeholder="/media/shows  or  media/news">
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="new-folder" placeholder="/media/shows  or  media/news" style="flex:1;min-width:0">
+            <button class="btn b" style="white-space:nowrap;flex-shrink:0"
+                    title="Browse the media library to pick a folder"
+                    onclick="mbOpen('folder','new-folder')">
+              <i class="fa fa-folder-open" style="margin-right:5px"></i>Browse
+            </button>
+          </div>
         </div>
         <div style="font-size:10px;color:var(--text3);margin-top:6px">HydraCast will scan the folder and auto-rebuild the playlist when files change. Day-tags (_mon_, _tue_, …) are detected automatically.</div>
       </div>
@@ -3359,6 +3468,294 @@ async function deleteStream(name){
     if(_configSelected===name) cancelConfig();
     loadConfig();
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MEDIA BROWSER MODAL
+// ═══════════════════════════════════════════════════════════════
+/*
+  mbOpen(mode, target)
+    mode   : 'files'  → user picks a file; path is inserted into target input or playlist
+           : 'folder' → user picks a folder; path is written into target input
+    target : element id of the <input> to write into (folder mode),
+             or playlist container id (files mode, triggers _plAddPath)
+
+  The browser fetches /api/files?path=<relative> and /api/files?path=
+  to build the sidebar of top-level dirs. Clicking a folder navigates into it.
+  In files mode, clicking a file row selects it; double-click confirms.
+  In folder mode, clicking any folder row selects it; double-click navigates.
+*/
+
+let _mb = {
+  mode:     'files',   // 'files' | 'folder'
+  target:   '',        // input id or playlist cid
+  path:     '',        // current browse path (relative to media root)
+  selected: null,      // {path, isDir, fullServerPath}
+  loading:  false,
+  rootDirs: [],        // top-level dirs for sidebar
+};
+
+function mbOpen(mode, target) {
+  _mb.mode    = mode;
+  _mb.target  = target;
+  _mb.path    = '';
+  _mb.selected = null;
+  _mb.loading  = false;
+
+  // Update modal chrome
+  document.getElementById('mb-mode-icon').textContent = mode === 'folder' ? '📁' : '🎬';
+  document.getElementById('mb-title').textContent     = mode === 'folder' ? 'Browse for Folder' : 'Browse for File';
+  document.getElementById('mb-subtitle').textContent  = mode === 'folder'
+    ? 'Navigate and click a folder to select it, then confirm.'
+    : 'Navigate and click a file to select it, then confirm. Double-click to confirm instantly.';
+
+  _mbSetSelection(null);
+  document.getElementById('mb-modal').classList.add('open');
+  _mbLoad('');
+}
+
+function mbClose() {
+  document.getElementById('mb-modal').classList.remove('open');
+  _mb.selected = null;
+}
+
+function mbRefresh() { _mbLoad(_mb.path); }
+
+function mbConfirm() {
+  if (!_mb.selected) { toast('Nothing selected', 'err'); return; }
+  const p = _mb.selected.path;
+
+  if (_mb.mode === 'folder') {
+    // Write into the target input
+    const el = document.getElementById(_mb.target);
+    if (el) { el.value = p; el.dispatchEvent(new Event('input')); }
+    _markDirty();
+    toast('Folder selected', 'ok');
+  } else {
+    // Files mode — insert into playlist
+    const cid = _mb.target;
+    _plAddPath(cid, p);
+    toast('File added to playlist', 'ok');
+  }
+  mbClose();
+}
+
+// Insert a path directly into the playlist by cid (bypasses the text input)
+function _plAddPath(cid, path) {
+  if (!path) return;
+  // Sync any inline edits first
+  document.querySelectorAll('#'+cid+' .pl-table tbody tr').forEach((tr,i)=>{
+    const pi=tr.querySelector('input[type=number]'),si=tr.querySelector('input[type=text]');
+    if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
+    if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
+  });
+  _playlistItems.push({path, start:'00:00:00', priority:0});
+  _playlistItems.sort((a,b)=>a.priority-b.priority);
+  _markDirty();
+  _renderPLTable(cid);
+}
+
+function _mbSetSelection(item) {
+  _mb.selected = item;
+  const disp = document.getElementById('mb-selection-display');
+  const btn  = document.getElementById('mb-confirm-btn');
+  if (!item) {
+    disp.textContent = 'Nothing selected';
+    disp.title = '';
+    btn.disabled = true;
+    return;
+  }
+  const label = item.fullServerPath || item.path || '(root)';
+  disp.textContent = label;
+  disp.title = label;
+  btn.disabled = false;
+}
+
+async function _mbLoad(path) {
+  if (_mb.loading) return;
+  _mb.loading = true;
+  _mb.path = path;
+
+  const listing = document.getElementById('mb-listing');
+  const sidebar = document.getElementById('mb-sidebar');
+  const statusBar = document.getElementById('mb-status-bar');
+
+  listing.innerHTML = '<div class="fm-empty"><div class="empty-icon" style="animation:spin 1s linear infinite;font-size:28px">⟳</div></div>';
+  statusBar.textContent = 'Loading…';
+
+  try {
+    // Load current dir + root dirs in parallel
+    const [data, rootData] = await Promise.all([
+      fetch('/api/files?path=' + encodeURIComponent(path)).then(r => r.json()),
+      path ? fetch('/api/files?path=').then(r => r.json()).catch(() => ({dirs:[]})) : Promise.resolve(null),
+    ]);
+
+    if (data.error) {
+      listing.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>${esc(data.error)}</div></div>`;
+      statusBar.textContent = 'Error loading folder';
+      _mb.loading = false;
+      return;
+    }
+
+    // ── Breadcrumb ────────────────────────────────────────────
+    const bc = document.getElementById('mb-breadcrumb');
+    bc.innerHTML = (data.breadcrumb || [{name:'Media', path:''}]).map((crumb, i, arr) => {
+      const isLast = i === arr.length - 1;
+      const sep = i > 0 ? '<span style="opacity:0.4;font-size:10px;padding:0 2px">›</span>' : '';
+      return sep + `<span onclick="_mbLoad('${crumb.path}')"
+               style="cursor:pointer;padding:2px 6px;border-radius:5px;color:${isLast?'var(--text)':'var(--text3)'};
+                      font-weight:${isLast?'600':'400'}"
+               onmouseover="if(!${isLast})this.style.color='var(--accent)'"
+               onmouseout="this.style.color='${isLast?'var(--text)':'var(--text3)'}'"
+               >${esc(crumb.name)}</span>`;
+    }).join('');
+
+    // ── Sidebar (root dirs) ───────────────────────────────────
+    const rootDirs = (rootData || data).dirs || [];
+    if (!path) _mb.rootDirs = rootDirs;
+    sidebar.innerHTML =
+      `<div onclick="_mbLoad('')"
+            style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;
+                   border-bottom:1px solid var(--border);transition:background 0.12s;
+                   ${!path ? 'background:rgba(184,115,51,0.09);border-left:2px solid var(--accent);padding-left:12px;color:var(--accent)' : 'color:var(--text2)'}"
+            onmouseover="this.style.background='var(--bg3)'"
+            onmouseout="this.style.background='${!path?'rgba(184,115,51,0.09)':''}'"
+            title="Media root directory">
+         <span style="opacity:0.65">📁</span> Media (root)
+       </div>` +
+      (_mb.rootDirs.length ? _mb.rootDirs : rootDirs).map(d => {
+        const isActive = path === d.path || path.startsWith(d.path + '/');
+        return `<div onclick="_mbLoad('${d.path}')"
+                     style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;
+                            border-bottom:1px solid var(--border);transition:background 0.12s;
+                            ${isActive ? 'background:rgba(184,115,51,0.09);border-left:2px solid var(--accent);padding-left:12px;color:var(--accent)' : 'color:var(--text2)'}"
+                     onmouseover="this.style.background='var(--bg3)'"
+                     onmouseout="this.style.background='${isActive?'rgba(184,115,51,0.09)':''}'"
+                     title="${esc(d.path)}">
+               <span style="opacity:0.65">📂</span> ${esc(d.name)}
+             </div>`;
+      }).join('');
+
+    // ── Main listing ──────────────────────────────────────────
+    const rows = [];
+    const isFolderMode = _mb.mode === 'folder';
+
+    // In folder mode: the current dir is itself selectable
+    if (isFolderMode) {
+      const curLabel = path ? (data.breadcrumb || []).slice(-1)[0]?.name || path.split('/').pop() : 'Media (root)';
+      rows.push(`
+        <div onclick="_mbSelectRow(this, {path:'${esc(path)}', isDir:true})"
+             ondblclick="_mbSelectRow(this,{path:'${esc(path)}',isDir:true});mbConfirm()"
+             style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);
+                    cursor:pointer;font-size:12px;background:rgba(184,115,51,0.06)"
+             title="Select current folder: ${esc(path||'Media root')}">
+          <span style="font-size:15px">📂</span>
+          <span style="flex:1;font-weight:600;color:var(--accent)">
+            <i class="fa fa-check-circle" style="margin-right:5px;opacity:0.7"></i>
+            Use this folder: <code style="font-size:11px;font-family:var(--font-mono)">${esc(path || '(root)')}</code>
+          </span>
+        </div>`);
+    }
+
+    // Sub-folders
+    (data.dirs || []).forEach(d => {
+      const isSelectable = isFolderMode;
+      rows.push(`
+        <div class="mb-row"
+             onclick="${isSelectable
+               ? `_mbSelectRow(this,{path:'${esc(d.path)}',isDir:true})`
+               : `_mbLoad('${esc(d.path)}')`}"
+             ondblclick="_mbLoad('${esc(d.path)}')"
+             style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);
+                    cursor:pointer;font-size:12px;transition:background 0.1s"
+             onmouseover="this.style.background='rgba(184,115,51,0.04)'"
+             onmouseout="this.style.background=''"
+             title="${isSelectable ? 'Click to select · Double-click to navigate into' : 'Double-click to navigate into'}: ${esc(d.path)}">
+          <span style="font-size:15px">📁</span>
+          <span style="flex:1;color:var(--text);font-weight:500">${esc(d.name)}</span>
+          <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)">${d.items} item${d.items!==1?'s':''}</span>
+          <button onclick="event.stopPropagation();_mbLoad('${esc(d.path)}')"
+                  style="background:none;border:1px solid var(--border);color:var(--text3);cursor:pointer;
+                         font-size:10px;padding:2px 8px;border-radius:5px;transition:all 0.15s"
+                  onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
+                  onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border)'"
+                  title="Open this folder">Open →</button>
+        </div>`);
+    });
+
+    // Files (only shown in files mode, or greyed out in folder mode)
+    (data.files || []).forEach(f => {
+      const isMedia = f.supported;
+      const ico = (f.ext||'').match(/\.(mp3|aac|flac|wav|ogg|m4a)$/i) ? '🎵' : '🎬';
+      if (isFolderMode) {
+        // Show files greyed out as context, not clickable
+        rows.push(`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);
+                      font-size:12px;opacity:0.35;cursor:default" title="${esc(f.full_path||f.path)}">
+            <span style="font-size:14px">${ico}</span>
+            <span style="flex:1;color:var(--text2)">${esc(f.name)}</span>
+            <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)">${esc(f.size)}</span>
+          </div>`);
+      } else {
+        const opacity = isMedia ? '1' : '0.45';
+        rows.push(`
+          <div class="mb-row"
+               onclick="${isMedia ? `_mbSelectRow(this,{path:'${esc(f.path)}',isDir:false})` : ''}"
+               ondblclick="${isMedia ? `_mbSelectRow(this,{path:'${esc(f.path)}',isDir:false});mbConfirm()` : ''}"
+               style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);
+                      font-size:12px;opacity:${opacity};transition:background 0.1s;
+                      cursor:${isMedia?'pointer':'default'}"
+               ${isMedia ? `onmouseover="this.style.background='rgba(184,115,51,0.05)'" onmouseout="this.style.background=''"` : ''}
+               title="${isMedia ? 'Click to select · Double-click to add' : 'Unsupported format'}: ${esc(f.path)}">
+            <span style="font-size:14px">${ico}</span>
+            <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
+            ${f.duration ? `<span style="font-size:10px;color:var(--text3);font-family:var(--font-mono);flex-shrink:0">${esc(f.duration)}</span>` : ''}
+            <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono);flex-shrink:0">${esc(f.size)}</span>
+            ${!isMedia ? '<span style="font-size:10px;color:var(--text3);flex-shrink:0">unsupported</span>' : ''}
+          </div>`);
+      }
+    });
+
+    if (!rows.length || (isFolderMode && rows.length === 1)) {
+      rows.push('<div class="fm-empty"><div class="empty-icon">📂</div><div>This folder is empty.</div></div>');
+    }
+
+    listing.innerHTML = rows.join('');
+
+    // Restore selection highlight if same path still selected
+    if (_mb.selected) {
+      listing.querySelectorAll('.mb-row').forEach(row => {
+        if (row.title && row.title.includes(_mb.selected.path)) {
+          row.style.background = 'rgba(184,115,51,0.10)';
+          row.style.outline = '1px solid var(--accent)';
+        }
+      });
+    }
+
+    const nDirs = (data.dirs||[]).length;
+    const nFiles = (data.files||[]).length;
+    const nMediaFiles = (data.files||[]).filter(f=>f.supported).length;
+    statusBar.innerHTML = isFolderMode
+      ? `<b>${nDirs}</b> subfolder${nDirs!==1?'s':''} &ensp;·&ensp; <b>${nFiles}</b> file${nFiles!==1?'s':''}`
+      : `<b>${nDirs}</b> subfolder${nDirs!==1?'s':''} &ensp;·&ensp; <b>${nMediaFiles}</b> supported media file${nMediaFiles!==1?'s':''} of ${nFiles}`;
+
+  } catch(e) {
+    listing.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>Failed to load: ${esc(e.message)}</div></div>`;
+    statusBar.textContent = 'Error';
+  }
+  _mb.loading = false;
+}
+
+function _mbSelectRow(rowEl, item) {
+  // Clear previous highlight
+  document.querySelectorAll('#mb-listing .mb-row').forEach(r => {
+    r.style.background = '';
+    r.style.outline = '';
+  });
+  // Highlight selected
+  rowEl.style.background = 'rgba(184,115,51,0.12)';
+  rowEl.style.outline = '1px solid var(--accent)';
+  _mbSetSelection(item);
 }
 
 // ═══════════════════════════════════
