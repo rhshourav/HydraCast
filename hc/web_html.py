@@ -1036,6 +1036,9 @@ select option{background:var(--bg3)}
     <button class="nav-tab" onclick="switchTab('viewer',this)">
       <span class="tab-dot"></span>Viewer
     </button>
+    <button class="nav-tab" onclick="switchTab('config',this)">
+      <span class="tab-dot"></span>Configure
+    </button>
     <button class="nav-tab" onclick="switchTab('logs',this)">
       <span class="tab-dot"></span>Logs
     </button>
@@ -1044,9 +1047,6 @@ select option{background:var(--bg3)}
     </button>
     <button class="nav-tab" onclick="switchTab('events',this)">
       <span class="tab-dot"></span>Events
-    </button>
-    <button class="nav-tab" onclick="switchTab('config',this)">
-      <span class="tab-dot"></span>Configure
     </button>
     <button class="nav-tab" onclick="switchTab('settings',this)">
       <span class="tab-dot"></span>Settings
@@ -1633,87 +1633,6 @@ select option{background:var(--bg3)}
           <div id="restore-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
         </div>
 
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Stream Source Selector ── -->
-  <div style="margin-top:4px">
-    <div class="section-hdr"><h2>Stream Source</h2><span class="sep"></span></div>
-    <div class="card card-body" style="padding:16px">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">
-        Pick a stream, then choose a <b>folder</b> (auto-scanned) or individual <b>files</b> as its media source.
-        Changes are saved immediately and the stream is restarted.
-      </div>
-
-      <!-- Stream picker -->
-      <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
-        <div class="fg">
-          <label>Stream</label>
-          <select id="ss-stream" onchange="ssLoadSource()" title="Pick the stream to modify">
-            <option value="">— select a stream —</option>
-          </select>
-        </div>
-        <div class="fg">
-          <label>Source type</label>
-          <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;height:38px">
-            <button id="ss-tab-folder" class="nav-tab active"
-                    style="flex:1;border-radius:0;border:none;border-right:1px solid var(--border);font-size:12px;padding:0 14px"
-                    onclick="ssSwitchMode('folder')" title="Use a folder — all supported files inside are scanned automatically">
-              📁 Folder
-            </button>
-            <button id="ss-tab-files" class="nav-tab"
-                    style="flex:1;border-radius:0;border:none;font-size:12px;padding:0 14px"
-                    onclick="ssSwitchMode('files')" title="Pick one or more individual files from the media library">
-              🎬 Files
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- FOLDER mode -->
-      <div id="ss-panel-folder">
-        <div class="fg" style="margin-bottom:12px">
-          <label>Folder path (relative to media root)</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <select id="ss-folder-select" style="flex:1" title="Choose a folder from the media library">
-              <option value="">— loading folders… —</option>
-            </select>
-            <button class="btn b" onclick="ssRefreshFolders()" title="Reload the folder list from the server" style="white-space:nowrap">↻ Refresh</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
-          <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-            <input type="checkbox" id="ss-shuffle" style="width:auto;accent-color:var(--accent)"> Shuffle playback
-          </label>
-        </div>
-      </div>
-
-      <!-- FILES mode -->
-      <div id="ss-panel-files" style="display:none">
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-          <select id="ss-file-browser" style="flex:1;min-width:0" title="Browse available media files">
-            <option value="">— loading files… —</option>
-          </select>
-          <button class="btn b" onclick="ssAddFile()" title="Add the selected file to the list below" style="white-space:nowrap">＋ Add</button>
-          <button class="btn" onclick="ssRefreshFiles()" title="Reload file list from the server" style="white-space:nowrap">↻</button>
-        </div>
-        <!-- Selected files list -->
-        <div id="ss-file-list" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);min-height:64px;max-height:200px;overflow-y:auto">
-          <div id="ss-file-empty" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">No files selected yet.</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;margin-bottom:4px">
-          <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-            <input type="checkbox" id="ss-files-shuffle" style="width:auto;accent-color:var(--accent)"> Shuffle playback
-          </label>
-        </div>
-      </div>
-
-      <!-- Action row -->
-      <div style="display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap">
-        <button class="btn g" onclick="ssApply()" title="Save this source to the stream and restart it">💾 Apply &amp; Restart</button>
-        <button class="btn" onclick="ssClear()" title="Clear the selection">✕ Clear</button>
-        <span id="ss-status" style="font-size:11px;color:var(--text3)"></span>
       </div>
     </div>
   </div>
@@ -2397,8 +2316,10 @@ async function loadSubdirs(){
   try{
     const data=await fetch('/api/subdirs').then(r=>r.json());
     const sel=document.getElementById('upload-subdir');
+    const seen=new Set();
+    const opts=(data.dirs||[]).filter(Boolean).filter(d=>{if(seen.has(d))return false;seen.add(d);return true;});
     sel.innerHTML='<option value="">/ (root)</option>'+
-      (data.dirs||[]).filter(Boolean).map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+      opts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
   }catch(_){}
 }
 async function mkSubdir(){
@@ -4188,7 +4109,10 @@ async function loadFiles(path) {
       `<span class="fm-dir-icon">📁</span> Media (root)</div>`;
     try {
       const root = await fetch('/api/files?path=').then(r => r.json());
+      const seenPaths = new Set();
       (root.dirs || []).forEach(dir => {
+        if (seenPaths.has(dir.path)) return;
+        seenPaths.add(dir.path);
         _fmAllDirs.push(dir.path);
         sidebar.insertAdjacentHTML('beforeend',
           `<div class="fm-dir-item${dir.path===_fmCurrentPath?' active':''}"
