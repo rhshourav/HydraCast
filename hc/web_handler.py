@@ -1244,6 +1244,25 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             ok = mgr.fire_event_now(ev_id)
             self._json({"ok": ok, "msg": "Event fired" if ok else "Event not found or stream not running"})
 
+        elif action == "cancel_event":
+            name = str(data.get("name", "")).strip()
+            st = mgr.get_state(name)
+            if not st:
+                self._json({"ok": False, "msg": f"Stream '{name}' not found"})
+                return
+            if not st.oneshot_active:
+                self._json({"ok": False, "msg": "No event is currently running on this stream"})
+                return
+            w = mgr.get_worker(name)
+            if not w:
+                self._json({"ok": False, "msg": "Worker not found"})
+                return
+            threading.Thread(
+                target=w.cancel_oneshot, daemon=True,
+                name=f"cancel-event-{st.config.port}",
+            ).start()
+            self._json({"ok": True, "msg": f"Event cancelled — resuming on '{name}'"})
+
         elif action == "delete_file":
             raw_path = str(data.get("path", "")).strip()
             if not raw_path:
