@@ -1906,6 +1906,7 @@ function toggleAuto(on){
 async function loadStreams(){
   try{
     const data=await fetch('/api/streams').then(r=>r.json());
+    data.sort((a,b)=>a.name.localeCompare(b.name));
     const live=data.filter(s=>s.status==='LIVE').length;
     document.getElementById('h-live').textContent=live;
     if(data[0]) {
@@ -2137,6 +2138,7 @@ async function loadViewer(){
   let data;
   try{
     data=await fetch('/api/streams').then(r=>r.json());
+    data.sort((a,b)=>a.name.localeCompare(b.name));
   }catch(_){
     if(!grid.querySelector('.stream-card'))
       grid.innerHTML=`<div class="empty"><div class="empty-icon">⚠</div>Failed to load streams.</div>`;
@@ -2316,10 +2318,8 @@ async function loadSubdirs(){
   try{
     const data=await fetch('/api/subdirs').then(r=>r.json());
     const sel=document.getElementById('upload-subdir');
-    const seen=new Set();
-    const opts=(data.dirs||[]).filter(Boolean).filter(d=>{if(seen.has(d))return false;seen.add(d);return true;});
     sel.innerHTML='<option value="">/ (root)</option>'+
-      opts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+      (data.dirs||[]).filter(Boolean).map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
   }catch(_){}
 }
 async function mkSubdir(){
@@ -2513,7 +2513,7 @@ async function loadConfig(){
     _configStreams=data.map(c=>{
       const st=statusData.find(s=>s.name===c.name)||{};
       return{...c,_status:st.status||'STOPPED'};
-    });
+    }).sort((a,b)=>a.name.localeCompare(b.name));
     renderConfigSidebar();
     if(_configSelected){
       const s=_configStreams.find(s=>s.name===_configSelected);
@@ -4108,11 +4108,14 @@ async function loadFiles(path) {
       `<div class="fm-dir-item${_fmCurrentPath===''?' active':''}" onclick="loadFiles('')">` +
       `<span class="fm-dir-icon">📁</span> Media (root)</div>`;
     try {
-      const root = await fetch('/api/files?path=').then(r => r.json());
-      const seenPaths = new Set();
-      (root.dirs || []).forEach(dir => {
-        if (seenPaths.has(dir.path)) return;
-        seenPaths.add(dir.path);
+      // When already at root, reuse dirs from the response — no extra fetch needed.
+      // When in a subfolder, fetch the root listing separately for the sidebar.
+      const rootDirs = _fmCurrentPath === '' ? (d.dirs || []) :
+        await fetch('/api/files?path=').then(r => r.json()).then(r => r.dirs || []).catch(()=>[]);
+      const seenSidebar = new Set();
+      rootDirs.forEach(dir => {
+        if (seenSidebar.has(dir.path)) return;
+        seenSidebar.add(dir.path);
         _fmAllDirs.push(dir.path);
         sidebar.insertAdjacentHTML('beforeend',
           `<div class="fm-dir-item${dir.path===_fmCurrentPath?' active':''}"
