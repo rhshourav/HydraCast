@@ -393,7 +393,14 @@ class StreamManager:
     # ── One-shot event loop ───────────────────────────────────────────────────
     def _event_loop(self) -> None:
         # Track events currently being played so we can detect completion.
-        _playing: Dict[str, datetime] = {}  # event_id → fired_at
+        # NOTE: ev.played is set to True at FIRE time (to prevent re-firing),
+        # NOT at completion time. Completion/resume is handled entirely by the
+        # _after() callback inside StreamWorker.play_oneshot(). Calling
+        # _resume_compliance() from here races with _cycle_mediamtx() inside
+        # play_oneshot() — both try to kill/restart MediaMTX simultaneously,
+        # which causes MediaMTX to exit immediately (code 1, no log output)
+        # because the port is momentarily double-bound.
+        _playing: Dict[str, datetime] = {}  # event_id → fired_at (tracking only)
         # Track events that are due but whose stream isn't live yet, so we
         # can retry them once the stream comes up (up to 5 minutes late).
         _pending: Dict[str, datetime] = {}  # event_id → first_due_at
@@ -403,19 +410,13 @@ class StreamManager:
 
             for ev in self.events:
                 if ev.played:
-                    # Check if event was playing and is now done → resume compliance
-                    if ev.event_id in _playing:
-                        fired_at = _playing.pop(ev.event_id)
-                        _pending.pop(ev.event_id, None)
-                        for s in self.states:
-                            if s.config.name == ev.stream_name and s.config.compliance_enabled:
-                                end_time = datetime.now()
-                                threading.Thread(
-                                    target=self._resume_compliance,
-                                    args=(s, end_time),
-                                    daemon=True,
-                                    name=f"comp-ev-resume-{s.config.port}",
-                                ).start()
+                    # Clean up tracking only — do NOT call _resume_compliance()
+                    # here. play_oneshot()._after() already handles resume
+                    # (compliance seek + MediaMTX cycle + FFmpeg restart).
+                    # Calling w.restart() here while _cycle_mediamtx() is still
+                    # running in the oneshot thread causes MediaMTX to be killed
+                    # and restarted twice simultaneously, corrupting the port state.
+                    _playing.pop(ev.event_id, None)
                     _pending.pop(ev.event_id, None)
                     continue
 
