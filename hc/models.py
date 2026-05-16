@@ -188,6 +188,7 @@ class StreamState:
     playlist_order:   List[int]                  = field(default_factory=list)
     seek_target:      Optional[float]            = None
     oneshot_active:   bool                       = False
+    resuming:         bool                       = False  # True while _after() owns the resume cycle
     initial_offset:   float                      = 0.0
     log:              List[str]                  = field(default_factory=list)
     _lock:            threading.Lock             = field(default_factory=threading.Lock)
