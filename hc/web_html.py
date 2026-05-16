@@ -3489,7 +3489,6 @@ async function ssInit() {
   if (!sel) return;
   try {
     const streams = await fetch('/api/streams').then(r => r.json());
-    streams.sort((a,b)=>a.name.localeCompare(b.name));
     sel.innerHTML = '<option value="">— select a stream —</option>' +
       streams.map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
   } catch(e) {
@@ -4110,7 +4109,6 @@ async function loadFiles(path) {
       `<div class="fm-dir-item${_fmCurrentPath===''?' active':''}" onclick="loadFiles('')">` +
       `<span class="fm-dir-icon">📁</span> Media (root)</div>`;
     try {
-      // At root reuse dirs already in hand; in a subfolder fetch root separately.
       const rootDirs = _fmCurrentPath === '' ? (d.dirs || []) :
         await fetch('/api/files?path=').then(r=>r.json()).then(r=>r.dirs||[]).catch(()=>[]);
       const seenSidebar = new Set();
@@ -4834,7 +4832,7 @@ function CreateModal({ dates, holidays, streams, library, libraryLoading, todayS
             <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:0}}>No streams configured.</p>
           ) : (
             <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-              {streams.map(st => {
+              {[...streams].sort((a,b)=>a.name.localeCompare(b.name)).map(st => {
                 const sel = !!selStreams[st.name];
                 return (
                   <div key={st.name} style={{
@@ -4980,7 +4978,7 @@ function EditModal({ ev, streams, library, libraryLoading, todayStr, onClose, on
         <div style={{marginBottom:"14px"}}>
           <label style={lbl}>Stream</label>
           <select value={streamName} onChange={e=>setStreamName(e.target.value)} style={{width:"100%"}}>
-            {streams.map(st=>(
+            {[...streams].sort((a,b)=>a.name.localeCompare(b.name)).map(st=>(
               <option key={st.name} value={st.name}>{st.name} :{st.port}</option>
             ))}
           </select>
