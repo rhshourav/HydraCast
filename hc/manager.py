@@ -78,8 +78,16 @@ class StreamManager:
 
     # ── State-based control API (used internally / TUI) ───────────────────────
     def start_stream(self, state: StreamState) -> None:
-        if state.status in (StreamStatus.LIVE, StreamStatus.STARTING):
+        if state.status in (StreamStatus.LIVE, StreamStatus.STARTING, StreamStatus.ONESHOT):
             return
+        # Guard: if the worker is in a seek or _after() resume window, don't
+        # start — the worker is already handling its own restart.  Without this
+        # the scheduler sees status=ERROR (from the Broken Pipe during the
+        # _cycle_mediamtx kill) and calls start_stream() which races _after().
+        w_existing = self._workers.get(state.config.name)
+        if w_existing is not None:
+            if w_existing._seeking.is_set() or w_existing._stop.is_set():
+                return
         state.playlist_index = 0
         state.playlist_order = []
 
