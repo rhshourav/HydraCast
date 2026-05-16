@@ -2284,6 +2284,7 @@ function loadHLSStream(name,hlsUrl,rtspUrl){
 async function fillLogStreamSel(){
   try{
     const data=await fetch('/api/streams').then(r=>r.json());
+    data.sort((a,b)=>a.name.localeCompare(b.name));
     const sel=document.getElementById('log-stream');
     const cur=sel.value;
     sel.innerHTML='<option value="">All streams</option>'+
@@ -3488,6 +3489,7 @@ async function ssInit() {
   if (!sel) return;
   try {
     const streams = await fetch('/api/streams').then(r => r.json());
+    streams.sort((a,b)=>a.name.localeCompare(b.name));
     sel.innerHTML = '<option value="">— select a stream —</option>' +
       streams.map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
   } catch(e) {
@@ -4108,10 +4110,9 @@ async function loadFiles(path) {
       `<div class="fm-dir-item${_fmCurrentPath===''?' active':''}" onclick="loadFiles('')">` +
       `<span class="fm-dir-icon">📁</span> Media (root)</div>`;
     try {
-      // When already at root, reuse dirs from the response — no extra fetch needed.
-      // When in a subfolder, fetch the root listing separately for the sidebar.
+      // At root reuse dirs already in hand; in a subfolder fetch root separately.
       const rootDirs = _fmCurrentPath === '' ? (d.dirs || []) :
-        await fetch('/api/files?path=').then(r => r.json()).then(r => r.dirs || []).catch(()=>[]);
+        await fetch('/api/files?path=').then(r=>r.json()).then(r=>r.dirs||[]).catch(()=>[]);
       const seenSidebar = new Set();
       rootDirs.forEach(dir => {
         if (seenSidebar.has(dir.path)) return;
@@ -5250,7 +5251,7 @@ function EventsCalendar() {
       fetch("/api/events").then(r=>r.json()).catch(()=>[]),
       fetch("/api/settings").then(r=>r.json()).catch(()=>({holiday_country:"US"})),
     ]).then(([str, evts, sett]) => {
-      setStreams(Array.isArray(str) ? str : []);
+      setStreams(Array.isArray(str) ? [...str].sort((a,b)=>a.name.localeCompare(b.name)) : []);
       setEvents(Array.isArray(evts) ? evts : []);
       setSettings(sett || {});
       setLoading(false);
