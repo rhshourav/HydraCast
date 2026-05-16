@@ -1236,6 +1236,15 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             count = mgr.remove_events(id_set)
             self._json({"ok": True, "msg": f"Removed {count} event(s)"})
 
+        elif action == "clear_played_events":
+            # Remove ALL events that have already been played
+            played_ids = {ev.event_id for ev in mgr.events if ev.played}
+            if not played_ids:
+                self._json({"ok": True, "msg": "No played events to clear"})
+                return
+            count = mgr.remove_events(played_ids)
+            self._json({"ok": True, "msg": f"Cleared {count} played event(s)"})
+
         elif action == "fire_event_now":
             ev_id = str(data.get("event_id", "")).strip()
             if not ev_id:
@@ -1656,6 +1665,15 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 except Exception:
                     payload["resume_positions"] = {}
 
+            # ── App settings (holiday country, UI prefs persisted server-side) ──
+            if include.get("app_settings", True):
+                p = CONFIG_DIR() / "app_settings.json"
+                try:
+                    payload["app_settings"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else {}
+                except Exception:
+                    payload["app_settings"] = {}
+
             body = _json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
             ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
             fname = f"hydracast_backup_{ts}.hc"
@@ -1693,66 +1711,99 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 return
 
             restored: list[str] = []
+            failed:   list[str] = []
 
             # ── Streams ─────────────────────────────────────────────────────
             if "streams" in payload:
-                p = CONFIG_DIR() / "streams.json"
-                p.write_text(
-                    _json.dumps(payload["streams"], indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-                restored.append("streams")
-                log.info("restore: streams.json written (%d streams)",
-                         len(payload["streams"]) if isinstance(payload["streams"], list) else 0)
+                try:
+                    p = CONFIG_DIR() / "streams.json"
+                    if not isinstance(payload["streams"], list):
+                        raise ValueError("streams must be a list")
+                    p.write_text(
+                        _json.dumps(payload["streams"], indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    restored.append("streams")
+                    log.info("restore: streams.json written (%d streams)",
+                             len(payload["streams"]))
+                except Exception as exc:
+                    failed.append(f"streams: {exc}")
+                    log.error("restore: streams section failed: %s", exc)
 
             # ── Events ──────────────────────────────────────────────────────
             if "events" in payload:
-                p = CONFIG_DIR() / "events.json"
-                p.write_text(
-                    _json.dumps(payload["events"], indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-                restored.append("events")
+                try:
+                    p = CONFIG_DIR() / "events.json"
+                    if not isinstance(payload["events"], list):
+                        raise ValueError("events must be a list")
+                    p.write_text(
+                        _json.dumps(payload["events"], indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    restored.append("events")
+                except Exception as exc:
+                    failed.append(f"events: {exc}")
+                    log.error("restore: events section failed: %s", exc)
 
             # ── Mail config (password intentionally absent — user must re-enter) ──
             if "mail_config" in payload:
-                p = BASE_DIR() / "mail_config.json"
-                existing: Dict[str, Any] = {}
                 try:
-                    if p.exists():
-                        existing = _json.loads(p.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-                mc = dict(payload["mail_config"])
-                # Preserve the stored password if restore doesn't include one
-                if "password" not in mc and "password" in existing:
-                    mc["password"] = existing["password"]
-                p.write_text(
-                    _json.dumps(mc, indent=4, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-                restored.append("mail_config")
+                    p = BASE_DIR() / "mail_config.json"
+                    existing: Dict[str, Any] = {}
+                    try:
+                        if p.exists():
+                            existing = _json.loads(p.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                    mc = dict(payload["mail_config"])
+                    # Preserve the stored password if restore doesn't include one
+                    if "password" not in mc and "password" in existing:
+                        mc["password"] = existing["password"]
+                    p.write_text(
+                        _json.dumps(mc, indent=4, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    restored.append("mail_config")
+                except Exception as exc:
+                    failed.append(f"mail_config: {exc}")
+                    log.error("restore: mail_config section failed: %s", exc)
 
             # ── Resume positions ────────────────────────────────────────────
             if "resume_positions" in payload:
-                p = BASE_DIR() / "resume_positions.json"
-                p.write_text(
-                    _json.dumps(payload["resume_positions"], indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-                restored.append("resume_positions")
+                try:
+                    p = BASE_DIR() / "resume_positions.json"
+                    if not isinstance(payload["resume_positions"], dict):
+                        raise ValueError("resume_positions must be an object")
+                    p.write_text(
+                        _json.dumps(payload["resume_positions"], indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    restored.append("resume_positions")
+                except Exception as exc:
+                    failed.append(f"resume_positions: {exc}")
+                    log.error("restore: resume_positions section failed: %s", exc)
+
+            # ── App settings ────────────────────────────────────────────────
+            if "app_settings" in payload:
+                try:
+                    from hc.web_settings_manager import save_settings
+                    if not isinstance(payload["app_settings"], dict):
+                        raise ValueError("app_settings must be an object")
+                    save_settings(payload["app_settings"])
+                    restored.append("app_settings")
+                except Exception as exc:
+                    failed.append(f"app_settings: {exc}")
+                    log.error("restore: app_settings section failed: %s", exc)
 
             # ── Reload manager state ─────────────────────────────────────────
             mgr = _WEB_MANAGER
-            if mgr and "streams" in payload:
+            if mgr and "streams" in restored:
                 try:
                     from hc.json_manager import JSONManager
                     new_configs = JSONManager.load()
                     mgr.reload_from_configs(new_configs)
                     log.info("restore: manager reloaded with %d stream(s)", len(new_configs))
                 except AttributeError:
-                    # reload_from_configs may not exist in older manager; do
-                    # a best-effort restart_all instead.
                     for st in list(mgr.states):
                         try:
                             mgr.restart(st.config.name)
@@ -1761,19 +1812,33 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
                 except Exception as exc:
                     log.warning("restore: manager reload failed: %s — streams not restarted", exc)
 
-            if "events" in payload and mgr:
+            if "events" in restored and mgr:
                 try:
                     from hc.json_manager import JSONManager
                     mgr.events = JSONManager.load_events()
                 except Exception:
                     pass
 
-            log.info("restore: completed — restored: %s", ", ".join(restored))
-            self._json({
-                "ok":      True,
-                "msg":     f"Restored: {', '.join(restored)}. Streams reloaded.",
-                "restored": restored,
-            })
+            log.info("restore: completed — restored: %s%s",
+                     ", ".join(restored),
+                     f" | FAILED: {', '.join(failed)}" if failed else "")
+
+            if not restored and failed:
+                self._json({"ok": False,
+                            "msg": f"Restore failed: {'; '.join(failed)}",
+                            "restored": [], "failed": failed})
+            else:
+                msg = f"Restored: {', '.join(restored)}."
+                if failed:
+                    msg += f" Warnings: {'; '.join(failed)}."
+                else:
+                    msg += " Streams reloaded."
+                self._json({
+                    "ok":       True,
+                    "msg":      msg,
+                    "restored": restored,
+                    "failed":   failed,
+                })
 
         except Exception as exc:
             log.error("Restore error: %s", exc)
