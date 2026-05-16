@@ -1620,6 +1620,18 @@ class StreamWorker:
         If a new ffmpeg process connects without cycling MediaMTX first, it
         gets "Could not write header / 400 Bad Request" because the server
         rejects mismatched codec parameters from the new publisher.
+
+        Windows UDP socket note
+        ───────────────────────
+        _port_in_use() is a TCP-only probe.  After killing MediaMTX the TCP
+        RTSP port (e.g. 8554) releases quickly, but the companion UDP ports
+        (RTP = port+2, RTCP = port+3, e.g. 8556/8557) may linger on Windows
+        for 1–2 s after the process exits.  A new MediaMTX spawned before
+        those UDP sockets are released immediately crashes with exit code 1:
+          "listen udp4 0.0.0.0:8556: bind: Only one usage of each socket
+           address (protocol/network address/port) is normally permitted."
+        The settle delay after the TCP-free check is set to 2.5 s on Windows
+        to cover this window; Linux releases sockets immediately (0.3 s).
         """
         cfg = self.state.config
         self._kill_mediamtx()
@@ -1635,11 +1647,17 @@ class StreamWorker:
         _deadline = time.time() + 8.0
         while time.time() < _deadline:
             if all(not _port_in_use(p) for p in _wait_ports):
-                # Ports appear free via TCP-connect probe, but on Windows the OS
-                # may still hold the socket in TIME_WAIT internally. A short
-                # settle delay prevents the next MediaMTX bind from failing
-                # immediately (exit code 1, no log output).
-                time.sleep(0.6)
+                # TCP ports appear free, but on Windows the OS may still hold
+                # UDP sockets (RTP port = cfg.port+2, RTCP = cfg.port+3) for
+                # a short window after the process exits.  _port_in_use() is a
+                # TCP-only probe and cannot detect this.  Without a sufficient
+                # settle delay the new MediaMTX immediately fails with:
+                #   "listen udp4 0.0.0.0:<rtp_port>: bind: Only one usage of
+                #    each socket address is normally permitted."
+                # 2.5 s covers the typical Windows UDP socket release window.
+                # Linux releases sockets immediately so 0.3 s is enough there.
+                _settle = 2.5 if IS_WIN else 0.3
+                time.sleep(_settle)
                 break
             time.sleep(0.2)
         else:
@@ -1649,7 +1667,10 @@ class StreamWorker:
                         f"Port {_p} still in use after 8 s — force-killing orphan.", "WARN"
                     )
                     _kill_orphan_on_port(_p)
-            time.sleep(0.5)
+            # Same logic: give Windows extra time to release UDP sockets after
+            # the force-kill before the next MediaMTX launch attempt.
+            _settle2 = 2.0 if IS_WIN else 0.5
+            time.sleep(_settle2)
         try:
             mtx_cfg = MediaMTXConfig.write(self.state)
         except Exception as exc:
