@@ -189,6 +189,9 @@ class StreamWorker:
         # Ensure seek_start_pos always exists to prevent AttributeError
         if not hasattr(self.state, "seek_start_pos"):
             self.state.seek_start_pos = 0.0  # type: ignore[attr-defined]
+        # Track the currently-playing one-shot event (for API exposure)
+        if not hasattr(self.state, "active_oneshot_event"):
+            self.state.active_oneshot_event = None  # type: ignore[attr-defined]
 
     # ── Internal logging ───────────────────────────────────────────────────────
     def _log(self, msg: str, level: str = "INFO") -> None:
@@ -438,9 +441,84 @@ class StreamWorker:
                 f"threshold {cfg.compliance_drift_threshold:.0f}s — no resync needed."
             )
 
+    def cancel_oneshot(self) -> None:
+        """
+        Cancel a running one-shot event and immediately resume the compliance
+        file / playlist at the correct seek position.
+
+        Called from the Web UI "Cancel Event" button.
+
+        No-ops if no event is currently active.
+        """
+        if not self.state.oneshot_active:
+            self._log("cancel_oneshot: no event active — skipped.", "WARN")
+            return
+
+        self._log("Cancelling one-shot event — resuming compliance/playlist.", "INFO")
+
+        # Mark the cancel so _after() in the oneshot thread exits cleanly
+        # without trying to resume on its own (we handle resume here instead).
+        self.state.oneshot_active = False
+        # Clear the stored event reference
+        self.state.active_oneshot_event = None  # type: ignore[attr-defined]
+
+        # Kill the event's FFmpeg process
+        self._kill_ffmpeg()
+
+        # Now resume: pick the right playlist item and compute compliance offset
+        item = self._current_item()
+        if item is None:
+            self._log("cancel_oneshot: no playlist item to resume — stopping.", "WARN")
+            self._kill_mediamtx()
+            self.state.status = StreamStatus.STOPPED
+            return
+
+        self.state.duration = probe_duration(item.file_path)
+
+        resume_pos = 0.0
+        cfg = self.state.config
+        if cfg.compliance_enabled:
+            try:
+                from hc.compliance import calculate_compliance_offset
+                resume_pos, expl = calculate_compliance_offset(
+                    video_duration=self.state.duration,
+                    broadcast_start=cfg.compliance_start,
+                    loop_calculation=cfg.compliance_loop,
+                )
+                self._log(f"Cancel-event compliance resync: {expl}")
+                self.state.compliance_last_check_ts = time.time()
+            except Exception as exc:
+                self._log(
+                    f"cancel_oneshot: compliance offset failed: {exc} — resuming from 00:00:00",
+                    "WARN",
+                )
+        else:
+            try:
+                h, m, s = item.start_position.split(":")
+                resume_pos = int(h) * 3600 + int(m) * 60 + float(s)
+            except Exception:
+                resume_pos = 0.0
+
+        self._log(f"Resuming: {item.file_path.name} @ {_fmt_duration(resume_pos)}")
+
+        # Cycle MediaMTX to clear the cancelled event's publisher session
+        if not self._cycle_mediamtx():
+            self._log("cancel_oneshot: MediaMTX cycle failed — triggering auto-restart.", "ERROR")
+            self._auto_restart()
+            return
+
+        self._start_ffmpeg_with_retry(item, resume_pos)
+        self.state.status = StreamStatus.LIVE
+        threading.Thread(
+            target=self._monitor, daemon=True,
+            name=f"mon-{self.state.config.port}",
+        ).start()
+
     def play_oneshot(self, event: OneShotEvent) -> None:
         self._log(f"One-shot event starting: {event.file_path.name}", "INFO")
         self.state.oneshot_active = True
+        # Store the event so the API can expose the event file name
+        self.state.active_oneshot_event = event  # type: ignore[attr-defined]
         self._kill_ffmpeg()
 
         try:
@@ -457,6 +535,7 @@ class StreamWorker:
         if not self._cycle_mediamtx():
             self._log("One-shot: MediaMTX cycle failed — aborting.", "ERROR")
             self.state.oneshot_active = False
+            self.state.active_oneshot_event = None  # type: ignore[attr-defined]
             # FFmpeg was already killed above; MediaMTX is in an unknown state.
             # Trigger auto-restart so the stream recovers rather than going silent.
             if not self._stop.is_set():
@@ -472,14 +551,27 @@ class StreamWorker:
         # CRITICAL: pass oneshot=True so _start_ffmpeg never adds -stream_loop -1
         self._start_ffmpeg_with_retry(item, seek_secs, oneshot=True, loop_count=loop_count)
 
+        # Set ONESHOT status and start a monitor thread so the progress bar
+        # and position counter update while the event plays.
+        self.state.status = StreamStatus.ONESHOT
+        threading.Thread(
+            target=self._monitor, daemon=True,
+            name=f"mon-oneshot-{self.state.config.port}",
+        ).start()
+
         def _after() -> None:
             proc = self.state.ffmpeg_proc
             if proc:
                 while not self._stop.is_set() and proc.poll() is None:
                     time.sleep(0.5)
-            self.state.oneshot_active = False
-            if self._stop.is_set():
+            # If cancel_oneshot() already cleared oneshot_active and started
+            # resuming, do not interfere.  Also bail on a full stream stop.
+            if not self.state.oneshot_active or self._stop.is_set():
+                self.state.oneshot_active = False
+                self.state.active_oneshot_event = None  # type: ignore[attr-defined]
                 return
+            self.state.oneshot_active = False
+            self.state.active_oneshot_event = None  # type: ignore[attr-defined]
             self._log(
                 f"One-shot finished. Post-action: {event.post_action}", "INFO"
             )
