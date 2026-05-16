@@ -1065,12 +1065,12 @@ select option{background:var(--bg3)}
     <!-- ── Holidays pill ── -->
     <div style="position:relative" id="hd-wrap">
       <button class="stat-pill" id="hd-btn" onclick="toggleHolidays(event)"
-          title="Bangladesh Public Holidays"
+          title="Public Holidays"
           style="cursor:pointer;user-select:none;border-color:rgba(154,138,176,0.35)">
         🗓&nbsp;<b id="hd-next-label" style="color:var(--purple)">Holidays</b>
       </button>
       <div class="hd-popup" id="hd-popup" style="display:none">
-        <div class="hd-popup-hdr">🇧🇩 Bangladesh Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)"></span></div>
+        <div class="hd-popup-hdr" id="hd-popup-hdr">🗓 Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)"></span></div>
         <div id="hd-list"><div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Loading…</div></div>
       </div>
     </div>
@@ -1418,6 +1418,88 @@ select option{background:var(--bg3)}
       <div class="setting-row" style="border:none;padding-top:12px">
         <button class="btn b" onclick="updateSysInfo()" style="width:100%;justify-content:center" title="Refresh CPU, RAM and active stream count">↻ Refresh Info</button>
       </div>
+    </div>
+  </div>
+
+  </div>
+
+  <!-- Holiday Country -->
+  <div style="margin-top:4px">
+    <div class="section-hdr"><h2>Holiday Country</h2><span class="sep"></span></div>
+    <div class="card card-body" style="padding:16px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">
+        Select the country whose public holidays appear in the navbar pill and the Events calendar.
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr auto;gap:10px;align-items:end">
+        <div class="fg" style="margin:0">
+          <label>Country</label>
+          <select id="hol-country-sel" style="width:100%" title="Public holiday country">
+            <option value="AE">UAE</option>
+            <option value="AR">Argentina</option>
+            <option value="AT">Austria</option>
+            <option value="AU">Australia</option>
+            <option value="BD">Bangladesh</option>
+            <option value="BE">Belgium</option>
+            <option value="BR">Brazil</option>
+            <option value="CA">Canada</option>
+            <option value="CH">Switzerland</option>
+            <option value="CN">China</option>
+            <option value="CO">Colombia</option>
+            <option value="CZ">Czech Republic</option>
+            <option value="DE">Germany</option>
+            <option value="DK">Denmark</option>
+            <option value="EG">Egypt</option>
+            <option value="ES">Spain</option>
+            <option value="FI">Finland</option>
+            <option value="FR">France</option>
+            <option value="GB">United Kingdom</option>
+            <option value="GH">Ghana</option>
+            <option value="GR">Greece</option>
+            <option value="HU">Hungary</option>
+            <option value="ID">Indonesia</option>
+            <option value="IE">Ireland</option>
+            <option value="IL">Israel</option>
+            <option value="IN">India</option>
+            <option value="IQ">Iraq</option>
+            <option value="IR">Iran</option>
+            <option value="IT">Italy</option>
+            <option value="JP">Japan</option>
+            <option value="KE">Kenya</option>
+            <option value="KR">South Korea</option>
+            <option value="KW">Kuwait</option>
+            <option value="LK">Sri Lanka</option>
+            <option value="MA">Morocco</option>
+            <option value="MX">Mexico</option>
+            <option value="MY">Malaysia</option>
+            <option value="NG">Nigeria</option>
+            <option value="NL">Netherlands</option>
+            <option value="NO">Norway</option>
+            <option value="NP">Nepal</option>
+            <option value="NZ">New Zealand</option>
+            <option value="OM">Oman</option>
+            <option value="PH">Philippines</option>
+            <option value="PK">Pakistan</option>
+            <option value="PL">Poland</option>
+            <option value="PT">Portugal</option>
+            <option value="QA">Qatar</option>
+            <option value="RO">Romania</option>
+            <option value="RU">Russia</option>
+            <option value="SA">Saudi Arabia</option>
+            <option value="SE">Sweden</option>
+            <option value="SG">Singapore</option>
+            <option value="TH">Thailand</option>
+            <option value="TR">Turkey</option>
+            <option value="TZ">Tanzania</option>
+            <option value="UA">Ukraine</option>
+            <option value="US">United States</option>
+            <option value="VN">Vietnam</option>
+            <option value="ZA">South Africa</option>
+            <option value="ZW">Zimbabwe</option>
+          </select>
+        </div>
+        <button class="btn g" onclick="saveHolCountry()" title="Save and reload holidays for the selected country">💾 Save</button>
+      </div>
+      <div id="hol-country-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
     </div>
   </div>
 
@@ -1821,7 +1903,7 @@ function _doSwitchTab(name,btn){
   else if(name==='events'){if(!_hdLoaded)loadHolidays();}
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
-  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();}
+  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolCountrySetting();}
 }
 
 // ═══════════════════════════════════
@@ -1892,6 +1974,39 @@ async function updateSysInfo(){
     const sv=document.getElementById('sys-ver');
     if(sv&&streams[0]) sv.textContent='v'+streams[0].app_ver;
   }catch(_){}
+}
+
+async function loadHolCountrySetting(){
+  try{
+    const sett = await fetch('/api/settings').then(r=>r.json());
+    const sel = document.getElementById('hol-country-sel');
+    if(sel && sett.holiday_country) sel.value = sett.holiday_country;
+  }catch(_){}
+}
+
+async function saveHolCountry(){
+  const sel = document.getElementById('hol-country-sel');
+  const st  = document.getElementById('hol-country-status');
+  if(!sel) return;
+  const country = sel.value;
+  try{
+    if(st) st.textContent = 'Saving…';
+    const res = await fetch('/api/settings',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({holiday_country: country, holiday_subdiv: null}),
+    });
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    if(st) st.textContent = '✓ Saved — reloading holidays…';
+    // Sync navbar and events calendar
+    if(window.reloadNavHolidays) window.reloadNavHolidays();
+    setTimeout(()=>{ if(st) st.textContent=''; }, 3000);
+    toast('Holiday country saved','ok');
+  }catch(e){
+    if(st) st.textContent = '⚠ ' + e.message;
+    toast('Failed to save','err');
+  }
 }
 
 // ═══════════════════════════════════
@@ -2465,13 +2580,32 @@ document.addEventListener('click', e=>{
 
 async function loadHolidays(){
   try{
-    const data = await fetch('/api/holidays').then(r=>r.json());
+    // Always read current country from settings so navbar stays in sync
+    let country = 'US', subdiv = '';
+    try {
+      const sett = await fetch('/api/settings').then(r=>r.json());
+      country = sett.holiday_country || 'US';
+      subdiv  = sett.holiday_subdiv  || '';
+    } catch(_) {}
+
+    const qs = new URLSearchParams({ year: new Date().getFullYear(), country });
+    if (subdiv) qs.set('subdiv', subdiv);
+    const data = await fetch('/api/holidays?' + qs).then(r=>r.json());
     if(!Array.isArray(data)){ throw new Error('bad response'); }
     _hdData = data;
     _hdLoaded = true;
     const today = new Date().toISOString().slice(0,10);
     const yr    = today.slice(0,4);
     document.getElementById('hd-year').textContent = yr;
+
+    // Update pill title and popup header with actual country name
+    const countryNames = {"AE":"UAE","AR":"Argentina","AT":"Austria","AU":"Australia","BD":"Bangladesh","BE":"Belgium","BR":"Brazil","CA":"Canada","CH":"Switzerland","CN":"China","CO":"Colombia","CZ":"Czech Republic","DE":"Germany","DK":"Denmark","EG":"Egypt","ES":"Spain","FI":"Finland","FR":"France","GB":"United Kingdom","GH":"Ghana","GR":"Greece","HU":"Hungary","ID":"Indonesia","IE":"Ireland","IL":"Israel","IN":"India","IQ":"Iraq","IR":"Iran","IT":"Italy","JP":"Japan","KE":"Kenya","KR":"South Korea","KW":"Kuwait","LK":"Sri Lanka","MA":"Morocco","MX":"Mexico","MY":"Malaysia","NG":"Nigeria","NL":"Netherlands","NO":"Norway","NP":"Nepal","NZ":"New Zealand","OM":"Oman","PH":"Philippines","PK":"Pakistan","PL":"Poland","PT":"Portugal","QA":"Qatar","RO":"Romania","RU":"Russia","SA":"Saudi Arabia","SE":"Sweden","SG":"Singapore","TH":"Thailand","TR":"Turkey","TZ":"Tanzania","UA":"Ukraine","US":"United States","VN":"Vietnam","ZA":"South Africa","ZW":"Zimbabwe"};
+    const cname = countryNames[country] || country;
+    const hdr = document.getElementById('hd-popup-hdr');
+    if (hdr) hdr.innerHTML = `🗓 ${esc(cname)} Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)">${yr}</span>`;
+    const btn = document.getElementById('hd-btn');
+    if (btn) btn.title = cname + ' Public Holidays';
+
     // Set next upcoming holiday label in pill
     const upcoming = _hdData.filter(h=>h.date >= today);
     if(upcoming.length){
@@ -2479,6 +2613,8 @@ async function loadHolidays(){
       const d = new Date(next.date + 'T00:00:00');
       const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       document.getElementById('hd-next-label').textContent = label;
+    } else {
+      document.getElementById('hd-next-label').textContent = cname;
     }
     // Render list
     const list = document.getElementById('hd-list');
@@ -2495,11 +2631,16 @@ async function loadHolidays(){
         ${isToday?'<div class="hd-today-tag">TODAY</div>':''}
       </div>`;
     }).join('');
-    // Holidays loaded — calendar removed
   }catch(e){
     document.getElementById('hd-list').innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px">⚠ Failed to load holidays. Ensure the <code>holidays</code> Python package is installed.</div>';
   }
 }
+
+// Called by React calendar and Settings tab after country is saved
+window.reloadNavHolidays = function() {
+  _hdLoaded = false;
+  loadHolidays();
+};
 
 // ═══════════════════════════════════
 // CONFIGURE TAB
@@ -4045,6 +4186,7 @@ function toggleTheme(){
   loadStreams();
   updateStats();
   toggleAuto(true);
+  loadHolidays();  // load navbar holidays using saved country on startup
   setInterval(updateStats,8000);
   setInterval(()=>{
     const now=new Date();
@@ -5382,6 +5524,7 @@ function EventsCalendar() {
     setHolKey("");
     setModal(null);
     showToast("Holiday settings saved");
+    if (window.reloadNavHolidays) window.reloadNavHolidays();
   };
 
   if (loading) return (
