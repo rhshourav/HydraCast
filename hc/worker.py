@@ -1668,10 +1668,17 @@ class StreamWorker:
             _tcp_ports.append(cfg.hls_port)
 
         def _udp_port_free(port: int) -> bool:
-            """Return True if we can bind the UDP port (i.e. it is released)."""
+            """
+            Return True if the UDP port is fully released by the OS.
+
+            Deliberately does NOT set SO_REUSEADDR — on Windows that flag can
+            allow a bind to succeed even when another process still owns the
+            socket, producing a false "free" result and causing the subsequent
+            MediaMTX bind to fail with "Only one usage of each socket address".
+            Without the flag, a successful bind guarantees the port is free.
+            """
             try:
                 s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
-                s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
                 s.bind(("0.0.0.0", port))
                 s.close()
                 return True
