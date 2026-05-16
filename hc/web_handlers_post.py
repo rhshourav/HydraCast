@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -272,6 +273,27 @@ class _PostHandlersMixin:
                 return
             removed = mgr.remove_event(ev_id)
             self._json({"ok": removed, "msg": "Event deleted" if removed else "Event not found"})
+
+        elif action == "cancel_event":
+            # Stop a CURRENTLY RUNNING one-shot event and resume
+            # the compliance file / playlist at the correct seek position.
+            name = str(data.get("name", "")).strip()
+            st = mgr.get_state(name)
+            if not st:
+                self._json({"ok": False, "msg": f"Stream '{name}' not found"})
+                return
+            if not st.oneshot_active:
+                self._json({"ok": False, "msg": "No event is currently running on this stream"})
+                return
+            w = mgr.get_worker(name)
+            if not w:
+                self._json({"ok": False, "msg": "Worker not found"})
+                return
+            threading.Thread(
+                target=w.cancel_oneshot, daemon=True,
+                name=f"cancel-event-{st.config.port}",
+            ).start()
+            self._json({"ok": True, "msg": f"Event cancelled — resuming on '{name}'"})
 
         # ── Stream CRUD ───────────────────────────────────────────────────────
         elif action == "create_stream":
