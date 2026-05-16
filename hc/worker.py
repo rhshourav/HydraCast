@@ -601,6 +601,7 @@ class StreamWorker:
             if not self.state.oneshot_active or self._stop.is_set():
                 self.state.oneshot_active = False
                 self.state.active_oneshot_event = None  # type: ignore[attr-defined]
+                self.state.resuming = False
                 return
             self.state.oneshot_active = False
             self.state.active_oneshot_event = None  # type: ignore[attr-defined]
@@ -608,8 +609,10 @@ class StreamWorker:
                 f"One-shot finished. Post-action: {event.post_action}", "INFO"
             )
             if event.post_action == "stop":
+                self.state.resuming = False
                 self.stop()
             elif event.post_action == "black":
+                self.state.resuming = False
                 self._play_black()
             else:
                 item2 = self._current_item()
@@ -655,9 +658,13 @@ class StreamWorker:
                         else:
                             self._log("One-shot resume: MediaMTX cycle failed.", "ERROR")
                     finally:
-                        # Always clear _seeking so future seeks/restarts can proceed.
+                        # Always clear both flags so future seeks/restarts can proceed.
+                        self.state.resuming = False
                         self._seeking.clear()
 
+        # Mark resuming BEFORE spawning _after so the scheduler's start_stream()
+        # guard sees it immediately, even if the scheduler tick races this line.
+        self.state.resuming = True
         threading.Thread(target=_after, daemon=True,
                          name=f"oneshot-{self.state.config.port}").start()
 
