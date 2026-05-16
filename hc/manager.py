@@ -80,16 +80,19 @@ class StreamManager:
     def start_stream(self, state: StreamState) -> None:
         if state.status in (StreamStatus.LIVE, StreamStatus.STARTING, StreamStatus.ONESHOT):
             return
-        # Guard: if the worker is in a seek or _after() resume window, don't
-        # start — the worker is already handling its own restart.  Without this
-        # the scheduler sees status=ERROR (from the Broken Pipe during the
-        # _cycle_mediamtx kill) and calls start_stream() which races _after().
-        w_existing = self._workers.get(state.config.name)
-        if w_existing is not None:
-            if w_existing._seeking.is_set() or w_existing._stop.is_set():
-                return
+        # Block while _after() owns the resume cycle.  state.resuming is set
+        # synchronously by play_oneshot() before _after() spawns its thread,
+        # so this guard fires even if the scheduler races _after() on the same
+        # clock tick.  Without this the scheduler sees status=ERROR (from the
+        # Broken Pipe FFmpeg gets when _cycle_mediamtx kills MediaMTX) and
+        # calls start_stream(), which races _cycle_mediamtx and corrupts ports.
+        if state.resuming:
+            return
         state.playlist_index = 0
         state.playlist_order = []
+        # Clear any stale initial_offset from a previous compliance start —
+        # _apply_compliance_start() below will set it correctly if needed.
+        state.initial_offset = 0.0
 
         # Compliance: select today's file and set initial seek offset
         if state.config.compliance_enabled:
