@@ -1065,12 +1065,12 @@ select option{background:var(--bg3)}
     <!-- ── Holidays pill ── -->
     <div style="position:relative" id="hd-wrap">
       <button class="stat-pill" id="hd-btn" onclick="toggleHolidays(event)"
-          title="Public Holidays"
+          title="Bangladesh Public Holidays"
           style="cursor:pointer;user-select:none;border-color:rgba(154,138,176,0.35)">
         🗓&nbsp;<b id="hd-next-label" style="color:var(--purple)">Holidays</b>
       </button>
       <div class="hd-popup" id="hd-popup" style="display:none">
-        <div class="hd-popup-hdr" id="hd-popup-hdr">🗓 Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)"></span></div>
+        <div class="hd-popup-hdr">🇧🇩 Bangladesh Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)"></span></div>
         <div id="hd-list"><div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Loading…</div></div>
       </div>
     </div>
@@ -1332,8 +1332,8 @@ select option{background:var(--bg3)}
     <div class="setting-card">
       <h3>UI Preferences</h3>
       <div class="setting-row">
-        <div><div class="setting-label">Auto-refresh streams</div><div class="setting-desc">Poll every 2.5 seconds</div></div>
-        <div class="toggle on" id="st-autoref" onclick="toggleSetting('autoref',this)" title="Poll stream status every 2.5 seconds"></div>
+        <div><div class="setting-label">Auto-refresh streams</div><div class="setting-desc">Poll for stream status updates</div></div>
+        <div class="toggle on" id="st-autoref" onclick="toggleSetting('autoref',this)" title="Automatically poll stream status at the configured interval"></div>
       </div>
       <div class="setting-row">
         <div><div class="setting-label">Auto-scroll logs</div><div class="setting-desc">Jump to newest log entry</div></div>
@@ -1380,7 +1380,7 @@ select option{background:var(--bg3)}
       </div>
       <div class="setting-row">
         <div class="setting-label">System stats interval</div>
-        <select id="st-stats-interval" style="width:100px" title="How often to refresh CPU and RAM stats in the header">
+        <select id="st-stats-interval" onchange="applyStatsInterval()" style="width:100px" title="How often to refresh CPU and RAM stats in the header">
           <option value="5000">5 s</option>
           <option value="8000" selected>8 s</option>
           <option value="15000">15 s</option>
@@ -1388,7 +1388,7 @@ select option{background:var(--bg3)}
       </div>
       <div class="setting-row">
         <div class="setting-label">Log auto-refresh</div>
-        <select id="st-log-interval" style="width:100px" title="How often to reload the log view when Auto-scroll is on">
+        <select id="st-log-interval" onchange="applyLogInterval()" style="width:100px" title="How often to reload the log view when it is open">
           <option value="2000">2 s</option>
           <option value="4000" selected>4 s</option>
           <option value="8000">8 s</option>
@@ -1421,85 +1421,33 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
-  </div>
-
   <!-- Holiday Country -->
   <div style="margin-top:4px">
-    <div class="section-hdr"><h2>Holiday Country</h2><span class="sep"></span></div>
+    <div class="section-hdr"><h2>Holiday Country</h2><span class="sep"></span>
+      <button class="btn b" onclick="loadHolidaySettings()" title="Reload holiday settings from server">↻ Load</button>
+    </div>
     <div class="card card-body" style="padding:16px">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">
-        Select the country whose public holidays appear in the navbar pill and the Events calendar.
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
+        Sets the country used to show public holidays in the Events calendar.
+        Use the two-letter ISO country code (e.g. <code style="color:var(--accent-light)">US</code>, <code style="color:var(--accent-light)">BD</code>, <code style="color:var(--accent-light)">GB</code>, <code style="color:var(--accent-light)">AU</code>).
+        Requires the <code style="color:var(--accent-light)">holidays</code> Python package.
       </div>
-      <div class="form-grid" style="grid-template-columns:1fr auto;gap:10px;align-items:end">
-        <div class="fg" style="margin:0">
-          <label>Country</label>
-          <select id="hol-country-sel" style="width:100%" title="Public holiday country">
-            <option value="AE">UAE</option>
-            <option value="AR">Argentina</option>
-            <option value="AT">Austria</option>
-            <option value="AU">Australia</option>
-            <option value="BD">Bangladesh</option>
-            <option value="BE">Belgium</option>
-            <option value="BR">Brazil</option>
-            <option value="CA">Canada</option>
-            <option value="CH">Switzerland</option>
-            <option value="CN">China</option>
-            <option value="CO">Colombia</option>
-            <option value="CZ">Czech Republic</option>
-            <option value="DE">Germany</option>
-            <option value="DK">Denmark</option>
-            <option value="EG">Egypt</option>
-            <option value="ES">Spain</option>
-            <option value="FI">Finland</option>
-            <option value="FR">France</option>
-            <option value="GB">United Kingdom</option>
-            <option value="GH">Ghana</option>
-            <option value="GR">Greece</option>
-            <option value="HU">Hungary</option>
-            <option value="ID">Indonesia</option>
-            <option value="IE">Ireland</option>
-            <option value="IL">Israel</option>
-            <option value="IN">India</option>
-            <option value="IQ">Iraq</option>
-            <option value="IR">Iran</option>
-            <option value="IT">Italy</option>
-            <option value="JP">Japan</option>
-            <option value="KE">Kenya</option>
-            <option value="KR">South Korea</option>
-            <option value="KW">Kuwait</option>
-            <option value="LK">Sri Lanka</option>
-            <option value="MA">Morocco</option>
-            <option value="MX">Mexico</option>
-            <option value="MY">Malaysia</option>
-            <option value="NG">Nigeria</option>
-            <option value="NL">Netherlands</option>
-            <option value="NO">Norway</option>
-            <option value="NP">Nepal</option>
-            <option value="NZ">New Zealand</option>
-            <option value="OM">Oman</option>
-            <option value="PH">Philippines</option>
-            <option value="PK">Pakistan</option>
-            <option value="PL">Poland</option>
-            <option value="PT">Portugal</option>
-            <option value="QA">Qatar</option>
-            <option value="RO">Romania</option>
-            <option value="RU">Russia</option>
-            <option value="SA">Saudi Arabia</option>
-            <option value="SE">Sweden</option>
-            <option value="SG">Singapore</option>
-            <option value="TH">Thailand</option>
-            <option value="TR">Turkey</option>
-            <option value="TZ">Tanzania</option>
-            <option value="UA">Ukraine</option>
-            <option value="US">United States</option>
-            <option value="VN">Vietnam</option>
-            <option value="ZA">South Africa</option>
-            <option value="ZW">Zimbabwe</option>
-          </select>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:12px">
+        <div class="fg">
+          <label>Country Code</label>
+          <input id="hol-country" placeholder="US" maxlength="3" style="text-transform:uppercase"
+            title="Two-letter ISO country code, e.g. US, BD, GB, AU, DE, IN">
         </div>
-        <button class="btn g" onclick="saveHolCountry()" title="Save and reload holidays for the selected country">💾 Save</button>
+        <div class="fg">
+          <label>State / Province <span style="font-weight:400;color:var(--text3)">optional</span></label>
+          <input id="hol-subdiv" placeholder="e.g. CA, NSW, ON…"
+            title="Optional subdivision code for regional holidays. Leave blank for national-only.">
+        </div>
       </div>
-      <div id="hol-country-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="btn g" onclick="saveHolidaySettings()" title="Save holiday country to disk">💾 Save</button>
+        <div id="hol-status" style="font-size:11px;color:var(--text3)"></div>
+      </div>
     </div>
   </div>
 
@@ -1690,6 +1638,9 @@ select option{background:var(--bg3)}
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
               <input type="checkbox" id="bk-resume" checked style="width:auto;accent-color:var(--accent)" title="Include per-file resume positions in the backup"> Resume positions
             </label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
+              <input type="checkbox" id="bk-app-settings" checked style="width:auto;accent-color:var(--accent)" title="Include app settings (holiday country, etc.) in the backup"> App settings
+            </label>
           </div>
           <button class="btn g" onclick="downloadBackup()" title="Download a .hc backup file containing the selected configuration">⬇ Download Backup</button>
           <div id="bk-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
@@ -1726,8 +1677,10 @@ select option{background:var(--bg3)}
       <div style="display:flex;flex-wrap:wrap;gap:10px">
         <button class="btn r" onclick="if(confirm('Stop ALL streams?')) api('stop_all',{})" title="Immediately stop every running stream">■ Stop All Streams</button>
         <button class="btn r" onclick="if(confirm('Restart ALL streams?')) api('restart_all',{})" title="Stop and restart every stream">↺ Restart All</button>
+        <button class="btn r" onclick="clearPlayedEvents()" title="Delete all events that have already been played from the schedule" style="background:rgba(194,120,120,0.1);border-color:var(--red)">🗑 Clear Played Events</button>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:10px">These actions affect all streams immediately.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:10px">These actions affect all streams or event history immediately.</div>
+      <div id="danger-status" style="font-size:11px;color:var(--text3);margin-top:6px"></div>
     </div>
   </div>
 </div>
@@ -1903,7 +1856,7 @@ function _doSwitchTab(name,btn){
   else if(name==='events'){if(!_hdLoaded)loadHolidays();}
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
-  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolCountrySetting();}
+  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolidaySettings();}
 }
 
 // ═══════════════════════════════════
@@ -1928,7 +1881,7 @@ async function api(action,data){
       await new Promise(res=>setTimeout(res,settleMs));
       loadStreams();
       if(_configSelected) loadConfig();
-      if(wasAuto) _autoTimer=setInterval(loadStreams,2500);
+      if(wasAuto) _autoTimer=setInterval(loadStreams,parseInt(document.getElementById('st-poll-interval')?.value)||2500);
     } else {
       loadStreams();
       if(_configSelected) loadConfig();
@@ -1976,46 +1929,35 @@ async function updateSysInfo(){
   }catch(_){}
 }
 
-async function loadHolCountrySetting(){
-  try{
-    const sett = await fetch('/api/settings').then(r=>r.json());
-    const sel = document.getElementById('hol-country-sel');
-    if(sel && sett.holiday_country) sel.value = sett.holiday_country;
-  }catch(_){}
-}
-
-async function saveHolCountry(){
-  const sel = document.getElementById('hol-country-sel');
-  const st  = document.getElementById('hol-country-status');
-  if(!sel) return;
-  const country = sel.value;
-  try{
-    if(st) st.textContent = 'Saving…';
-    const res = await fetch('/api/settings',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({holiday_country: country, holiday_subdiv: null}),
-    });
-    const data = await res.json();
-    if(data.error) throw new Error(data.error);
-    if(st) st.textContent = '✓ Saved — reloading holidays…';
-    // Sync navbar and events calendar
-    if(window.reloadNavHolidays) window.reloadNavHolidays();
-    setTimeout(()=>{ if(st) st.textContent=''; }, 3000);
-    toast('Holiday country saved','ok');
-  }catch(e){
-    if(st) st.textContent = '⚠ ' + e.message;
-    toast('Failed to save','err');
-  }
-}
-
 // ═══════════════════════════════════
 // STREAMS
 // ═══════════════════════════════════
 let _autoTimer=null;
+let _statsTimer=null;
+let _logTimer=null;
+
 function toggleAuto(on){
   clearInterval(_autoTimer);
-  if(on) _autoTimer=setInterval(loadStreams,2500);
+  if(on){
+    const v=parseInt(document.getElementById('st-poll-interval')?.value)||2500;
+    _autoTimer=setInterval(loadStreams,v);
+  }
+}
+
+function applyStatsInterval(){
+  const v=parseInt(document.getElementById('st-stats-interval')?.value)||8000;
+  clearInterval(_statsTimer);
+  _statsTimer=setInterval(updateStats,v);
+  try{localStorage.setItem('hc-stats-interval',v);}catch(_){}
+}
+
+function applyLogInterval(){
+  const v=parseInt(document.getElementById('st-log-interval')?.value)||4000;
+  clearInterval(_logTimer);
+  _logTimer=setInterval(()=>{
+    if(document.getElementById('tab-logs')?.classList.contains('active')) loadLogs();
+  },v);
+  try{localStorage.setItem('hc-log-interval',v);}catch(_){}
 }
 
 async function loadStreams(){
@@ -2580,32 +2522,13 @@ document.addEventListener('click', e=>{
 
 async function loadHolidays(){
   try{
-    // Always read current country from settings so navbar stays in sync
-    let country = 'US', subdiv = '';
-    try {
-      const sett = await fetch('/api/settings').then(r=>r.json());
-      country = sett.holiday_country || 'US';
-      subdiv  = sett.holiday_subdiv  || '';
-    } catch(_) {}
-
-    const qs = new URLSearchParams({ year: new Date().getFullYear(), country });
-    if (subdiv) qs.set('subdiv', subdiv);
-    const data = await fetch('/api/holidays?' + qs).then(r=>r.json());
+    const data = await fetch('/api/holidays').then(r=>r.json());
     if(!Array.isArray(data)){ throw new Error('bad response'); }
     _hdData = data;
     _hdLoaded = true;
     const today = new Date().toISOString().slice(0,10);
     const yr    = today.slice(0,4);
     document.getElementById('hd-year').textContent = yr;
-
-    // Update pill title and popup header with actual country name
-    const countryNames = {"AE":"UAE","AR":"Argentina","AT":"Austria","AU":"Australia","BD":"Bangladesh","BE":"Belgium","BR":"Brazil","CA":"Canada","CH":"Switzerland","CN":"China","CO":"Colombia","CZ":"Czech Republic","DE":"Germany","DK":"Denmark","EG":"Egypt","ES":"Spain","FI":"Finland","FR":"France","GB":"United Kingdom","GH":"Ghana","GR":"Greece","HU":"Hungary","ID":"Indonesia","IE":"Ireland","IL":"Israel","IN":"India","IQ":"Iraq","IR":"Iran","IT":"Italy","JP":"Japan","KE":"Kenya","KR":"South Korea","KW":"Kuwait","LK":"Sri Lanka","MA":"Morocco","MX":"Mexico","MY":"Malaysia","NG":"Nigeria","NL":"Netherlands","NO":"Norway","NP":"Nepal","NZ":"New Zealand","OM":"Oman","PH":"Philippines","PK":"Pakistan","PL":"Poland","PT":"Portugal","QA":"Qatar","RO":"Romania","RU":"Russia","SA":"Saudi Arabia","SE":"Sweden","SG":"Singapore","TH":"Thailand","TR":"Turkey","TZ":"Tanzania","UA":"Ukraine","US":"United States","VN":"Vietnam","ZA":"South Africa","ZW":"Zimbabwe"};
-    const cname = countryNames[country] || country;
-    const hdr = document.getElementById('hd-popup-hdr');
-    if (hdr) hdr.innerHTML = `🗓 ${esc(cname)} Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)">${yr}</span>`;
-    const btn = document.getElementById('hd-btn');
-    if (btn) btn.title = cname + ' Public Holidays';
-
     // Set next upcoming holiday label in pill
     const upcoming = _hdData.filter(h=>h.date >= today);
     if(upcoming.length){
@@ -2613,8 +2536,6 @@ async function loadHolidays(){
       const d = new Date(next.date + 'T00:00:00');
       const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
       document.getElementById('hd-next-label').textContent = label;
-    } else {
-      document.getElementById('hd-next-label').textContent = cname;
     }
     // Render list
     const list = document.getElementById('hd-list');
@@ -2631,16 +2552,11 @@ async function loadHolidays(){
         ${isToday?'<div class="hd-today-tag">TODAY</div>':''}
       </div>`;
     }).join('');
+    // Holidays loaded — calendar removed
   }catch(e){
     document.getElementById('hd-list').innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px">⚠ Failed to load holidays. Ensure the <code>holidays</code> Python package is installed.</div>';
   }
 }
-
-// Called by React calendar and Settings tab after country is saved
-window.reloadNavHolidays = function() {
-  _hdLoaded = false;
-  loadHolidays();
-};
 
 // ═══════════════════════════════════
 // CONFIGURE TAB
@@ -3616,7 +3532,18 @@ function toggleComplianceAlerts(checked) {
   }
 }
 
-const _settings={autoref:true,autoscroll:true,compact:false,showrtsp:true,notifStart:true,notifErr:true,notifEvent:false};
+const _settingsDefaults={autoref:true,autoscroll:true,compact:false,showrtsp:true,notifStart:true,notifErr:true,notifEvent:false};
+const _settings=Object.assign({},_settingsDefaults);
+// Restore persisted settings
+try{
+  const _stored=JSON.parse(localStorage.getItem('hc-settings')||'{}');
+  Object.assign(_settings,_stored);
+  // Sync toggle UI after defaults are applied
+  Object.entries(_settings).forEach(([k,v])=>{
+    const el=document.getElementById('st-'+k.toLowerCase().replace(/([A-Z])/g,'-$1').toLowerCase());
+    if(el&&el.classList.contains('toggle')) el.classList.toggle('on',!!v);
+  });
+}catch(_){}
 
 // ═══════════════════════════════════
 // STREAM SOURCE SELECTOR
@@ -3788,10 +3715,17 @@ async function ssApply() {
 function toggleSetting(key,el){
   _settings[key]=!_settings[key];
   el.classList.toggle('on',_settings[key]);
+  try{localStorage.setItem('hc-settings',JSON.stringify(_settings));}catch(_){}
   applySettings();
 }
 
 function applySettings(){
+  // Autoref toggle → restart/stop the poll timer
+  clearInterval(_autoTimer);
+  if(_settings.autoref){
+    const v=parseInt(document.getElementById('st-poll-interval')?.value)||2500;
+    _autoTimer=setInterval(loadStreams,v);
+  }
   // sync compliance alerts toggle
   const caEl=document.getElementById('st-comp-alerts');
   if(caEl)caEl.checked=_compAlertsEnabled;
@@ -3809,6 +3743,7 @@ function applySettings(){
 
 function applyPollInterval(){
   const v=parseInt(document.getElementById('st-poll-interval').value)||2500;
+  try{localStorage.setItem('hc-poll-interval',v);}catch(_){}
   clearInterval(_autoTimer);
   if(_settings.autoref) _autoTimer=setInterval(loadStreams,v);
 }
@@ -4087,10 +4022,11 @@ async function downloadBackup(){
   st.textContent='Preparing backup…';st.style.color='var(--yellow)';
   try{
     const include={
-      streams:document.getElementById('bk-streams')?.checked!==false,
-      events:document.getElementById('bk-events')?.checked!==false,
-      mail:document.getElementById('bk-mail')?.checked!==false,
-      resume:document.getElementById('bk-resume')?.checked!==false,
+      streams:  document.getElementById('bk-streams')?.checked!==false,
+      events:   document.getElementById('bk-events')?.checked!==false,
+      mail:     document.getElementById('bk-mail')?.checked!==false,
+      resume:   document.getElementById('bk-resume')?.checked!==false,
+      app_settings: document.getElementById('bk-app-settings')?.checked!==false,
     };
     const r=await fetch('/api/backup',{
       method:'POST',headers:{'Content-Type':'application/json'},
@@ -4111,7 +4047,8 @@ async function downloadBackup(){
     a.download=`hydracast_backup_${ts}.hc`;
     a.click();
     URL.revokeObjectURL(a.href);
-    st.textContent='✓ Backup downloaded';st.style.color='var(--green)';
+    const included=Object.entries(include).filter(([,v])=>v).map(([k])=>k).join(', ');
+    st.textContent=`✓ Backup downloaded (${included})`;st.style.color='var(--green)';
     toast('Backup downloaded','ok');
   }catch(e){
     st.textContent='✕ '+e.message;st.style.color='var(--red)';
@@ -4122,22 +4059,35 @@ async function downloadBackup(){
 async function doRestore(file){
   if(!file)return;
   if(!file.name.endsWith('.hc')){toast('Must be a .hc backup file','err');return;}
-  if(!confirm('Restore from this backup?\n\nAll current configuration will be replaced and all streams will restart.\n\nFile: '+file.name))return;
+  if(!confirm('Restore from this backup?\n\nAll matching configuration will be replaced and streams will restart.\n\nFile: '+file.name+'\nSize: '+Math.round(file.size/1024)+' KB'))return;
   const st=document.getElementById('restore-status');
-  st.textContent='Uploading…';st.style.color='var(--yellow)';
+  st.textContent='Reading file…';st.style.color='var(--yellow)';
   try{
     const text=await file.text();
     let data;
     try{data=JSON.parse(text);}catch(_){throw new Error('Invalid .hc file — not valid JSON');}
     if(data.format!=='hydracast_backup'){throw new Error('Not a HydraCast backup file (missing format header)');}
+    const sections=[];
+    if(data.streams)   sections.push('streams');
+    if(data.events)    sections.push('events');
+    if(data.mail_config) sections.push('mail');
+    if(data.resume_positions) sections.push('resume');
+    if(data.app_settings) sections.push('app settings');
+    if(sections.length===0){throw new Error('Backup file contains no restorable data');}
+    st.textContent=`Restoring: ${sections.join(', ')}…`;st.style.color='var(--yellow)';
     const r=await fetch('/api/restore',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(data)
     });
     const j=await r.json();
     if(j.ok){
-      st.textContent='✓ Restored — reloading in 3 s…';st.style.color='var(--green)';
+      const restored=(j.restored||[]).join(', ')||'(none)';
+      const failed=(j.failed||[]);
+      st.textContent='✓ Restored: '+restored+(failed.length?'\n⚠ Warnings: '+failed.join('; '):'')+' — reloading in 3 s…';
+      st.style.color=failed.length?'var(--yellow)':'var(--green)';
       toast('Restore successful — restarting streams…','ok');
+      // Reload holiday inputs if app_settings were restored
+      if(j.restored&&j.restored.includes('app_settings')) loadHolidaySettings();
       setTimeout(()=>loadStreams(),3500);
     }else{
       throw new Error(j.msg||'Restore failed');
@@ -4145,6 +4095,72 @@ async function doRestore(file){
   }catch(e){
     st.textContent='✕ '+e.message;st.style.color='var(--red)';
     toast('Restore failed: '+e.message,'err');
+  }
+}
+
+// ═══════════════════════════════════
+// HOLIDAY SETTINGS (Settings tab)
+// ═══════════════════════════════════
+async function loadHolidaySettings(){
+  try{
+    const s=await fetch('/api/settings').then(r=>r.json());
+    const ci=document.getElementById('hol-country');
+    const si=document.getElementById('hol-subdiv');
+    if(ci) ci.value=s.holiday_country||'US';
+    if(si) si.value=s.holiday_subdiv||'';
+  }catch(e){}
+}
+
+async function saveHolidaySettings(){
+  const country=(document.getElementById('hol-country')?.value||'').trim().toUpperCase();
+  const subdiv=(document.getElementById('hol-subdiv')?.value||'').trim()||null;
+  const st=document.getElementById('hol-status');
+  if(!country||country.length<2){
+    st.textContent='✕ Enter a valid country code (e.g. US, BD, GB)';
+    st.style.color='var(--red)';return;
+  }
+  st.textContent='Saving…';st.style.color='var(--yellow)';
+  try{
+    const r=await fetch('/api/settings',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({holiday_country:country,holiday_subdiv:subdiv})
+    });
+    const j=await r.json();
+    if(j.error) throw new Error(j.error);
+    st.textContent='✓ Saved — '+country+(subdiv?' / '+subdiv:'');
+    st.style.color='var(--green)';
+    toast('Holiday settings saved','ok');
+  }catch(e){
+    st.textContent='✕ '+e.message;st.style.color='var(--red)';
+    toast('Save failed: '+e.message,'err');
+  }
+}
+
+// ═══════════════════════════════════
+// CLEAR PLAYED EVENTS
+// ═══════════════════════════════════
+async function clearPlayedEvents(){
+  const st=document.getElementById('danger-status');
+  try{
+    const events=await fetch('/api/events').then(r=>r.json());
+    if(!Array.isArray(events)){throw new Error('Could not load events');}
+    const played=events.filter(e=>e.played);
+    if(!played.length){
+      st.textContent='No played events to clear.';st.style.color='var(--text3)';
+      toast('No played events to clear','info');return;
+    }
+    if(!confirm(`Clear ${played.length} played event${played.length!==1?'s':''}?\n\nThis removes them from the schedule history permanently.`)) return;
+    st.textContent='Clearing…';st.style.color='var(--yellow)';
+    const r=await api('clear_played_events',{});
+    if(r?.ok){
+      st.textContent='✓ '+r.msg;st.style.color='var(--green)';
+      toast(r.msg,'ok');
+    }else{
+      throw new Error(r?.msg||'Failed');
+    }
+  }catch(e){
+    st.textContent='✕ '+e.message;st.style.color='var(--red)';
+    toast('Clear failed: '+e.message,'err');
   }
 }
 
@@ -4183,11 +4199,33 @@ function toggleTheme(){
 // ═══════════════════════════════════
 (async function init(){
   document.getElementById('logo-img').src = '/ resources/logo.png';
+
+  // ── Restore saved interval preferences ──────────────────────────────────
+  try{
+    const pi=localStorage.getItem('hc-poll-interval');
+    if(pi){
+      const sel=document.getElementById('st-poll-interval');
+      if(sel) sel.value=pi;
+    }
+    const si=localStorage.getItem('hc-stats-interval');
+    if(si){
+      const sel=document.getElementById('st-stats-interval');
+      if(sel) sel.value=si;
+    }
+    const li=localStorage.getItem('hc-log-interval');
+    if(li){
+      const sel=document.getElementById('st-log-interval');
+      if(sel) sel.value=li;
+    }
+  }catch(_){}
+
   loadStreams();
   updateStats();
-  toggleAuto(true);
-  loadHolidays();  // load navbar holidays using saved country on startup
-  setInterval(updateStats,8000);
+  // Start configurable timers (read values from restored selects)
+  toggleAuto(_settings.autoref);
+  applyStatsInterval();
+  applyLogInterval();
+
   setInterval(()=>{
     const now=new Date();
     const el=document.getElementById('h-time');
@@ -4195,12 +4233,11 @@ function toggleTheme(){
       .map(n=>String(n).padStart(2,'0')).join(':');
   },1000);
   setInterval(()=>{
-    if(document.getElementById('tab-logs').classList.contains('active')) loadLogs();
-  },4000);
-  // Events tab: React calendar polls itself — no global interval needed.
-  setInterval(()=>{
     if(document.getElementById('tab-viewer').classList.contains('active')) loadViewer();
   },5000);
+
+  // Load holiday settings into the Settings tab inputs
+  loadHolidaySettings();
 })();
 
 // Keyboard shortcuts
@@ -5524,7 +5561,6 @@ function EventsCalendar() {
     setHolKey("");
     setModal(null);
     showToast("Holiday settings saved");
-    if (window.reloadNavHolidays) window.reloadNavHolidays();
   };
 
   if (loading) return (
@@ -5641,12 +5677,14 @@ function EventsCalendar() {
             </button>
           )}
 
-          {/* Holiday country */}
-          <button onClick={()=>setModal("settings")}
-            style={{display:"flex",alignItems:"center",gap:"5px",fontSize:"11px",padding:"4px 9px"}}>
+          {/* Holiday country indicator — edit in Settings tab */}
+          <span title="Holiday country — change in Settings tab"
+            style={{display:"flex",alignItems:"center",gap:"5px",fontSize:"11px",padding:"4px 9px",
+              borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-tertiary)",
+              color:"var(--color-text-secondary)",userSelect:"none"}}>
             <i className="ti ti-world" style={{fontSize:"13px"}}/>
-            {settings.holiday_country || "—"}
-          </button>
+            {settings.holiday_country || "US"}
+          </span>
         </div>
       </div>
 
