@@ -99,6 +99,21 @@ class _GetHandlersMixin:
         result = []
         for st in mgr.states:
             cfg = st.config
+            # Determine the currently-playing file name for display
+            cur_file: Optional[str] = None
+            active_event_name: Optional[str] = None
+            if st.oneshot_active:
+                # During a one-shot event the playlist index still points to
+                # the compliance/playlist file; the event file is stored on
+                # the active_oneshot_event attribute set in play_oneshot().
+                ev = getattr(st, "active_oneshot_event", None)
+                if ev is not None:
+                    active_event_name = ev.file_path.name
+            else:
+                cf = st.current_file()
+                if cf is not None:
+                    cur_file = cf.name
+
             result.append({
                 "name":           cfg.name,
                 "port":           cfg.port,
@@ -121,6 +136,12 @@ class _GetHandlersMixin:
                 "bitrate":        st.bitrate,
                 "speed":          st.speed,
                 "app_ver":        APP_VER,
+                # ── Oneshot / event state ─────────────────────────────────
+                "oneshot_active": st.oneshot_active,
+                "active_event":   active_event_name,
+                "current_file":   cur_file,
+                # Compliance alert (non-None = show banner in UI)
+                "compliance_alert": st.compliance_alert,
             })
         self._json(result)
 
