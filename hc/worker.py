@@ -550,8 +550,10 @@ class StreamWorker:
         self.state.duration = probe_duration(item.file_path)
 
         # Apply compliance offset to the event file when compliance is enabled.
-        # Logic: broadcast_start=06:00, current time=12:00 → seek to 06:00:00 in file.
-        # This keeps the event in sync with the compliance schedule.
+        # The event file is also a 24-hour broadcast video: position 00:00:00
+        # maps to 06:00 wall-clock time.  At 12:00 the correct position is
+        # 06:00:00; at 20:00 it is 14:00:00 — exactly the same logic as the
+        # compliance file itself, so the broadcast stays in sync.
         cfg = self.state.config
         if cfg.compliance_enabled and self.state.duration > 0:
             try:
@@ -1635,40 +1637,76 @@ class StreamWorker:
         """
         cfg = self.state.config
         self._kill_mediamtx()
-        # Wait for the RTSP port (and HLS port when HLS is enabled) to be fully
-        # released before restarting.  0.2 s is insufficient on Windows — the OS
-        # keeps the listening socket in TIME_WAIT for several seconds after the
-        # process exits, causing the next MediaMTX launch to fail with "address
-        # already in use" (exit code 1).  Poll until free (max 8 s), then force-
-        # kill any orphan still holding a port and wait a final 0.5 s.
-        _wait_ports = [cfg.port]
+
+        # ── Wait for ALL MediaMTX ports to be released ────────────────────────
+        # MediaMTX binds three port families:
+        #   TCP  cfg.port        — RTSP control
+        #   UDP  cfg.port + 2   — RTP  (must be even, see mediamtx_cfg.py)
+        #   UDP  cfg.port + 3   — RTCP
+        #   TCP  cfg.hls_port   — HLS  (when enabled)
+        #
+        # _port_in_use() is a TCP connect-probe — it cannot detect UDP sockets.
+        # On Windows, UDP sockets linger for 1–3 s after the process exits,
+        # so a new MediaMTX launched too soon crashes immediately with exit 1:
+        #   "listen udp4 0.0.0.0:<rtp>: bind: Only one usage of each socket"
+        #
+        # Strategy:
+        #   1. Try to bind the RTP UDP port ourselves.  If we can bind it, the
+        #      OS has released it and it is safe to launch MediaMTX.
+        #   2. Also poll TCP ports with _port_in_use() as before.
+        #   3. On Windows add a minimum 3 s floor before even starting the probe
+        #      because the process-exit → socket-release path is asynchronous.
+
+        import socket as _socket
+
+        rtp_port = cfg.port + 2
+        if rtp_port % 2 != 0:
+            rtp_port += 1
+
+        _tcp_ports = [cfg.port]
         if cfg.hls_enabled:
-            _wait_ports.append(cfg.hls_port)
+            _tcp_ports.append(cfg.hls_port)
+
+        def _udp_port_free(port: int) -> bool:
+            """Return True if we can bind the UDP port (i.e. it is released)."""
+            try:
+                s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+                s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+                s.bind(("0.0.0.0", port))
+                s.close()
+                return True
+            except OSError:
+                return False
+
+        # Minimum floor wait on Windows before probing — the socket release is
+        # asynchronous and probing too early always returns "still in use".
+        if IS_WIN:
+            time.sleep(3.0)
+
         _deadline = time.time() + 8.0
         while time.time() < _deadline:
-            if all(not _port_in_use(p) for p in _wait_ports):
-                # TCP ports appear free, but on Windows the OS may still hold
-                # UDP sockets (RTP port = cfg.port+2, RTCP = cfg.port+3) for
-                # a short window after the process exits.  _port_in_use() is a
-                # TCP-only probe and cannot detect this.  Without a sufficient
-                # settle delay the new MediaMTX immediately fails with:
-                #   "listen udp4 0.0.0.0:<rtp_port>: bind: Only one usage of
-                #    each socket address is normally permitted."
-                # 2.5 s covers the typical Windows UDP socket release window.
-                # Linux releases sockets immediately so 0.3 s is enough there.
-                _settle = 2.5 if IS_WIN else 0.3
-                time.sleep(_settle)
+            tcp_free = all(not _port_in_use(p) for p in _tcp_ports)
+            udp_free = _udp_port_free(rtp_port)
+            if tcp_free and udp_free:
+                # Both TCP and UDP are confirmed free.  Small extra settle for
+                # any remaining kernel state on Windows before MediaMTX binds.
+                if IS_WIN:
+                    time.sleep(0.3)
                 break
             time.sleep(0.2)
         else:
-            for _p in _wait_ports:
+            # Timeout: force-kill any orphan still holding a port.
+            for _p in _tcp_ports:
                 if _port_in_use(_p):
                     self._log(
                         f"Port {_p} still in use after 8 s — force-killing orphan.", "WARN"
                     )
                     _kill_orphan_on_port(_p)
-            # Same logic: give Windows extra time to release UDP sockets after
-            # the force-kill before the next MediaMTX launch attempt.
+            if not _udp_port_free(rtp_port):
+                self._log(
+                    f"UDP RTP port {rtp_port} still in use after 8 s — "
+                    "MediaMTX may crash on restart.", "WARN"
+                )
             _settle2 = 2.0 if IS_WIN else 0.5
             time.sleep(_settle2)
         try:
