@@ -457,6 +457,14 @@ class StreamWorker:
         if not self._cycle_mediamtx():
             self._log("One-shot: MediaMTX cycle failed — aborting.", "ERROR")
             self.state.oneshot_active = False
+            # FFmpeg was already killed above; MediaMTX is in an unknown state.
+            # Trigger auto-restart so the stream recovers rather than going silent.
+            if not self._stop.is_set():
+                self._log("One-shot: scheduling auto-restart to recover stream.", "WARN")
+                threading.Thread(
+                    target=self._auto_restart, daemon=True,
+                    name=f"oneshot-recover-{self.state.config.port}",
+                ).start()
             return
 
         item = PlaylistItem(file_path=event.file_path, start_position=event.start_pos)
@@ -1500,6 +1508,11 @@ class StreamWorker:
         _deadline = time.time() + 8.0
         while time.time() < _deadline:
             if all(not _port_in_use(p) for p in _wait_ports):
+                # Ports appear free via TCP-connect probe, but on Windows the OS
+                # may still hold the socket in TIME_WAIT internally. A short
+                # settle delay prevents the next MediaMTX bind from failing
+                # immediately (exit code 1, no log output).
+                time.sleep(0.6)
                 break
             time.sleep(0.2)
         else:
