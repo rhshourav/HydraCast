@@ -548,19 +548,49 @@ class StreamWorker:
 
         item = PlaylistItem(file_path=event.file_path, start_position=event.start_pos)
         self.state.duration = probe_duration(item.file_path)
-        # CRITICAL: pass oneshot=True so _start_ffmpeg never adds -stream_loop -1
-        self._start_ffmpeg_with_retry(item, seek_secs, oneshot=True, loop_count=loop_count)
 
-        # Set ONESHOT status and start a monitor thread so the progress bar
-        # and position counter update while the event plays.
+        # Apply compliance offset to the event file when compliance is enabled.
+        # Logic: broadcast_start=06:00, current time=12:00 → seek to 06:00:00 in file.
+        # This keeps the event in sync with the compliance schedule.
+        cfg = self.state.config
+        if cfg.compliance_enabled and self.state.duration > 0:
+            try:
+                from hc.compliance import calculate_compliance_offset
+                compliance_seek, _expl_ev = calculate_compliance_offset(
+                    video_duration=self.state.duration,
+                    broadcast_start=cfg.compliance_start,
+                    loop_calculation=cfg.compliance_loop,
+                )
+                seek_secs = compliance_seek
+                self._log(f"One-shot compliance offset: {_expl_ev}")
+            except Exception as _exc_ev:
+                self._log(
+                    f"One-shot compliance offset failed: {_exc_ev} "
+                    "— using event start_pos",
+                    "WARN",
+                )
+
+        # CRITICAL: pass oneshot=True so _start_ffmpeg never adds -stream_loop -1
+        ok = self._start_ffmpeg_with_retry(item, seek_secs, oneshot=True, loop_count=loop_count)
+
+        # Set ONESHOT status so the UI shows the event badge and progress bar.
+        # Do this AFTER _start_ffmpeg_with_retry so the proc reference is stable.
         self.state.status = StreamStatus.ONESHOT
-        threading.Thread(
-            target=self._monitor, daemon=True,
-            name=f"mon-oneshot-{self.state.config.port}",
-        ).start()
+
+        # Capture the proc NOW (after retry loop settled) for _after().
+        _oneshot_proc = self.state.ffmpeg_proc
+
+        # Start monitor thread only if FFmpeg launched successfully.
+        if ok and _oneshot_proc is not None:
+            threading.Thread(
+                target=self._monitor, daemon=True,
+                name=f"mon-oneshot-{self.state.config.port}",
+            ).start()
 
         def _after() -> None:
-            proc = self.state.ffmpeg_proc
+            # Wait on the exact proc that was launched — not whatever is
+            # in self.state.ffmpeg_proc later (which may have been replaced).
+            proc = _oneshot_proc
             if proc:
                 while not self._stop.is_set() and proc.poll() is None:
                     time.sleep(0.5)
@@ -1377,6 +1407,11 @@ class StreamWorker:
             return
         if self.state.ffmpeg_proc is not my_proc:
             self._log("Monitor exiting: process was replaced.")
+            return
+        # During a one-shot event, _after() owns cleanup and resume.
+        # The monitor's only job was to feed progress — exit silently.
+        if self.state.oneshot_active:
+            self._log("Monitor exiting: one-shot event active — _after() handles resume.")
             return
 
         ret = my_proc.returncode if my_proc.returncode is not None else -1
