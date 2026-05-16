@@ -2021,7 +2021,6 @@ function _sigOf(s){
          s.shuffle?1:0,
          s.active_event||'',
          s.current_file||'',
-         s.active_event_id||'',
          s.oneshot_active?1:0].join('|');
 }
 
@@ -2091,7 +2090,7 @@ function _rowCells(s,i,showRtsp){
         <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})" title="Restart this stream">↺</button>
         ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭</button>`:''}
         ${s.status==='LIVE'?`<button class="btn b" onclick="openSeek('${esc(s.name)}',${s.duration||0},${s.current_secs||0})" title="Jump to a specific position in the current file">⏩</button>`:''}
-        ${isEvent&&s.active_event_id?`<button class="btn" style="color:var(--yellow);border-color:var(--yellow);font-size:11px;padding:3px 9px" onclick="cancelEvent('${esc(s.name)}','${esc(s.active_event_id)}')" title="Stop the running event and resume compliance stream">⏹ Cancel Event</button>`:''}
+        ${isEvent?`<button class="btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.5);font-size:11px" onclick="cancelEvent('${esc(s.name)}')" title="Stop the running event and resume compliance/playlist immediately">✕ Cancel Event</button>`:''}
       </div>
       ${s.error_msg?`<div style="font-size:10px;color:var(--red);margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.error_msg)}">⚠ ${esc(s.error_msg)}</div>`:''}
     </td>`;
@@ -2182,6 +2181,11 @@ function _copyFallback(url){
 // SEEK MODAL
 // ═══════════════════════════════════
 let _seekName='';
+function cancelEvent(name){
+  if(!confirm('Cancel the running event on "'+name+'" and resume compliance/playlist immediately?'))return;
+  api('cancel_event',{name});
+}
+
 function openSeek(name,dur,cur){
   _seekName=name;
   document.getElementById('seek-info').innerHTML=
@@ -2274,7 +2278,7 @@ async function loadViewer(){
           </div>
           <div class="btn-group">
             <button class="btn b vc-copy-${esc(s.name)}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.hls||this.dataset.rtsp)" title="Copy stream URL to clipboard">📋</button>
-            ${isEvent&&s.active_event_id?`<button class="btn vc-cancel-${esc(s.name)}" style="font-size:10px;padding:3px 9px;color:var(--yellow);border-color:var(--yellow)" data-evid="${esc(s.active_event_id)}" onclick="cancelEvent('${esc(s.name)}',this.dataset.evid)" title="Stop event and resume compliance stream">⏹ Cancel</button>`:`<button class="btn vc-cancel-${esc(s.name)}" style="display:none"></button>`}
+            ${isEvent?`<button class="btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.5);font-size:10px;padding:3px 8px" onclick="cancelEvent('${esc(s.name)}')" title="Stop running event, resume compliance/playlist">✕ Event</button>`:''}
           </div>
         </div>
         <div style="padding:0 14px 10px">
@@ -2304,17 +2308,6 @@ async function loadViewer(){
       if(pfill){pfill.style.width=pct+'%';pfill.style.background=isEvent?'var(--purple)':+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)';}
       const copyBtn=card.querySelector('.vc-copy-'+safeName);
       if(copyBtn){if(s.hls_url)copyBtn.dataset.hls=s.hls_url;if(s.rtsp_url)copyBtn.dataset.rtsp=s.rtsp_url;}
-      // Update cancel-event button visibility
-      const cancelBtn=card.querySelector('.vc-cancel-'+safeName);
-      if(cancelBtn){
-        if(isEvent&&s.active_event_id){
-          cancelBtn.dataset.evid=s.active_event_id;
-          cancelBtn.onclick=()=>cancelEvent(s.name,s.active_event_id);
-          cancelBtn.style.display='';
-        } else {
-          cancelBtn.style.display='none';
-        }
-      }
       // Update now-playing chip
       const npEl=card.querySelector('.vc-nowplaying-'+safeName);
       if(npEl){
@@ -2338,26 +2331,6 @@ async function loadViewer(){
       }
     }
   });
-}
-
-// ─── Cancel a running one-shot event ────────────────────────────────────────
-async function cancelEvent(streamName, eventId){
-  if(!confirm('Stop the running event and resume the compliance stream at the correct time?')) return;
-  try{
-    const r=await fetch('/api/cancel_event',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({stream_name:streamName,event_id:eventId}),
-    });
-    const j=await r.json();
-    if(j.ok){
-      toast('Event cancelled — resuming compliance stream','ok');
-    } else {
-      toast('Cancel failed: '+(j.msg||'Unknown error'),'err');
-    }
-  }catch(e){
-    toast('Cancel failed: '+e,'err');
-  }
 }
 
 function loadHLSStream(name,hlsUrl,rtspUrl){
@@ -4597,17 +4570,11 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
 // ---------------------------------------------------------------------------
 // Sidebar — event list for the current month
 // ---------------------------------------------------------------------------
-function Sidebar({ month, year, events, streams, holidays, onEdit, onDelete, onCancel, hidePlayed, onToggleHidePlayed }) {
+function Sidebar({ month, year, events, holidays, onEdit, onDelete, hidePlayed, onToggleHidePlayed }) {
   const monthPfx = `${year}-${String(month+1).padStart(2,"0")}`;
   const evts = events
     .filter(e => getEventDate(e).startsWith(monthPfx))
     .sort((a,b) => (getEventDate(a)+getEventTime(a)).localeCompare(getEventDate(b)+getEventTime(b)));
-
-  // Build lookup: event_id → stream (for actively-playing events)
-  const activeByEvId = {};
-  (streams||[]).forEach(s => {
-    if(s.oneshot_active && s.active_event_id) activeByEvId[s.active_event_id] = s;
-  });
 
   const playedCount = evts.filter(e => e.played).length;
   const visible = hidePlayed ? evts.filter(e => !e.played) : evts;
@@ -4665,11 +4632,10 @@ function Sidebar({ month, year, events, streams, holidays, onEdit, onDelete, onC
                 </span>
                 <span style={{
                   fontSize:"10px",padding:"1px 6px",borderRadius:"999px",
-                  background: ev.played ? "var(--color-background-success)" : activeByEvId[ev.event_id] ? "var(--purple-dim)" : "var(--color-background-info)",
-                  color:      ev.played ? "var(--color-text-success)"       : activeByEvId[ev.event_id] ? "var(--purple)"     : "var(--color-text-info)",
-                  border:`0.5px solid ${ev.played ? "var(--color-border-success)" : activeByEvId[ev.event_id] ? "rgba(154,138,176,0.5)" : "var(--color-border-info)"}`,
-                  fontWeight: activeByEvId[ev.event_id] ? "700" : "400",
-                }}>{ev.played ? "played" : activeByEvId[ev.event_id] ? "🎬 LIVE" : "upcoming"}</span>
+                  background: ev.played ? "var(--color-background-success)" : "var(--color-background-info)",
+                  color:      ev.played ? "var(--color-text-success)"       : "var(--color-text-info)",
+                  border:`0.5px solid ${ev.played ? "var(--color-border-success)" : "var(--color-border-info)"}`,
+                }}>{ev.played ? "played" : "upcoming"}</span>
               </div>
               <div style={{fontWeight:"500",color:"var(--color-text-primary)",
                 overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -4694,21 +4660,11 @@ function Sidebar({ month, year, events, streams, holidays, onEdit, onDelete, onC
                 </div>
               )}
               {!ev.played && (
-                <div style={{display:"flex",gap:"5px",marginTop:"6px",flexWrap:"wrap"}}>
-                  {activeByEvId[ev.event_id] ? (
-                    /* Event is currently playing — show Cancel; suppress Edit */
-                    <button onClick={()=>onCancel(ev.event_id, activeByEvId[ev.event_id].name)}
-                      style={{fontSize:"10px",padding:"2px 8px",
-                        color:"var(--yellow)",borderColor:"var(--yellow)",
-                        display:"flex",alignItems:"center",gap:"3px"}}>
-                      <i className="ti ti-player-stop" style={{fontSize:"10px"}}/>Cancel Event
-                    </button>
-                  ) : (
-                    <button onClick={()=>onEdit(ev)}
-                      style={{fontSize:"10px",padding:"2px 8px",display:"flex",alignItems:"center",gap:"3px"}}>
-                      <i className="ti ti-pencil" style={{fontSize:"10px"}}/>Edit
-                    </button>
-                  )}
+                <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
+                  <button onClick={()=>onEdit(ev)}
+                    style={{fontSize:"10px",padding:"2px 8px",display:"flex",alignItems:"center",gap:"3px"}}>
+                    <i className="ti ti-pencil" style={{fontSize:"10px"}}/>Edit
+                  </button>
                   <button onClick={()=>onDelete(ev.event_id)}
                     style={{fontSize:"10px",padding:"2px 8px",
                       color:"var(--color-text-danger)",borderColor:"var(--color-border-danger)",
@@ -5360,9 +5316,6 @@ function EventsCalendar() {
   const refreshEvents = useCallback(() =>
     fetch("/api/events").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setEvents(d); }).catch(()=>{}), []);
 
-  const refreshStreams = useCallback(() =>
-    fetch("/api/streams").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setStreams(d); }).catch(()=>{}), []);
-
   // Initial load
   useEffect(() => {
     Promise.all([
@@ -5415,12 +5368,6 @@ function EventsCalendar() {
     const t = setInterval(refreshEvents, 15_000);
     return () => clearInterval(t);
   }, [refreshEvents]);
-
-  // Poll streams every 5s so cancel button appears/disappears promptly
-  useEffect(() => {
-    const t = setInterval(refreshStreams, 5_000);
-    return () => clearInterval(t);
-  }, [refreshStreams]);
 
   // Calendar grid
   const firstDay    = new Date(year, month, 1).getDay();
@@ -5494,27 +5441,6 @@ function EventsCalendar() {
       }
     } catch(e) {
       showToast("Delete failed", "error");
-    }
-  };
-
-  const handleCancel = async (evId, streamName) => {
-    if (!window.confirm("Stop the running event and resume the compliance stream at the correct time?")) return;
-    try {
-      const res = await fetch("/api/cancel_event", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ stream_name: streamName, event_id: evId }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        await refreshStreams();
-        await refreshEvents();
-        showToast("Event cancelled — resuming compliance stream");
-      } else {
-        showToast(data.msg || "Cancel failed", "error");
-      }
-    } catch(e) {
-      showToast("Cancel failed", "error");
     }
   };
 
@@ -5694,11 +5620,9 @@ function EventsCalendar() {
           month={month}
           year={year}
           events={events}
-          streams={streams}
           holidays={holidays}
           onEdit={openEdit}
           onDelete={handleDelete}
-          onCancel={handleCancel}
           hidePlayed={hidePlayed}
           onToggleHidePlayed={()=>setHidePlayed(h=>!h)}
         />
