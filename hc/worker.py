@@ -615,35 +615,48 @@ class StreamWorker:
                 item2 = self._current_item()
                 if item2:
                     self._log(f"Resuming playlist: {item2.file_path.name}")
-                    # Probe the duration before calculating the compliance offset.
-                    self.state.duration = probe_duration(item2.file_path)
-                    # Hard resync: same behaviour as the periodic check.
-                    resume_spos = 0.0
-                    if self.state.config.compliance_enabled:
-                        try:
-                            from hc.compliance import calculate_compliance_offset
-                            resume_spos, _expl3 = calculate_compliance_offset(
-                                video_duration=self.state.duration,
-                                broadcast_start=self.state.config.compliance_start,
-                                loop_calculation=self.state.config.compliance_loop,
-                            )
-                            self._log(
-                                f"One-shot resume — compliance hard resync: {_expl3}"
-                            )
-                            self.state.compliance_last_check_ts = time.time()
-                        except Exception as _exc3:
-                            self._log(
-                                f"One-shot resume compliance offset failed: {_exc3} "
-                                "— resuming from 00:00:00",
-                                "WARN",
-                            )
-                    # Cycle MediaMTX again before resuming the playlist.
-                    if self._cycle_mediamtx():
-                        self._start_ffmpeg_with_retry(item2, resume_spos)
-                        threading.Thread(target=self._monitor, daemon=True,
-                                         name=f"mon-{self.state.config.port}").start()
-                    else:
-                        self._log("One-shot resume: MediaMTX cycle failed.", "ERROR")
+                    # Hold _seeking for the entire resume window.
+                    # This blocks _auto_restart() (which checks _seeking) and
+                    # compliance_resync() from interfering while _cycle_mediamtx
+                    # kills + restarts MediaMTX.  Without this flag, the monitor
+                    # thread's FFmpeg "Broken pipe" exit (caused by killing FFmpeg
+                    # for the cycle) triggers _auto_restart(), which races
+                    # _cycle_mediamtx() and corrupts the port state.
+                    self._seeking.set()
+                    try:
+                        # Probe the duration before calculating the compliance offset.
+                        self.state.duration = probe_duration(item2.file_path)
+                        # Hard resync: same behaviour as the periodic check.
+                        resume_spos = 0.0
+                        if self.state.config.compliance_enabled:
+                            try:
+                                from hc.compliance import calculate_compliance_offset
+                                resume_spos, _expl3 = calculate_compliance_offset(
+                                    video_duration=self.state.duration,
+                                    broadcast_start=self.state.config.compliance_start,
+                                    loop_calculation=self.state.config.compliance_loop,
+                                )
+                                self._log(
+                                    f"One-shot resume — compliance hard resync: {_expl3}"
+                                )
+                                self.state.compliance_last_check_ts = time.time()
+                            except Exception as _exc3:
+                                self._log(
+                                    f"One-shot resume compliance offset failed: {_exc3} "
+                                    "— resuming from 00:00:00",
+                                    "WARN",
+                                )
+                        # Cycle MediaMTX again before resuming the playlist.
+                        if self._cycle_mediamtx():
+                            self._start_ffmpeg_with_retry(item2, resume_spos)
+                            self.state.status = StreamStatus.LIVE
+                            threading.Thread(target=self._monitor, daemon=True,
+                                             name=f"mon-{self.state.config.port}").start()
+                        else:
+                            self._log("One-shot resume: MediaMTX cycle failed.", "ERROR")
+                    finally:
+                        # Always clear _seeking so future seeks/restarts can proceed.
+                        self._seeking.clear()
 
         threading.Thread(target=_after, daemon=True,
                          name=f"oneshot-{self.state.config.port}").start()
@@ -786,6 +799,8 @@ class StreamWorker:
         if seek_override is not None:
             seek_pos = float(seek_override)
             self._log(f"Seek override supplied: {_fmt_duration(seek_pos)}")
+            # seek_override takes full control — discard any injected initial_offset.
+            self.state.initial_offset = 0.0
         elif cfg.compliance_enabled:
             try:
                 from hc.compliance import calculate_compliance_offset
@@ -798,6 +813,10 @@ class StreamWorker:
             except Exception as exc:
                 self._log(f"Compliance offset calculation failed: {exc} — starting from 0", "WARN")
                 seek_pos = 0.0
+            # Compliance already computed the correct seek position — discard
+            # any state.initial_offset injected by _apply_compliance_start() in
+            # manager.py, which would otherwise be added on top and double the offset.
+            self.state.initial_offset = 0.0
         else:
             seek_pos = 0.0
             try:
