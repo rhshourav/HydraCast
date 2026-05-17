@@ -60,7 +60,7 @@ import threading
 import time
 from pathlib import Path
 from typing import List, Optional
- from hc.hc_system import assert_licensed, start_checker  # [LG]
+from hc.hc_system import assert_licensed, start_checker  # [LG]
 
 
 # ── Python version guard ───────────────────────────────────────────────────────
