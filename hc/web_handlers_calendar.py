@@ -182,18 +182,25 @@ class _CalendarHandlersMixin:
     # ------------------------------------------------------------------
     # POST /api/holidays/custom  — add a custom holiday
     # ------------------------------------------------------------------
-    def _post_holidays_custom(self, body: bytes) -> None:
+    def _post_holidays_custom(self, body) -> None:
         """
         Add a user-defined holiday.
         Body: {"date": "YYYY-MM-DD", "name": "...", "country": "XX"}
         country is optional (defaults to "CUSTOM").
+
+        Accepts either raw bytes (called from do_POST via PUT/DELETE routes)
+        or an already-parsed dict (called from _dispatch with the shared
+        ``data`` object so we avoid double-decoding).
         """
         from hc.web_holiday_store import add_custom
         try:
-            payload = json.loads(body.decode("utf-8"))
-            date    = payload.get("date",    "").strip()
-            name    = payload.get("name",    "").strip()
-            country = payload.get("country", "CUSTOM").strip()
+            if isinstance(body, (bytes, bytearray)):
+                payload = json.loads(body.decode("utf-8"))
+            else:
+                payload = body  # already a dict
+            date    = str(payload.get("date",    "")).strip()
+            name    = str(payload.get("name",    "")).strip()
+            country = str(payload.get("country", "CUSTOM")).strip()
             if not date or not name:
                 raise ValueError("'date' and 'name' are required.")
             entry = add_custom(date=date, name=name, country=country)
