@@ -32,13 +32,17 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from hc.hc_system import start_checker   # [LG]
 
+
 log = logging.getLogger(__name__)
 
 DEFAULT_COMPLIANCE_START = "06:00:00"
-def _start_compliance_checker() -> None:
-        start_checker("compliance")
 
-    _start_compliance_checker()
+
+def _start_compliance_checker() -> None:
+    start_checker("compliance")
+
+_start_compliance_checker()
+
 
 # ---------------------------------------------------------------------------
 # Weekday detection (mirrors folder_scanner logic)
