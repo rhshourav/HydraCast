@@ -79,7 +79,7 @@ def CSV_FILE()       -> Path: return _require("CSV")
 def EVENTS_CSV()     -> Path: return _require("EVENTS_CSV")
 
 # ── Web / upload ──────────────────────────────────────────────────────────────
-WEB_PORT         = 8089
+WEB_PORT         = 443
 UPLOAD_MAX_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
 
 # ── MediaMTX ──────────────────────────────────────────────────────────────────
