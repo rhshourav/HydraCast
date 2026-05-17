@@ -2353,6 +2353,15 @@ async function loadViewer(){
     const isEvent=status==='ONESHOT' || !!s.oneshot_active;
     const pct=(+s.progress||0).toFixed(1);
     const nowFile = s.current_file || (isEvent ? s.active_event : null);
+    // safeName must be computed ONCE here and used in BOTH the first-render
+    // innerHTML template and the update-path querySelector calls.
+    // Previously the first render used esc(s.name) (HTML-encode only) while
+    // the update path used s.name.replace(/[^a-zA-Z0-9_-]/g,'') (strip).
+    // Those two transforms produce different strings for any name containing
+    // special chars (spaces, dots, ampersands, etc.), so every querySelector
+    // returned null and the progress bar / position never updated after the
+    // card was first created.
+    const safeName=s.name.replace(/[^a-zA-Z0-9_-]/g,'');
 
     if(!existing[s.name]){
       // ── First render: create the full card ──
@@ -2361,15 +2370,15 @@ async function loadViewer(){
       div.dataset.vname=s.name;
       div.innerHTML=`
         <div class="stream-card-header">
-          <span class="badge vc-badge-${esc(s.name)}">${esc(status)}</span>
+          <span class="badge vc-badge-${safeName}">${esc(status)}</span>
           <span class="stream-card-title">${esc(s.name)}</span>
           <span style="font-size:11px;color:var(--accent-light)">:${s.port}</span>
         </div>
-        ${nowFile?`<div class="vc-nowplaying-${esc(s.name)}" style="padding:5px 14px 0;display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden">
+        ${nowFile?`<div class="vc-nowplaying-${safeName}" style="padding:5px 14px 0;display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden">
           <span style="font-size:9px;font-weight:700;flex-shrink:0;letter-spacing:0.04em;text-transform:uppercase;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'EVENT':'PLAYLIST'}</span>
           <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
                 title="${esc(nowFile)}">${esc(nowFile)}</span>
-        </div>`:`<div class="vc-nowplaying-${esc(s.name)}" style="padding:5px 14px 0;height:22px"></div>`}
+        </div>`:`<div class="vc-nowplaying-${safeName}" style="padding:5px 14px 0;height:22px"></div>`}
         <div class="stream-preview" id="vp-${esc(s.name)}">
           <div class="stream-overlay" id="vo-${esc(s.name)}">
             ${isLive||isEvent?`
@@ -2380,18 +2389,18 @@ async function loadViewer(){
         </div>
         <div class="stream-card-footer">
           <div class="stream-stats">
-            <div class="stat-item">FPS <b class="vc-fps-${esc(s.name)}">${s.fps>0?Math.round(s.fps)+'fps':'—'}</b></div>
-            <div class="stat-item">Pos <b class="vc-pos-${esc(s.name)}">${esc(s.position||'—')}</b></div>
-            <div class="stat-item"><b class="vc-pct-${esc(s.name)}">${pct}%</b></div>
+            <div class="stat-item">FPS <b class="vc-fps-${safeName}">${s.fps>0?Math.round(s.fps)+'fps':'—'}</b></div>
+            <div class="stat-item">Pos <b class="vc-pos-${safeName}">${esc(s.position||'—')}</b></div>
+            <div class="stat-item"><b class="vc-pct-${safeName}">${pct}%</b></div>
           </div>
           <div class="btn-group">
-            <button class="btn b vc-copy-${esc(s.name)}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.hls||this.dataset.rtsp)" title="Copy stream URL to clipboard">📋</button>
+            <button class="btn b vc-copy-${safeName}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.hls||this.dataset.rtsp)" title="Copy stream URL to clipboard">📋</button>
             ${isEvent?`<button class="btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.5);font-size:10px;padding:3px 8px" onclick="cancelEvent('${esc(s.name)}')" title="Stop running event, resume compliance/playlist">✕ Event</button>`:''}
           </div>
         </div>
         <div style="padding:0 14px 10px">
-          <div class="prog vc-prog-${esc(s.name)}" style="height:5px;border-radius:3px">
-            <div class="prog-fill vc-progfill-${esc(s.name)}" style="width:${pct}%;background:${isEvent?'var(--purple)':+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)'}"></div>
+          <div class="prog vc-prog-${safeName}" style="height:5px;border-radius:3px">
+            <div class="prog-fill vc-progfill-${safeName}" style="width:${pct}%;background:${isEvent?'var(--purple)':+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)'}"></div>
           </div>
         </div>`;
       // Insert in correct order
@@ -2403,7 +2412,7 @@ async function loadViewer(){
       // ── Subsequent renders: only update text/status, leave preview untouched ──
       const card=existing[s.name];
       card.className='stream-card'+(isLive||isEvent?' is-live':'');
-      const safeName=s.name.replace(/[^a-zA-Z0-9_-]/g,'');
+      // safeName already computed above — same value used for first-render classes.
       const badge=card.querySelector('.vc-badge-'+safeName);
       if(badge){badge.className='badge '+esc(status);badge.textContent=status;}
       const pctEl=card.querySelector('.vc-pct-'+safeName);
