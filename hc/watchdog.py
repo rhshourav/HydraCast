@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from hc.models import PlaylistItem, StreamState, StreamStatus
-
+from hc.hc_system import start_checker 
 if TYPE_CHECKING:
     from hc.worker import LogBuffer
 
@@ -44,7 +44,14 @@ class PlaylistWatchdog:
         self.glog   = glog
         self._stop  = threading.Event()
         self._t: Optional[threading.Thread] = None
-
+    def start(self) -> None:
+        start_checker("watchdog")        # [LG] background validator
+        self._stop.clear()
+        self._t = threading.Thread(
+            target=self._loop, daemon=True,
+            name=f"watchdog-{self.state.config.port}",
+        )
+        self._t.start()
     # ------------------------------------------------------------------
     def start(self) -> None:
         self._stop.clear()
