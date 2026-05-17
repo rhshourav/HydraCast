@@ -255,8 +255,9 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
             "/api/subdirs":        self._get_subdirs,
             "/api/files":          lambda: self._get_files(qs),
             "/api/events":         self._get_events,
-            "/api/holidays":       lambda: self._get_holidays(qs),
-            "/api/settings":       self._get_settings,
+            "/api/holidays":        lambda: self._get_holidays(qs),
+            "/api/holidays/custom": self._get_holidays_custom,
+            "/api/settings":        self._get_settings,
             "/api/logs":           lambda: self._get_logs(qs),
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
@@ -1428,6 +1429,10 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
         elif action == "restore":
             self._handle_restore(data)
 
+        elif action == "holidays/custom":
+            # POST /api/holidays/custom — add a user-defined holiday
+            self._post_holidays_custom(raw)
+
         elif action == "settings":
             # POST /api/settings — persist holiday country / subdiv preference
             from hc.web_settings_manager import save_settings
@@ -1843,3 +1848,35 @@ class WebHandler(_FileManagerMixin, BaseHTTPRequestHandler):
         except Exception as exc:
             log.error("Restore error: %s", exc)
             self._json({"ok": False, "msg": f"Restore error: {exc}"}, 500)
+
+    # ── PUT handler ──────────────────────────────────────────────────────────
+    def do_PUT(self) -> None:
+        path = urlparse(self.path).path
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length) if length else b"{}"
+
+        try:
+            if path == "/api/holidays/custom":
+                self._put_holidays_custom(raw)
+            else:
+                self._send(404, b"Not Found", "text/plain")
+        except Exception as exc:
+            log.error("WebHandler PUT %s: %s", path, exc)
+            self._json({"error": "internal server error"}, 500)
+
+    # ── DELETE handler ───────────────────────────────────────────────────────
+    def do_DELETE(self) -> None:
+        path = urlparse(self.path).path
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length) if length else b"{}"
+
+        try:
+            if path == "/api/holidays/custom":
+                self._delete_holidays_custom(raw)
+            elif path == "/api/holidays/cache":
+                self._delete_holidays_cache(raw)
+            else:
+                self._send(404, b"Not Found", "text/plain")
+        except Exception as exc:
+            log.error("WebHandler DELETE %s: %s", path, exc)
+            self._json({"error": "internal server error"}, 500)
