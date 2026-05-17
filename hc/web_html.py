@@ -1070,7 +1070,23 @@ select option{background:var(--bg3)}
         🗓&nbsp;<b id="hd-next-label" style="color:var(--purple)">Holidays</b>
       </button>
       <div class="hd-popup" id="hd-popup" style="display:none">
-        <div class="hd-popup-hdr" id="hd-popup-hdr">🗓 Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)"></span></div>
+        <div class="hd-popup-hdr" id="hd-popup-hdr" style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+          <span>🗓 Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)"></span></span>
+          <span style="display:flex;gap:4px;flex-shrink:0">
+            <button onclick="hdRefresh()" title="Force re-fetch from library" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px;padding:2px 5px;border-radius:4px" onmouseover="this.style.color='var(--accent-light)'" onmouseout="this.style.color='var(--text2)'">↻</button>
+            <button onclick="hdAddCustomOpen()" title="Add a custom holiday" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px;padding:2px 5px;border-radius:4px" onmouseover="this.style.color='var(--accent-light)'" onmouseout="this.style.color='var(--text2)'">＋</button>
+          </span>
+        </div>
+        <div id="hd-add-form" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg3)">
+          <div style="display:grid;grid-template-columns:130px 1fr 80px;gap:6px;align-items:end">
+            <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Date</label>
+              <input id="hd-add-date" type="date" style="width:100%;font-size:12px;padding:4px 6px;background:var(--bg4);border:1px solid var(--border2);border-radius:5px;color:var(--text)"></div>
+            <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Name</label>
+              <input id="hd-add-name" placeholder="Holiday name" style="width:100%;font-size:12px;padding:4px 6px;background:var(--bg4);border:1px solid var(--border2);border-radius:5px;color:var(--text)"></div>
+            <button onclick="hdAddCustomSave()" style="padding:4px 8px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;height:28px;margin-top:auto">Add</button>
+          </div>
+          <div id="hd-add-err" style="font-size:11px;color:var(--red);margin-top:4px;display:none"></div>
+        </div>
         <div id="hd-list"><div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Loading…</div></div>
       </div>
     </div>
@@ -1514,6 +1530,55 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- Custom Holidays -->
+  <div style="margin-top:4px">
+    <div class="section-hdr"><h2>Custom Holidays</h2><span class="sep"></span>
+      <button class="btn b" onclick="loadCustomHolidays()" title="Reload custom holidays from disk">↻ Load</button>
+    </div>
+    <div class="card card-body" style="padding:16px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
+        Add your own holidays to overlay on the Events calendar alongside public holidays.
+        Custom holidays are stored locally and are never overwritten by library updates.
+      </div>
+      <!-- Table of existing custom holidays -->
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:14px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:var(--bg3);font-size:11px;color:var(--text3);text-align:left">
+              <th style="padding:6px 8px;font-weight:500">Date</th>
+              <th style="padding:6px 8px;font-weight:500">Name</th>
+              <th style="padding:6px 8px;font-weight:500">Country</th>
+              <th style="padding:6px 8px;font-weight:500;text-align:right"></th>
+            </tr>
+          </thead>
+          <tbody id="custom-hol-tbody">
+            <tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text3);font-size:12px">Click ↻ Load to fetch saved holidays.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <!-- Add form -->
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:500">Add new custom holiday</div>
+      <div class="form-grid" style="grid-template-columns:150px 1fr 100px;margin-bottom:10px;align-items:end">
+        <div class="fg">
+          <label>Date</label>
+          <input id="chol-date" type="date" title="Date of the custom holiday">
+        </div>
+        <div class="fg">
+          <label>Name</label>
+          <input id="chol-name" placeholder="e.g. Company Founding Day" title="Display name for this holiday">
+        </div>
+        <div class="fg">
+          <label>Country <span style="font-weight:400;color:var(--text3)">opt.</span></label>
+          <input id="chol-country" placeholder="e.g. BD, US" maxlength="10" title="ISO country code (optional, defaults to CUSTOM)">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn g" onclick="addCustomHoliday()" title="Save this custom holiday to disk">＋ Add Holiday</button>
+        <div id="chol-status" style="font-size:11px;color:var(--text3)"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Mail Alerts -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2>Mail Alerts</h2><span class="sep"></span>
@@ -1919,7 +1984,7 @@ function _doSwitchTab(name,btn){
   else if(name==='events'){if(!_hdLoaded)loadHolidays();}
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
-  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolidaySettings();}
+  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolidaySettings();loadCustomHolidays();}
 }
 
 // ═══════════════════════════════════
@@ -2652,15 +2717,154 @@ async function loadHolidays(){
     list.innerHTML = _hdData.map(h=>{
       const isPast   = h.date < today;
       const isToday  = h.date === today;
-      return `<div class="hd-row${isPast?' past':''}${isToday?' today':''}">
-        <div class="hd-date">${esc(h.date)}</div>
-        <div class="hd-name">${esc(h.name)}</div>
+      const isCustom = (h.source === 'custom');
+      const badge    = isCustom
+        ? `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--purple-dim);color:var(--purple);margin-left:4px;vertical-align:middle">custom</span>`
+        : '';
+      const delBtn   = isCustom
+        ? `<button onclick="hdDeleteCustom(${JSON.stringify(h.date)},${JSON.stringify(h.name)},this)" title="Delete this custom holiday" style="margin-left:auto;background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:3px;flex-shrink:0" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">✕</button>`
+        : '';
+      return `<div class="hd-row${isPast?' past':''}${isToday?' today':''}" style="display:flex;align-items:center;gap:0">
+        <div class="hd-date" style="flex-shrink:0">${esc(h.date)}</div>
+        <div class="hd-name" style="flex:1;min-width:0">${esc(h.name)}${badge}</div>
         ${isToday?'<div class="hd-today-tag">TODAY</div>':''}
+        ${delBtn}
       </div>`;
     }).join('');
   }catch(e){
     document.getElementById('hd-list').innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px">⚠ '+esc(e.message||'Failed to load holidays')+'. Ensure the <code>holidays</code> Python package is installed.</div>';
   }
+}
+
+// ── Custom holiday helpers ──────────────────────────────────────────────────
+function hdAddCustomOpen(){
+  const f=document.getElementById('hd-add-form');
+  if(!f) return;
+  const isOpen=f.style.display!=='none';
+  f.style.display=isOpen?'none':'block';
+  if(!isOpen){
+    const di=document.getElementById('hd-add-date');
+    if(di && !di.value) di.value=new Date().toISOString().slice(0,10);
+    document.getElementById('hd-add-name')?.focus();
+    document.getElementById('hd-add-err').style.display='none';
+  }
+}
+
+async function hdAddCustomSave(){
+  const date=(document.getElementById('hd-add-date')?.value||'').trim();
+  const name=(document.getElementById('hd-add-name')?.value||'').trim();
+  const errEl=document.getElementById('hd-add-err');
+  if(!date||!name){errEl.textContent='Date and name are required.';errEl.style.display='block';return;}
+  try{
+    const r=await fetch('/api/holidays/custom',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({date,name,country:'CUSTOM'})});
+    const j=await r.json();
+    if(j.error) throw new Error(j.error);
+    document.getElementById('hd-add-form').style.display='none';
+    document.getElementById('hd-add-name').value='';
+    toast('Custom holiday added','ok');
+    _hdLoaded=false; _hdData=[];
+    loadHolidays();
+  }catch(e){errEl.textContent='✕ '+e.message;errEl.style.display='block';}
+}
+
+async function hdDeleteCustom(date,name,btn){
+  if(!confirm(`Remove custom holiday "${name}" on ${date}?`)) return;
+  try{
+    const r=await fetch('/api/holidays/custom',{method:'DELETE',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({date,name})});
+    const j=await r.json();
+    if(j.error) throw new Error(j.error);
+    toast('Holiday removed','ok');
+    _hdLoaded=false; _hdData=[];
+    loadHolidays();
+  }catch(e){toast('Delete failed: '+e.message,'err');}
+}
+
+async function hdRefresh(){
+  _hdLoaded=false; _hdData=[];
+  document.getElementById('hd-list').innerHTML='<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Refreshing…</div>';
+  // Determine current country so we can bust the server cache
+  try{
+    const settings=await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
+    const country=(settings.holiday_country||'US').toUpperCase();
+    const subdiv=settings.holiday_subdiv||null;
+    const yr=new Date().getFullYear();
+    let url=`/api/holidays?year=${yr}&country=${country}&refresh=1`;
+    if(subdiv) url+=`&subdiv=${encodeURIComponent(subdiv)}`;
+    await fetch(url);
+  }catch(e){}
+  loadHolidays();
+}
+
+// ── Custom holiday manager (Settings tab section) ───────────────────────────
+let _customHolidays=[];
+
+async function loadCustomHolidays(){
+  const tbody=document.getElementById('custom-hol-tbody');
+  if(!tbody) return;
+  tbody.innerHTML='<tr><td colspan="4" style="padding:10px;text-align:center;color:var(--text3);font-size:12px">Loading…</td></tr>';
+  try{
+    const data=await fetch('/api/holidays/custom').then(r=>r.json());
+    _customHolidays=Array.isArray(data)?data:[];
+    renderCustomHolidays();
+  }catch(e){
+    tbody.innerHTML='<tr><td colspan="4" style="padding:10px;color:var(--red);font-size:12px">✕ '+esc(e.message)+'</td></tr>';
+  }
+}
+
+function renderCustomHolidays(){
+  const tbody=document.getElementById('custom-hol-tbody');
+  if(!tbody) return;
+  if(!_customHolidays.length){
+    tbody.innerHTML='<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text3);font-size:12px">No custom holidays yet. Add one below.</td></tr>';
+    return;
+  }
+  tbody.innerHTML=_customHolidays.map((h,i)=>`
+    <tr id="chol-row-${i}" style="border-bottom:1px solid var(--border)">
+      <td style="padding:7px 8px;font-size:12px;font-family:var(--font-mono)">${esc(h.date)}</td>
+      <td style="padding:7px 8px;font-size:12px">${esc(h.name)}</td>
+      <td style="padding:7px 8px;font-size:11px;color:var(--text3)">${esc(h.country||'CUSTOM')}</td>
+      <td style="padding:7px 8px;text-align:right">
+        <button onclick="deleteCustomHoliday(${i})" title="Delete this holiday"
+          style="background:none;border:1px solid var(--border2);color:var(--red);cursor:pointer;border-radius:4px;padding:2px 8px;font-size:11px">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function addCustomHoliday(){
+  const date=(document.getElementById('chol-date')?.value||'').trim();
+  const name=(document.getElementById('chol-name')?.value||'').trim();
+  const country=(document.getElementById('chol-country')?.value||'CUSTOM').trim()||'CUSTOM';
+  const st=document.getElementById('chol-status');
+  if(!date||!name){st.textContent='Date and name are required.';st.style.color='var(--red)';return;}
+  st.textContent='Saving…';st.style.color='var(--yellow)';
+  try{
+    const r=await fetch('/api/holidays/custom',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({date,name,country})});
+    const j=await r.json();
+    if(j.error) throw new Error(j.error);
+    st.textContent='✓ Added';st.style.color='var(--green)';
+    document.getElementById('chol-date').value='';
+    document.getElementById('chol-name').value='';
+    toast('Custom holiday added','ok');
+    _hdLoaded=false; _hdData=[];
+    loadCustomHolidays();
+  }catch(e){st.textContent='✕ '+e.message;st.style.color='var(--red)';}
+}
+
+async function deleteCustomHoliday(idx){
+  const h=_customHolidays[idx];
+  if(!h||!confirm(`Remove "${h.name}" on ${h.date}?`)) return;
+  try{
+    const r=await fetch('/api/holidays/custom',{method:'DELETE',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({date:h.date,name:h.name})});
+    const j=await r.json();
+    if(j.error) throw new Error(j.error);
+    toast('Holiday removed','ok');
+    _hdLoaded=false; _hdData=[];
+    loadCustomHolidays();
+  }catch(e){toast('Delete failed: '+e.message,'err');}
 }
 
 // ═══════════════════════════════════
@@ -4692,7 +4896,9 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
   const ds      = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
   const isToday = ds === todayStr;
   const isPast  = isPastDate(ds, todayStr);
-  const holiday = holidays[ds];
+  const holidayObj = holidays[ds];
+  const holiday    = holidayObj ? holidayObj.name : null;
+  const holidaySrc = holidayObj ? (holidayObj.source || "library") : null;
   const dayEvts = eventsByDate[ds] || [];
   const isSelected = selectedDates && selectedDates.has(ds);
   const hasEvents = dayEvts.length > 0;
@@ -4701,9 +4907,11 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
     ? "var(--color-background-success)"
     : isToday
       ? "var(--color-background-info)"
-      : holiday
-        ? "var(--color-background-danger)"
-        : "transparent";
+      : holidaySrc === "custom"
+        ? "var(--purple-dim)"
+        : holiday
+          ? "var(--color-background-danger)"
+          : "transparent";
 
   const handleClick = () => {
     if (isPast && !isToday) return;
@@ -4764,14 +4972,15 @@ function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, s
         }}>{day}</span>
         {holiday && (
           <i className="ti ti-star-filled" aria-hidden="true"
-             style={{fontSize:"12px",color:"var(--color-text-danger)",marginTop:"5px"}}/>
+             style={{fontSize:"12px",color: holidaySrc==="custom" ? "var(--purple)" : "var(--color-text-danger)",marginTop:"5px"}}/>
         )}
       </div>
 
       {holiday && (
-        <div style={{fontSize:"10px",color:"var(--color-text-danger)",marginBottom:"4px",
-          lineHeight:"1.3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:"500"}}
-          title={holiday}>{holiday}</div>
+        <div style={{fontSize:"10px",
+          color: holidaySrc==="custom" ? "var(--purple)" : "var(--color-text-danger)",
+          marginBottom:"4px",lineHeight:"1.3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:"500"}}
+          title={holiday + (holidaySrc==="custom" ? " (custom)" : "")}>{holiday}</div>
       )}
 
       {dayEvts.slice(0,3).map((ev,i) => (
@@ -4842,7 +5051,9 @@ function Sidebar({ month, year, events, holidays, onEdit, onDelete, hidePlayed, 
         visible.map((ev,i) => {
           const ds  = getEventDate(ev);
           const ts  = getEventTime(ev);
-          const hol = holidays[ds];
+          const holObj = holidays[ds];
+          const hol    = holObj ? holObj.name : null;
+          const holSrc = holObj ? (holObj.source || "library") : null;
           return (
             <div key={i} style={{padding:"9px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",fontSize:"12px"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px",alignItems:"center"}}>
@@ -4873,9 +5084,9 @@ function Sidebar({ month, year, events, holidays, onEdit, onDelete, hidePlayed, 
                 {ev.loop_count > 0 && <span style={{marginLeft:"4px",color:"var(--color-text-info)"}}>×{ev.loop_count+1}</span>}
               </div>
               {hol && (
-                <div style={{fontSize:"10px",color:"var(--color-text-danger)",marginTop:"2px",
+                <div style={{fontSize:"10px",color: holSrc==="custom" ? "var(--purple)" : "var(--color-text-danger)",marginTop:"2px",
                   display:"flex",alignItems:"center",gap:"3px"}}>
-                  <i className="ti ti-star-filled" style={{fontSize:"9px"}}/> {hol}
+                  <i className="ti ti-star-filled" style={{fontSize:"9px"}}/> {hol}{holSrc==="custom" && <span style={{fontSize:"9px",marginLeft:"2px",opacity:0.7}}>(custom)</span>}
                 </div>
               )}
               {!ev.played && (
@@ -5367,7 +5578,8 @@ function Legend() {
   return (
     <div style={{display:"flex",alignItems:"center",gap:"10px",fontSize:"11px",color:"var(--color-text-secondary)"}}>
       {[
-        ["var(--color-background-danger)","var(--color-border-danger)","Holiday"],
+        ["var(--color-background-danger)","var(--color-border-danger)","Public Holiday"],
+        ["var(--purple-dim)","var(--purple)","Custom Holiday"],
         ["var(--color-background-info)","var(--color-border-info)","Upcoming"],
         ["var(--color-background-success)","var(--color-border-success)","Played"],
       ].map(([bg,border,label]) => (
@@ -5444,7 +5656,7 @@ function EventsCalendar() {
       .then(data => {
         if (Array.isArray(data)) {
           const map = {};
-          data.forEach(h => { map[h.date] = h.name; });
+          data.forEach(h => { map[h.date] = { name: h.name, source: h.source || "library" }; });
           setHolidays(map);
           setHolKey(key);
         }
