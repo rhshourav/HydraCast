@@ -557,36 +557,36 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         self._json({"dirs": sorted(set(dirs)), "root_label": str(MEDIA_DIR())})
 
     def _get_events(self) -> None:
-    mgr = _WEB_MANAGER
-    if not mgr:
-        self._json([])
-        return
-    now = datetime.now()
-    result = []
-    for ev in sorted(mgr.events, key=lambda e: e.play_at):
-        diff = (ev.play_at - now).total_seconds()
-        entry = {
-            "event_id":      ev.event_id,
-            "stream_name":   ev.stream_name,
-            "file_name":     ev.file_path.name,
-            "file_path":     str(ev.file_path),
-            "play_at":       ev.play_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "play_at_iso":   ev.play_at.isoformat(),
-            "seconds_until": round(diff),
-            # ── safe reads for optional / model-version-dependent fields ──
-            "post_action":   getattr(ev, "post_action", "resume"),
-            "start_pos":     getattr(ev, "start_pos",   "00:00:00") or "00:00:00",
-            "end_pos":       getattr(ev, "end_pos",     ""),
-            "loop_count":    getattr(ev, "loop_count",  0),
-            "comment":       getattr(ev, "comment",     "") or "",
-            "played":        ev.played,
-        }
-        # broadcast_end is optional — only include when present
-        be = getattr(ev, "broadcast_end", None)
-        if be is not None:
-            entry["broadcast_end"] = be.isoformat()
-        result.append(entry)
-    self._json(result)
+        mgr = _WEB_MANAGER
+        if not mgr:
+            self._json([])
+            return
+        now = datetime.now()
+        result = []
+        for ev in sorted(mgr.events, key=lambda e: e.play_at):
+            diff = (ev.play_at - now).total_seconds()
+            entry = {
+                "event_id":      ev.event_id,
+                "stream_name":   ev.stream_name,
+                "file_name":     ev.file_path.name,
+                "file_path":     str(ev.file_path),
+                "play_at":       ev.play_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "play_at_iso":   ev.play_at.isoformat(),
+                "seconds_until": round(diff),
+                # ── safe reads for optional / model-version-dependent fields ──
+                "post_action":   getattr(ev, "post_action", "resume"),
+                "start_pos":     getattr(ev, "start_pos",   "00:00:00") or "00:00:00",
+                "end_pos":       getattr(ev, "end_pos",     ""),
+                "loop_count":    getattr(ev, "loop_count",  0),
+                "comment":       getattr(ev, "comment",     "") or "",
+                "played":        ev.played,
+            }
+            # broadcast_end is optional — only include when present
+            be = getattr(ev, "broadcast_end", None)
+            if be is not None:
+                entry["broadcast_end"] = be.isoformat()
+            result.append(entry)
+        self._json(result)
 
     # _get_holidays is intentionally NOT defined here.
     # The implementation in _CalendarHandlersMixin (web_handlers_calendar.py)
