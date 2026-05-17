@@ -258,6 +258,14 @@ class JSONManager:
                         ev.comment = comment
                     except AttributeError:
                         pass
+                # Restore optional post_action
+                pa = r.get("post_action", "resume") or "resume"
+                if pa not in ("resume", "stop", "black"):
+                    pa = "resume"
+                try:
+                    ev.post_action = pa
+                except AttributeError:
+                    pass
                 # Restore optional broadcast_end
                 be_str = r.get("broadcast_end")
                 if be_str:
@@ -281,6 +289,7 @@ class JSONManager:
                 "file_path":   str(ev.file_path),
                 "play_at":     ev.play_at.isoformat(),
                 "played":      ev.played,
+                "post_action": getattr(ev, "post_action", "resume") or "resume",
                 "start_pos":   getattr(ev, "start_pos", "00:00:00") or "00:00:00",
                 "loop_count":  getattr(ev, "loop_count", 0),
                 "comment":     getattr(ev, "comment", "") or "",
