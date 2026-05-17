@@ -251,6 +251,13 @@ class JSONManager:
                     start_pos   = r.get("start_pos", "00:00:00") or "00:00:00",
                     loop_count  = int(r.get("loop_count", 0)),
                 )
+                # Restore optional comment
+                comment = r.get("comment", "")
+                if comment:
+                    try:
+                        ev.comment = comment
+                    except AttributeError:
+                        pass
                 # Restore optional broadcast_end
                 be_str = r.get("broadcast_end")
                 if be_str:
@@ -276,6 +283,7 @@ class JSONManager:
                 "played":      ev.played,
                 "start_pos":   getattr(ev, "start_pos", "00:00:00") or "00:00:00",
                 "loop_count":  getattr(ev, "loop_count", 0),
+                "comment":     getattr(ev, "comment", "") or "",
             }
             # broadcast_end is optional; persist only when present
             be = getattr(ev, "broadcast_end", None)
