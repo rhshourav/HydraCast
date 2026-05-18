@@ -2929,16 +2929,25 @@ function renderConfigEditor(s){
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
         <div class="fg"><label>Stream Name</label><input id="cfg-name" value="${esc(s.name)}" readonly style="opacity:0.6"></div>
         <div class="fg"><label>Port (odd)</label>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:5px;align-items:center">
             <input id="cfg-port" type="number" value="${s.port}" min="1025" max="65533" step="2"
-              style="flex:1" oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
+              style="flex:1;min-width:60px" oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
               title="Must be an ODD number. HLS will use this port + 1.">
+            <button type="button" id="suggest-btn-cfg-port"
+              onclick="suggestNextPort('cfg-port','cfg-port-check-result')"
+              title="Find the next completely free odd port"
+              style="display:inline-flex;align-items:center;gap:4px;
+                background:var(--blue-dim);border:1px solid rgba(122,159,194,0.45);
+                color:var(--blue);border-radius:7px;padding:5px 10px;
+                font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0">
+              <i class="fa fa-magic"></i> Suggest
+            </button>
             <button type="button" class="btn b" style="padding:5px 10px;font-size:11px;white-space:nowrap;flex-shrink:0"
               onclick="checkPort('cfg-port','cfg-port-check-result')" title="Check if this port is free and firewall is open">
               <i class="fa fa-search-plus" style="margin-right:4px"></i>Check
             </button>
           </div>
-          <div id="cfg-port-check-result" style="margin-top:5px"></div>
+          <div id="cfg-port-check-result" style="margin-top:6px"></div>
           <div style="font-size:10px;color:var(--text3);margin-top:3px">
             Odd port required. HLS = port+1 · RTP = port+2 (even) · RTCP = RTP+1
           </div>
@@ -3332,16 +3341,27 @@ function showNewStreamForm(){
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
         <div class="fg"><label>Stream Name *</label><input id="new-name" placeholder="My_Stream" autocomplete="off"></div>
         <div class="fg"><label>Port * (odd, ≥10 apart)</label>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:5px;align-items:center">
             <input id="new-port" type="number" value="8555" min="1025" max="65533" step="2"
-              style="flex:1" oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
+              style="flex:1;min-width:60px" oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
               title="Must be an ODD number. HLS will use this port + 1 (even).">
-            <button type="button" class="btn b" style="padding:5px 10px;font-size:11px;white-space:nowrap;flex-shrink:0"
-              onclick="checkPort('new-port','new-port-check-result')" title="Check if this port is free and firewall is open">
+            <button type="button" id="suggest-btn-new-port"
+              onclick="suggestNextPort('new-port','new-port-check-result')"
+              title="Find the next completely free odd port"
+              style="display:inline-flex;align-items:center;gap:4px;
+                background:var(--blue-dim);border:1px solid rgba(122,159,194,0.45);
+                color:var(--blue);border-radius:7px;padding:5px 10px;
+                font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0">
+              <i class="fa fa-magic"></i> Suggest
+            </button>
+            <button type="button" class="btn b"
+              style="padding:5px 10px;font-size:11px;white-space:nowrap;flex-shrink:0"
+              onclick="checkPort('new-port','new-port-check-result')"
+              title="Check if this port is free and firewall is open">
               <i class="fa fa-search-plus" style="margin-right:4px"></i>Check
             </button>
           </div>
-          <div id="new-port-check-result" style="margin-top:5px"></div>
+          <div id="new-port-check-result" style="margin-top:6px"></div>
           <div style="font-size:10px;color:var(--text3);margin-top:3px">
             Odd port required. HLS = port+1 · RTP = port+2 (even) · RTCP = RTP+1
           </div>
@@ -3458,6 +3478,8 @@ function showNewStreamForm(){
   _clearDirty();
   renderPlaylistEditor('new-pl-wrap', '');
   setTimeout(_attachDirtyListeners, 0);
+  // Auto-suggest a free port on load
+  setTimeout(()=>suggestNextPort('new-port','new-port-check-result'), 120);
 }
 
 function switchNewSrcTab(mode){
@@ -3468,101 +3490,169 @@ function switchNewSrcTab(mode){
 }
 
 // ── Port checker ─────────────────────────────────────────────────────────────
+
+/** Suggest and auto-apply the next free odd port, then run checkPort. */
+async function suggestNextPort(inputId, resultId){
+  const inp = document.getElementById(inputId);
+  const out = document.getElementById(resultId);
+  if(!inp||!out) return;
+  const from = parseInt(inp.value||0)||8555;
+  const suggestBtn = document.getElementById('suggest-btn-'+inputId);
+  const origLabel = suggestBtn ? suggestBtn.innerHTML : '';
+  if(suggestBtn){ suggestBtn.innerHTML='<i class="fa fa-spinner fa-spin"></i>'; suggestBtn.disabled=true; }
+  out.innerHTML=_portSpinner('Scanning for a free port…');
+  try{
+    const d = await fetch('/api/suggest_port?from='+from).then(r=>r.json());
+    if(d.port){
+      inp.value = d.port;
+      inp.dispatchEvent(new Event('input'));
+      await checkPort(inputId, resultId);
+    } else {
+      out.innerHTML=_portBanner('err','No free port found in the scanned range. Try a different starting port.');
+    }
+  }catch(e){
+    out.innerHTML=_portBanner('err','Suggest failed: '+esc(e.message||String(e)));
+  }finally{
+    if(suggestBtn){ suggestBtn.innerHTML=origLabel; suggestBtn.disabled=false; }
+  }
+}
+
+/** Shared spinner markup */
+function _portSpinner(msg){
+  return `<div style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text3);padding:6px 2px">
+    <i class="fa fa-spinner fa-spin" style="font-size:12px"></i>${esc(msg)}
+  </div>`;
+}
+
+/** Shared banner: type = 'ok' | 'err' | 'warn' | 'info' */
+function _portBanner(type, msg){
+  const cfg={
+    ok:  {bg:'var(--green-dim)', border:'rgba(107,142,107,0.45)', color:'var(--green)',  icon:'fa-check-circle'},
+    err: {bg:'var(--red-dim)',   border:'rgba(194,120,120,0.45)', color:'var(--red)',    icon:'fa-times-circle'},
+    warn:{bg:'var(--yellow-dim)',border:'rgba(201,168,120,0.45)', color:'var(--yellow)', icon:'fa-exclamation-triangle'},
+    info:{bg:'var(--blue-dim)',  border:'rgba(122,159,194,0.35)', color:'var(--blue)',   icon:'fa-info-circle'},
+  }[type]||{bg:'var(--bg3)',border:'var(--border)',color:'var(--text2)',icon:'fa-info-circle'};
+  return `<div style="background:${cfg.bg};border:1px solid ${cfg.border};border-radius:7px;
+    padding:7px 11px;font-size:11px;color:${cfg.color};display:flex;align-items:flex-start;gap:7px">
+    <i class="fa ${cfg.icon}" style="margin-top:1px;flex-shrink:0"></i>
+    <span>${msg}</span>
+  </div>`;
+}
+
+/** Render a compact horizontal port-map chip row */
+function _portMapChips(ports){
+  return Object.entries(ports||{}).map(([p,info])=>{
+    const ok=info.free;
+    const procTip=info.process?` title="${esc(info.process)}"` : '';
+    return `<div${procTip} style="display:inline-flex;align-items:center;gap:5px;
+      background:${ok?'var(--green-dim)':'var(--red-dim)'};
+      border:1px solid ${ok?'rgba(107,142,107,0.4)':'rgba(194,120,120,0.4)'};
+      border-radius:6px;padding:4px 9px;font-size:11px;cursor:${ok?'default':'help'}">
+      <i class="fa ${ok?'fa-check':'fa-times'}" style="font-size:10px;color:${ok?'var(--green)':'var(--red)'}"></i>
+      <span style="font-family:var(--font-mono);color:${ok?'var(--green)':'var(--red)'};font-weight:600">${p}</span>
+      <span style="color:var(--text3);font-size:10px">${esc(info.label||'')}</span>
+      ${!ok&&info.process?`<span style="color:var(--red);font-size:9px;opacity:0.8">▲</span>`:''}
+    </div>`;
+  }).join('');
+}
+
 async function checkPort(inputId, resultId){
   const inp = document.getElementById(inputId);
   const out = document.getElementById(resultId);
   if(!inp||!out) return;
   const port = parseInt(inp.value||0);
   if(!port||port<1024||port>65534){
-    out.innerHTML='<span style="color:var(--red);font-size:11px">⚠ Enter a valid port first (1024–65534)</span>';
+    out.innerHTML=_portBanner('warn','Enter a valid port first (1024–65534).');
     return;
   }
-  out.innerHTML='<span style="color:var(--text3);font-size:11px"><i class="fa fa-spinner fa-spin" style="margin-right:4px"></i>Checking…</span>';
+  out.innerHTML=_portSpinner('Checking port '+port+'…');
   try{
-    const d=await fetch('/api/check_port?port='+port).then(r=>r.json());
-    let html='';
+    const d = await fetch('/api/check_port?port='+port).then(r=>r.json());
 
-    // ── Odd/even badge ────────────────────────────────────────────────────
+    // ── Verdict banner ────────────────────────────────────────────────────
+    let html = d.ok
+      ? _portBanner('ok', `Port <b>${port}</b> is free and ready to use.`)
+      : _portBanner('err', `Port <b>${port}</b> has conflicts — see details below.`);
+
+    // ── Odd-port nudge ────────────────────────────────────────────────────
     if(!d.odd_ok){
-      html+=`<div style="background:var(--red-dim);border:1px solid rgba(194,120,120,0.4);
-        border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:11px;color:var(--red)">
-        <b>⚠ Port ${port} is even.</b> HydraCast requires an <b>odd</b> RTSP base port.
-        Try <a href="#" style="color:var(--accent-light)" onclick="document.getElementById('${inputId}').value=${port%2===0?port+1:port};document.getElementById('${inputId}').dispatchEvent(new Event('input'));checkPort('${inputId}','${resultId}');return false">${port+1}</a> instead.
+      const next = port%2===0 ? port+1 : port;
+      html += `<div style="margin-top:6px;background:var(--yellow-dim);border:1px solid rgba(201,168,120,0.4);
+        border-radius:7px;padding:7px 11px;font-size:11px;color:var(--yellow);
+        display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <i class="fa fa-exclamation-triangle" style="flex-shrink:0"></i>
+        <span style="flex:1">Odd port required — HLS lives on the next even port.</span>
+        <button type="button" onclick="document.getElementById('${inputId}').value=${next};
+          document.getElementById('${inputId}').dispatchEvent(new Event('input'));
+          checkPort('${inputId}','${resultId}')"
+          style="background:var(--yellow);color:#1c1c1e;border:none;border-radius:5px;
+          padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">
+          Use ${next} ↵
+        </button>
       </div>`;
     }
 
-    // ── Port map ──────────────────────────────────────────────────────────
-    const portRows=Object.entries(d.ports||{}).map(([p,info])=>{
-      const ok=info.free;
-      const icon=ok?'<i class="fa fa-check" style="color:var(--green)"></i>':'<i class="fa fa-times" style="color:var(--red)"></i>';
-      const proc=info.process?`<span style="color:var(--red);font-size:10px;margin-left:6px">${esc(info.process)}</span>`:'';
-      return `<tr>
-        <td style="padding:3px 8px;font-family:var(--font-mono);font-size:11px;color:var(--text2)">${p}</td>
-        <td style="padding:3px 8px;font-size:10px;color:var(--text3)">${esc(info.label||'')}</td>
-        <td style="padding:3px 8px">${icon}${proc}</td>
-      </tr>`;
-    }).join('');
+    // ── Compact port-map chips ────────────────────────────────────────────
+    html += `<div style="margin-top:8px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
+        color:var(--text3);margin-bottom:5px">Port Map</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${_portMapChips(d.ports)}</div>`;
 
-    html+=`<div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;
-      padding:8px 10px;font-size:11px">
-      <div style="font-weight:600;color:var(--text2);margin-bottom:6px">
-        <i class="fa fa-plug" style="margin-right:5px;opacity:0.6"></i>Port Occupancy
-      </div>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr>
-          <th style="text-align:left;padding:2px 8px;font-size:10px;color:var(--text3)">Port</th>
-          <th style="text-align:left;padding:2px 8px;font-size:10px;color:var(--text3)">Role</th>
-          <th style="text-align:left;padding:2px 8px;font-size:10px;color:var(--text3)">Status</th>
-        </tr></thead>
-        <tbody>${portRows}</tbody>
-      </table>
-    </div>`;
+    // ── Process details (only if conflicts) ───────────────────────────────
+    const conflicts = Object.entries(d.ports||{}).filter(([,i])=>!i.free);
+    if(conflicts.length){
+      html += `<div style="margin-top:6px;font-size:10px;color:var(--text3);line-height:1.8">`;
+      conflicts.forEach(([p,info])=>{
+        html += `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px">
+          <i class="fa fa-lock" style="color:var(--red);font-size:9px"></i>
+          <b style="color:var(--text2);font-family:var(--font-mono)">${p}</b>
+          <span style="color:var(--red)">${esc(info.process||'in use')}</span>
+        </span>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
 
-    // ── Firewall ──────────────────────────────────────────────────────────
+    // ── Firewall badge (inline, compact) ──────────────────────────────────
     if(d.firewall&&d.firewall.checked){
       const fwOk=!d.firewall.blocked;
-      html+=`<div style="margin-top:6px;background:${fwOk?'var(--green-dim)':'var(--red-dim)'};
+      html += `<div style="margin-top:6px;display:inline-flex;align-items:center;gap:5px;
+        background:${fwOk?'var(--green-dim)':'var(--red-dim)'};
         border:1px solid ${fwOk?'rgba(107,142,107,0.4)':'rgba(194,120,120,0.4)'};
-        border-radius:6px;padding:7px 10px;font-size:11px;
+        border-radius:5px;padding:3px 9px;font-size:10px;
         color:${fwOk?'var(--green)':'var(--red)'}">
-        <i class="fa fa-shield-alt" style="margin-right:5px"></i>
-        <b>Firewall:</b> ${esc(d.firewall.detail)}
+        <i class="fa fa-shield-alt"></i> ${esc(d.firewall.detail)}
       </div>`;
-    } else if(d.firewall&&!d.firewall.checked){
-      html+=`<div style="margin-top:6px;font-size:10px;color:var(--text3)">
-        <i class="fa fa-info-circle" style="margin-right:4px"></i>${esc(d.firewall.detail||'Firewall check skipped.')}
+    } else if(d.firewall&&d.firewall.detail){
+      html += `<div style="margin-top:5px;font-size:10px;color:var(--text3)">
+        <i class="fa fa-info-circle" style="margin-right:3px"></i>${esc(d.firewall.detail)}
       </div>`;
     }
 
-    // ── Errors / warnings ─────────────────────────────────────────────────
-    (d.errors||[]).forEach(e=>{
-      html+=`<div style="margin-top:5px;background:var(--red-dim);border:1px solid rgba(194,120,120,0.4);
-        border-radius:6px;padding:6px 10px;font-size:11px;color:var(--red)">
-        <i class="fa fa-exclamation-circle" style="margin-right:4px"></i>${esc(e)}
-      </div>`;
-    });
+    // ── Warnings ──────────────────────────────────────────────────────────
     (d.warnings||[]).forEach(w=>{
-      html+=`<div style="margin-top:5px;background:var(--yellow-dim);border:1px solid rgba(201,168,120,0.4);
-        border-radius:6px;padding:6px 10px;font-size:11px;color:var(--yellow)">
-        <i class="fa fa-exclamation-triangle" style="margin-right:4px"></i>${esc(w)}
-      </div>`;
+      html += `<div style="margin-top:5px">${_portBanner('warn', esc(w))}</div>`;
     });
 
-    // ── Overall verdict ───────────────────────────────────────────────────
-    const verdict=d.ok
-      ?`<div style="margin-top:6px;background:var(--green-dim);border:1px solid rgba(107,142,107,0.4);
-          border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--green)">
-          <i class="fa fa-check-circle" style="margin-right:6px"></i>Port ${port} looks good — safe to use.
-        </div>`
-      :`<div style="margin-top:6px;background:var(--red-dim);border:1px solid rgba(194,120,120,0.4);
-          border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--red)">
-          <i class="fa fa-times-circle" style="margin-right:6px"></i>Port ${port} has issues — resolve the errors above before saving.
-        </div>`;
-    html=verdict+html;
+    // ── Suggest next available ─────────────────────────────────────────────
+    if(!d.ok){
+      html += `<div style="margin-top:8px">
+        <button type="button"
+          onclick="suggestNextPort('${inputId}','${resultId}')"
+          style="display:inline-flex;align-items:center;gap:6px;
+            background:var(--blue-dim);border:1px solid rgba(122,159,194,0.45);
+            color:var(--blue);border-radius:6px;padding:5px 12px;font-size:11px;
+            font-weight:600;cursor:pointer;transition:all 0.18s"
+          onmouseover="this.style.background='rgba(122,159,194,0.2)'"
+          onmouseout="this.style.background='var(--blue-dim)'">
+          <i class="fa fa-magic"></i> Find next free port
+        </button>
+      </div>`;
+    }
 
     out.innerHTML=html;
   }catch(e){
-    out.innerHTML=`<span style="color:var(--red);font-size:11px">✕ Check failed: ${esc(e.message||String(e))}</span>`;
+    out.innerHTML=_portBanner('err','Check failed: '+esc(e.message||String(e)));
   }
 }
 
