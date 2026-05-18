@@ -274,6 +274,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
             "/api/stream_view":    lambda: self._get_stream_view(qs),
             "/api/check_port":     lambda: self._get_check_port(qs),
+            "/api/suggest_port":   lambda: self._get_suggest_port(qs),
             "/api/urls_csv":               lambda: self._get_urls_csv(qs),
             "/api/mail_config":              self._get_mail_config,
             "/api/gmail_oauth2_status":      self._get_gmail_oauth2_status,
@@ -1025,6 +1026,72 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             "warnings":  warnings,
             "errors":    errors,
         })
+
+    def _get_suggest_port(self, qs: Dict[str, Any]) -> None:
+        """
+        GET /api/suggest_port?from=8555
+
+        Scan odd ports starting from ``from`` (inclusive, must be odd;
+        bumped +1 if even) and return the first port where all four
+        derived ports (RTSP, HLS, RTP, RTCP) are completely free.
+
+        Returns JSON:
+          {
+            "port": 8561,          // suggested free odd port (or null if none found)
+            "searched": 50         // how many candidates were checked
+          }
+        """
+        import socket as _socket
+
+        try:
+            raw  = qs.get("from", ["8555"])[0].strip()
+            base = int(raw) if raw else 8555
+        except (ValueError, TypeError):
+            base = 8555
+
+        # Clamp and make odd
+        base = max(1025, min(base, 65520))
+        if base % 2 == 0:
+            base += 1
+
+        def _port_free(p: int) -> bool:
+            """True if no process is bound to TCP or UDP port p."""
+            try:
+                for conn in psutil.net_connections(kind="inet"):
+                    if conn.laddr and conn.laddr.port == p:
+                        return False
+            except Exception:
+                pass
+            # Double-check with a quick socket bind attempt
+            for kind in (_socket.SOCK_STREAM, _socket.SOCK_DGRAM):
+                try:
+                    s = _socket.socket(_socket.AF_INET, kind)
+                    s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+                    s.bind(("", p))
+                    s.close()
+                except OSError:
+                    return False
+            return True
+
+        def _all_free(rtsp: int) -> bool:
+            hls  = rtsp + 1
+            rtp  = rtsp + 2
+            if rtp % 2 != 0:
+                rtp += 1
+            rtcp = rtp + 1
+            return all(_port_free(p) for p in (rtsp, hls, rtp, rtcp))
+
+        searched = 0
+        candidate = base
+        found: Optional[int] = None
+        while candidate <= 65520 and searched < 200:
+            searched += 1
+            if _all_free(candidate):
+                found = candidate
+                break
+            candidate += 2   # always stay odd
+
+        self._json({"port": found, "searched": searched})
 
     def _get_upload_status(self, qs: Dict[str, Any]) -> None:
         """GET /api/upload/status?session_id=X  — chunked upload progress + resume info."""
