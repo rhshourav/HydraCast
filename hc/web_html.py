@@ -10,7 +10,7 @@ _HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>__APP_NAME__</title>
+<title>HydraCast</title>
 <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
