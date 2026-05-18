@@ -26,12 +26,8 @@ from hc.web_html import _HTML
 from hc.web_csvmanager import CSVManager
 from hc import APP_NAME as _APP_NAME, APP_VER as _APP_VER_INIT
 
-# Pre-render the HTML template with values from hc/__init__.py
-_HTML_RENDERED = (
-    _HTML
-    .replace("__APP_NAME__", _APP_NAME)
-    .replace("__APP_VER__", "v" + _APP_VER_INIT)
-)
+# Pre-render the HTML template with APP_NAME from hc/__init__.py
+_HTML_RENDERED = _HTML.replace("__APP_NAME__", _APP_NAME)
 
 log = logging.getLogger(__name__)
 
