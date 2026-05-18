@@ -1880,6 +1880,7 @@ select option{background:var(--bg3)}
               <li>Scheduled events (events.json)</li>
               <li>Mail alert config (mail_config.json)</li>
               <li>Resume positions (resume_positions.json)</li>
+              <li>App settings (holiday country, etc.)</li>
             </ul>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
@@ -1920,6 +1921,7 @@ select option{background:var(--bg3)}
             <div style="font-size:13px;font-weight:600;color:var(--text2)">Drop .hc file or click to browse</div>
           </div>
           <input type="file" id="restore-file" accept=".hc" style="display:none" onchange="doRestore(this.files[0])">
+          <div id="restore-preview" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:11px;color:var(--text2);line-height:1.8"></div>
           <div id="restore-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
         </div>
 
@@ -4723,18 +4725,20 @@ async function downloadBackup(){
   st.textContent='Preparing backup…';st.style.color='var(--yellow)';
   try{
     const include={
-      streams:  document.getElementById('bk-streams')?.checked!==false,
-      events:   document.getElementById('bk-events')?.checked!==false,
-      mail:     document.getElementById('bk-mail')?.checked!==false,
-      resume:   document.getElementById('bk-resume')?.checked!==false,
+      streams:      document.getElementById('bk-streams')?.checked!==false,
+      events:       document.getElementById('bk-events')?.checked!==false,
+      mail:         document.getElementById('bk-mail')?.checked!==false,
+      resume:       document.getElementById('bk-resume')?.checked!==false,
       app_settings: document.getElementById('bk-app-settings')?.checked!==false,
     };
     const r=await fetch('/api/backup',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(include)
     });
-    if(!r.ok){const j=await r.json();throw new Error(j.msg||'Backup failed');  }
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.msg||`Server error ${r.status}`);}
     const blob=await r.blob();
+    // Warn if the downloaded blob is suspiciously small (likely an error body)
+    if(blob.size<20){throw new Error('Server returned an empty backup — check server logs');}
     const now=new Date();
     const ts=[now.getFullYear(),
       String(now.getMonth()+1).padStart(2,'0'),
@@ -4749,7 +4753,8 @@ async function downloadBackup(){
     a.click();
     URL.revokeObjectURL(a.href);
     const included=Object.entries(include).filter(([,v])=>v).map(([k])=>k).join(', ');
-    st.textContent=`✓ Backup downloaded (${included})`;st.style.color='var(--green)';
+    const sizeKB=Math.round(blob.size/1024);
+    st.textContent=`✓ Backup downloaded — ${included} (${sizeKB} KB)`;st.style.color='var(--green)';
     toast('Backup downloaded','ok');
   }catch(e){
     st.textContent='✕ '+e.message;st.style.color='var(--red)';
@@ -4757,44 +4762,126 @@ async function downloadBackup(){
   }
 }
 
+// Maximum .hc file size we will parse client-side (4 MB matches server POST limit)
+const _HC_MAX_BYTES = 4*1024*1024;
+
 async function doRestore(file){
   if(!file)return;
+  // Reset file input so re-selecting same file still triggers onchange
+  const fileInput=document.getElementById('restore-file');
+  if(fileInput) fileInput.value='';
+
   if(!file.name.endsWith('.hc')){toast('Must be a .hc backup file','err');return;}
-  if(!confirm('Restore from this backup?\n\nAll matching configuration will be replaced and streams will restart.\n\nFile: '+file.name+'\nSize: '+Math.round(file.size/1024)+' KB'))return;
+
+  // Client-side size guard — server rejects bodies > 4 MB anyway
+  if(file.size>_HC_MAX_BYTES){
+    toast(`Backup file too large (${Math.round(file.size/1024)} KB > 4096 KB)`, 'err');
+    return;
+  }
+
   const st=document.getElementById('restore-status');
+  const preview=document.getElementById('restore-preview');
   st.textContent='Reading file…';st.style.color='var(--yellow)';
+  if(preview){preview.style.display='none';preview.innerHTML='';}
+
   try{
     const text=await file.text();
     let data;
     try{data=JSON.parse(text);}catch(_){throw new Error('Invalid .hc file — not valid JSON');}
     if(data.format!=='hydracast_backup'){throw new Error('Not a HydraCast backup file (missing format header)');}
-    const sections=[];
-    if(data.streams)   sections.push('streams');
-    if(data.events)    sections.push('events');
-    if(data.mail_config) sections.push('mail');
-    if(data.resume_positions) sections.push('resume');
-    if(data.app_settings) sections.push('app settings');
-    if(sections.length===0){throw new Error('Backup file contains no restorable data');}
+
+    // ── Build section inventory (treat empty arrays/objects as present) ──────
+    // Use 'format' key presence per-section, not truthiness, so an intentionally
+    // empty streams:[] backup is still recognised and can wipe all streams.
+    const sectionMap={
+      streams:          {key:'streams',          label:'Streams',          present:'streams' in data},
+      events:           {key:'events',            label:'Events',           present:'events' in data},
+      mail_config:      {key:'mail_config',       label:'Mail config',      present:'mail_config' in data},
+      resume_positions: {key:'resume_positions',  label:'Resume positions', present:'resume_positions' in data},
+      app_settings:     {key:'app_settings',      label:'App settings',     present:'app_settings' in data},
+    };
+    const sections=Object.values(sectionMap).filter(s=>s.present).map(s=>s.label);
+    if(sections.length===0){throw new Error('Backup file contains no restorable sections');}
+
+    // ── Show file preview panel ───────────────────────────────────────────────
+    const backupVer=data.version||'unknown';
+    const backupDate=data.created? new Date(data.created).toLocaleString() : 'unknown';
+    const sizeKB=Math.round(file.size/1024);
+
+    // Gather per-section counts for the preview
+    const counts={};
+    if('streams' in data)          counts['Streams']=Array.isArray(data.streams)?`${data.streams.length} stream(s)`:'present';
+    if('events' in data)           counts['Events']=Array.isArray(data.events)?`${data.events.length} event(s)`:'present';
+    if('mail_config' in data)      counts['Mail config']='present (password excluded)';
+    if('resume_positions' in data) counts['Resume positions']=typeof data.resume_positions==='object'?`${Object.keys(data.resume_positions).length} entry(ies)`:'present';
+    if('app_settings' in data)     counts['App settings']='present';
+
+    // Version mismatch warning
+    let verWarning='';
+    const appVer=(typeof APP_VER!=='undefined')?APP_VER:null;
+    if(appVer && backupVer!==appVer){
+      verWarning=`<div style="color:var(--yellow);margin-top:4px">⚠ Backup version <b>${backupVer}</b> differs from running version <b>${appVer}</b> — review carefully before restoring.</div>`;
+    }
+
+    if(preview){
+      const rows=Object.entries(counts).map(([k,v])=>`<tr><td style="color:var(--text3);padding-right:12px">${k}</td><td style="color:var(--text2)">${v}</td></tr>`).join('');
+      preview.innerHTML=`
+        <div style="font-weight:600;color:var(--text);margin-bottom:6px">📦 ${file.name} <span style="font-weight:400;color:var(--text3)">(${sizeKB} KB)</span></div>
+        <div style="color:var(--text3)">Created: <span style="color:var(--text2)">${backupDate}</span> &nbsp;·&nbsp; App version: <span style="color:var(--text2)">${backupVer}</span></div>
+        ${verWarning}
+        <table style="margin-top:8px;border-collapse:collapse">${rows}</table>`;
+      preview.style.display='block';
+    }
+
+    // ── Confirmation dialog with section detail ───────────────────────────────
+    const confirmMsg=[
+      `Restore from: ${file.name}`,
+      `Created:      ${backupDate}`,
+      `Version:      ${backupVer}`,
+      ``,
+      `Sections to restore:`,
+      ...sections.map(s=>`  • ${s}`),
+      ``,
+      `All matching configuration will be replaced and streams will restart.`,
+      ``,
+      `Continue?`,
+    ].join('\n');
+    if(!confirm(confirmMsg))return;
+
     st.textContent=`Restoring: ${sections.join(', ')}…`;st.style.color='var(--yellow)';
+
     const r=await fetch('/api/restore',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(data)
     });
-    const j=await r.json();
+    let j;
+    try{j=await r.json();}catch(_){throw new Error(`Server returned non-JSON response (status ${r.status})`);}
+
     if(j.ok){
       const restored=(j.restored||[]).join(', ')||'(none)';
       const failed=(j.failed||[]);
-      st.textContent='✓ Restored: '+restored+(failed.length?'\n⚠ Warnings: '+failed.join('; '):'')+' — reloading in 3 s…';
+      const warnPart=failed.length?`\n⚠ Warnings: ${failed.join('; ')}`:'' ;
+      st.textContent=`✓ Restored: ${restored}${warnPart} — reloading in 3 s…`;
       st.style.color=failed.length?'var(--yellow)':'var(--green)';
       toast('Restore successful — restarting streams…','ok');
-      // Reload holiday inputs and pill if app_settings were restored
-      if(j.restored&&j.restored.includes('app_settings')){
-        loadHolidaySettings();
-        _hdLoaded=false; _hdData=[];
-        document.getElementById('hd-next-label').textContent='Holidays';
-        loadHolidays();
+
+      // Reload UI state for every restored section
+      const r_list=j.restored||[];
+      if(r_list.includes('app_settings')){
+        // Reload holiday settings and invalidate cached data
+        if(typeof loadHolidaySettings==='function') loadHolidaySettings();
+        if(typeof loadHolidays==='function'){
+          if(typeof _hdLoaded!=='undefined') _hdLoaded=false;
+          if(typeof _hdData!=='undefined')   _hdData=[];
+          const lbl=document.getElementById('hd-next-label');
+          if(lbl) lbl.textContent='Holidays';
+          loadHolidays();
+        }
       }
-      setTimeout(()=>loadStreams(),3500);
+      // Always reload streams table and events after any restore
+      setTimeout(()=>{
+        if(typeof loadStreams==='function') loadStreams();
+      },3500);
     }else{
       throw new Error(j.msg||'Restore failed');
     }
