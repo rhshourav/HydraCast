@@ -10,7 +10,8 @@ _HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HydraCast</title>
+<title>__APP_NAME__</title>
+<link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -315,13 +316,13 @@ a:hover{color:var(--accent)}
 }
 .logo-icon{
   width:36px;height:36px;
-  background:#ffeec4;
+  background:#12080c;
   border-radius:10px;display:flex;align-items:center;justify-content:center;
   font-size:15px;font-weight:900;color:#fff;flex-shrink:0;
-  box-shadow:0 3px 10px rgba(255,238,196,0.45);
+  box-shadow:0 3px 10px rgba(160,30,50,0.35);
   transition:transform 0.2s,box-shadow 0.2s;
 }
-.logo-icon:hover{transform:scale(1.08);box-shadow:0 5px 16px rgba(255,238,196,0.55)}
+.logo-icon:hover{transform:scale(1.08);box-shadow:0 5px 16px rgba(160,30,50,0.5)}
 .logo sub{
   font-family:var(--font-mono);font-size:11px;color:var(--text3);
   font-weight:400;vertical-align:middle;margin-left:3px;
@@ -1005,30 +1006,18 @@ select option{background:var(--bg3)}
 <!-- ══ TOP BAR ══ -->
 <header class="topbar">
   <div class="logo">
-    <!--
-      ╔══════════════════════════════════════════════════════╗
-      ║  LOGO PLACEHOLDER                                    ║
-      ║  To add your own logo image:                         ║
-      ║    document.getElementById('logo-img').src =         ║
-      ║      '/your- resources/logo.png';                               ║
-      ║  The fallback "LOGO" text hides automatically when   ║
-      ║  the image loads.                                    ║
-      ╚══════════════════════════════════════════════════════╝
-    -->
-    <div class="logo-icon" id="logo-icon-wrap"
-         title="Add your logo — see HTML comment above"
-         style="cursor:default">
-      <img id="logo-img" src="" alt=""
+    <div class="logo-icon" id="logo-icon-wrap" style="cursor:default">
+      <img id="logo-img" src="/resources/logo.png" alt="__APP_NAME__"
            style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:10px"
            onload="this.style.display='block';document.getElementById('logo-letter').style.display='none'"
            onerror="this.style.display='none';document.getElementById('logo-letter').style.display=''">
       <span class="logo-letter" id="logo-letter"
             style="font-size:8px;font-weight:700;letter-spacing:0.06em;color:rgba(255,255,255,0.75);text-transform:uppercase;pointer-events:none;user-select:none;position:relative;z-index:1">
-        LOGO
+        HC
       </span>
     </div>
-    HydraCast
-    <sub id="ver-badge">v—</sub>
+    __APP_NAME__
+    <sub id="ver-badge">__APP_VER__</sub>
   </div>
 
   <nav class="nav-tabs">
@@ -1819,9 +1808,15 @@ select option{background:var(--bg3)}
 
 <!-- ══ FOOTER ══ -->
 <footer class="app-footer">
-  <span id="ft-app-name">HydraCast</span>
+  <span id="ft-app-name" style="display:inline-flex;align-items:center;gap:6px;">
+    <img src="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg"
+         alt="__APP_NAME__ logo"
+         style="width:16px;height:16px;flex-shrink:0;opacity:0.85;"
+         onerror="this.style.display='none'">
+    __APP_NAME__
+  </span>
   <span class="footer-sep">·</span>
-  <span id="ft-ver">—</span>
+  <span id="ft-ver">__APP_VER__</span>
   <span class="footer-sep">·</span>
   <a href="https://github.com/rhshourav"
      target="_blank" rel="noopener"
@@ -4527,7 +4522,6 @@ function toggleTheme(){
 // INIT
 // ═══════════════════════════════════
 (async function init(){
-  document.getElementById('logo-img').src = '/ resources/logo.png';
 
   // ── Restore saved interval preferences ──────────────────────────────────
   try{
