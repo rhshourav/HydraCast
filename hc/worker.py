@@ -409,6 +409,34 @@ class StreamWorker:
         self.state.compliance_last_check_ts = time.time()
         self.seek(seek_pos)
 
+    def _compliance_alert_refresh(self) -> None:
+        """
+        Called from the _monitor periodic block when a compliance alert is
+        active.  Re-scans the folder (when cfg.folder_source is set) and
+        re-runs file selection.  If the file is now present the alert is
+        cleared automatically so the Web UI banner goes away without
+        requiring an operator restart.
+        """
+        cfg = self.state.config
+        if not self.state.compliance_alert:
+            return  # nothing to refresh
+        try:
+            from hc.compliance import select_compliance_file
+            _, err = select_compliance_file(
+                cfg.playlist,
+                folder_source=cfg.folder_source,
+            )
+            if err is None:
+                self.state.clear_compliance_alert()
+                self._log(
+                    "Compliance alert cleared — today's file is now available.",
+                    "INFO",
+                )
+            else:
+                log.debug("compliance alert still active: %s", err)
+        except Exception as exc:
+            log.debug("_compliance_alert_refresh error: %s", exc)
+
     def _compliance_check_and_resync(self) -> None:
         """
         Internal: measure drift against the configured threshold and, if the
@@ -1434,6 +1462,23 @@ class StreamWorker:
                                 target=self._compliance_check_and_resync,
                                 daemon=True,
                                 name=f"comp-check-{_cfg.port}",
+                            ).start()
+                        # ── Alert auto-clear: re-check every 60 s when a
+                        # compliance alert is active so a file uploaded after
+                        # stream start clears the banner without a restart.
+                        if (
+                            self.state.compliance_alert
+                            and getattr(self.state, "_compliance_alert_check_ts", 0.0) == 0.0
+                            or (
+                                self.state.compliance_alert
+                                and _now - getattr(self.state, "_compliance_alert_check_ts", 0.0) >= 60.0
+                            )
+                        ):
+                            self.state._compliance_alert_check_ts = _now  # type: ignore[attr-defined]
+                            threading.Thread(
+                                target=self._compliance_alert_refresh,
+                                daemon=True,
+                                name=f"comp-alert-{_cfg.port}",
                             ).start()
             except Exception as exc:
                 log.debug("[%s] Monitor readline error: %s", self.state.config.name, exc)
