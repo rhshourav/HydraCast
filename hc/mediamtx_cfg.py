@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from hc.constants import APP_VER, CONFIGS_DIR, LISTEN_ADDR, LOGS_DIR
+from hc.constants import APP_VER, CONFIG_DIR, LISTEN_ADDR, LOGS_DIR
 from hc.models import StreamState
 
 log = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ class MediaMTXConfig:
 
     @staticmethod
     def _purge_stale(port: int) -> None:
-        stale = CONFIGS_DIR() / f"mediamtx_{port}.yml"
+        stale = CONFIG_DIR() / f"mediamtx_{port}.yml"
         try:
             stale.unlink(missing_ok=True)
             log.debug("Purged stale config for port %d", port)
@@ -67,7 +67,7 @@ class MediaMTXConfig:
         spath = cfg.rtsp_path
         addr  = LISTEN_ADDR()
         log_f = (LOGS_DIR() / f"mediamtx_{port}.log").resolve()
-        cfg_f = CONFIGS_DIR() / f"mediamtx_{port}.yml"
+        cfg_f = CONFIG_DIR() / f"mediamtx_{port}.yml"
 
         log.info("[%s] Writing MediaMTX config → %s", cfg.name, cfg_f)
 
