@@ -136,7 +136,10 @@ class StreamConfig:
 
     @property
     def hls_port(self) -> int:
-        return self.port + 10000
+        # RTSP uses an odd port (e.g. 8555); HLS sits on the next (even) port.
+        # Using port+1 keeps RTSP and HLS adjacent and avoids the 10000-offset
+        # clash with unrelated services.
+        return self.port + 1
 
     @property
     def hls_url(self) -> str:
