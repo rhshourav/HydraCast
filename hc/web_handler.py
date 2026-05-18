@@ -24,6 +24,14 @@ from hc.models import OneShotEvent, PlaylistItem, StreamConfig, StreamStatus
 from hc.utils import _fmt_duration, _fmt_size, _local_ip, _safe_path
 from hc.web_html import _HTML
 from hc.web_csvmanager import CSVManager
+from hc import APP_NAME as _APP_NAME, APP_VER as _APP_VER_INIT
+
+# Pre-render the HTML template with values from hc/__init__.py
+_HTML_RENDERED = (
+    _HTML
+    .replace("__APP_NAME__", _APP_NAME)
+    .replace("__APP_VER__", "v" + _APP_VER_INIT)
+)
 
 log = logging.getLogger(__name__)
 
@@ -193,9 +201,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
 
     def _serve_static(self, url_path: str) -> None:
         """
-        Serve a static file from <BASE_DIR>/static/ or BASE_DIR itself.
+        Serve a static file from <BASE_DIR>/static/ or <BASE_DIR>/resources/.
         Supports: .png .jpg .jpeg .gif .webp .svg .ico .css .js
-        Place  resources/logo.png at <BASE_DIR>/ resources/logo.png  — it will be served as / resources/logo.png.
+        Place logo at <BASE_DIR>/resources/logo.png — it will be served as /resources/logo.png.
         Any file under <BASE_DIR>/static/ is served as /static/<filename>.
         """
         _MIME = {
@@ -209,7 +217,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             ".js":   "application/javascript",
         }
         # Resolve file on disk
-        name = url_path.lstrip("/")                     # e.g. " resources/logo.png" or "static/x.png"
+        name = url_path.lstrip("/")                     # e.g. "resources/logo.png" or "static/x.png"
         candidate = BASE_DIR() / name
         if not candidate.exists() or not candidate.is_file():
             self._send(404, b"Not Found", "text/plain")
@@ -247,8 +255,8 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         qs     = parse_qs(parsed.query)
 
         routes: Dict[str, Any] = {
-            "/":                   lambda: self._send(200, _HTML, "text/html; charset=utf-8"),
-            "/index.html":         lambda: self._send(200, _HTML, "text/html; charset=utf-8"),
+            "/":                   lambda: self._send(200, _HTML_RENDERED, "text/html; charset=utf-8"),
+            "/index.html":         lambda: self._send(200, _HTML_RENDERED, "text/html; charset=utf-8"),
             "/health":             self._get_health,
             "/api/streams":        self._get_streams,
             "/api/streams_config": self._get_streams_config,
@@ -277,7 +285,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             except Exception as exc:
                 log.error("WebHandler GET %s: %s", path, exc)
                 self._json({"error": "internal server error"}, 500)
-        elif path.startswith("/static/") or path in ("/ resources/logo.png", "/favicon.ico"):
+        elif path.startswith("/static/") or path.startswith("/resources/") or path == "/favicon.ico":
             self._serve_static(path)
         else:
             self._send(404, b"Not Found", "text/plain")
