@@ -21,6 +21,14 @@ NEW in v2
   fails or the required day-tagged file is missing, an error string is
   returned so the Web UI can surface it.
 
+BUG FIX (v2.1)
+──────────────
+• select_compliance_file() now accepts an optional ``folder_source`` Path.
+  When supplied it re-scans the folder from disk before selecting a file,
+  so a file uploaded AFTER the stream started is picked up immediately
+  without requiring a restart.  When ``folder_source`` is None the
+  function behaves identically to v2.0 (uses the in-memory playlist).
+
 All times are local system time.
 """
 from __future__ import annotations
@@ -100,11 +108,18 @@ def _fmt(seconds: float) -> str:
 # ---------------------------------------------------------------------------
 
 def select_compliance_file(
-    playlist,           # List[PlaylistItem]
+    playlist,                                    # List[PlaylistItem]
     today_override: Optional[int] = None,
+    folder_source: Optional[Path] = None,        # NEW: re-scan folder when set
 ) -> Tuple[Optional[object], Optional[str]]:
     """
     Choose the best PlaylistItem for today's compliance broadcast.
+
+    When *folder_source* is supplied the function re-scans that directory
+    from disk before selecting — this ensures a file uploaded after the
+    stream started is found immediately without requiring a restart.
+    When *folder_source* is None the function works from the in-memory
+    *playlist* list (identical to the v2.0 behaviour).
 
     Selection priority:
       1. File whose name contains _today's_weekday_  (e.g. _tue_ on Tuesday)
@@ -115,6 +130,32 @@ def select_compliance_file(
     error_string is non-None when no suitable file was found or when the
     today-tagged file is missing from disk (compliance alert).
     """
+    # ── Optionally refresh the candidate list from disk ───────────────────────
+    if folder_source is not None:
+        try:
+            from hc.folder_scanner import scan_folder, SortMode
+            fresh_items, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
+            for w in warnings:
+                log.warning("compliance select_compliance_file: %s", w)
+            if fresh_items:
+                playlist = fresh_items
+                log.debug(
+                    "compliance: re-scanned '%s' — %d file(s) available",
+                    folder_source, len(fresh_items),
+                )
+            else:
+                log.warning(
+                    "compliance: folder re-scan of '%s' returned no files — "
+                    "falling back to in-memory playlist",
+                    folder_source,
+                )
+        except Exception as exc:
+            log.warning(
+                "compliance: folder re-scan failed (%s) — "
+                "falling back to in-memory playlist",
+                exc,
+            )
+
     if not playlist:
         return None, "Compliance: playlist is empty — cannot select a file."
 
@@ -335,6 +376,7 @@ def prepare_compliance_start(
     loop_calculation: bool = False,
     video_duration: float = 0.0,
     reference_time: Optional[datetime] = None,
+    folder_source: Optional[Path] = None,        # NEW: forwarded to select_compliance_file
 ) -> Tuple[Optional[object], float, str, Optional[str]]:
     """
     One-stop helper used by the worker when starting a compliance stream.
@@ -346,7 +388,7 @@ def prepare_compliance_start(
     alert_message is None on success; non-None when the Web UI should show a
     compliance error banner (e.g. missing day-tagged file).
     """
-    item, file_error = select_compliance_file(playlist)
+    item, file_error = select_compliance_file(playlist, folder_source=folder_source)
     if item is None:
         return None, 0.0, "No file available.", file_error
 
