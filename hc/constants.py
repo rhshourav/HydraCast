@@ -67,7 +67,7 @@ def _require(key: str) -> Path:
 def BASE_DIR()       -> Path: return _require("BASE")
 def BIN_DIR()        -> Path: return _require("BIN")
 def CONFIG_DIR()     -> Path: return _require("CONFIG")
-def CONFIGS_DIR()    -> Path: return _require("CONFIGS")
+def CONFIGS_DIR()    -> Path: return _require("CONFIG")
 def LOGS_DIR()       -> Path: return _require("LOGS")
 def MEDIA_DIR()      -> Path: return _require("MEDIA")
 def SSL_DIR()        -> Path: return _require("SSL")
