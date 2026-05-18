@@ -116,23 +116,32 @@ def FFPROBE_PATH() -> str: return _bins["ffprobe"]
 def set_ffmpeg(p: str)  -> None: _bins["ffmpeg"]  = p
 def set_ffprobe(p: str) -> None: _bins["ffprobe"] = p
 
+# ── Web port defaults ─────────────────────────────────────────────────────────
+# HTTPS port: 443  (main Web UI, TLS)
+# HTTP  port:  80  (redirect-only — bounces plain-HTTP visitors to HTTPS)
+# Set either to 0 to disable that listener entirely.
+HTTP_REDIRECT_PORT = 80
+
 # ── Runtime flags (set from CLI args or TUI prompt) ───────────────────────────
 _flags: Dict[str, object] = {
     "no_firewall": False,
     "listen_addr": "0.0.0.0",
     "web_port":    WEB_PORT,
+    "http_port":   HTTP_REDIRECT_PORT,
     "ssl_cert":    None,
     "ssl_key":     None,
 }
 
-def NO_FIREWALL()  -> bool: return bool(_flags["no_firewall"])
-def LISTEN_ADDR()  -> str:  return str(_flags["listen_addr"])
-def get_web_port() -> int:  return int(_flags["web_port"])
+def NO_FIREWALL()    -> bool: return bool(_flags["no_firewall"])
+def LISTEN_ADDR()    -> str:  return str(_flags["listen_addr"])
+def get_web_port()   -> int:  return int(_flags["web_port"])
+def get_http_port()  -> int:  return int(_flags["http_port"])
 def get_ssl_cert() -> "Optional[str]": return _flags["ssl_cert"]  # type: ignore[return-value]
 def get_ssl_key()  -> "Optional[str]": return _flags["ssl_key"]   # type: ignore[return-value]
 def set_no_firewall(v: bool)  -> None: _flags["no_firewall"] = v
 def set_listen_addr(v: str)   -> None: _flags["listen_addr"] = v
 def set_web_port(v: int)      -> None: _flags["web_port"]    = int(v)
+def set_http_port(v: int)     -> None: _flags["http_port"]   = int(v)
 def set_ssl_cert(v: str)      -> None: _flags["ssl_cert"]    = v
 def set_ssl_key(v: str)       -> None: _flags["ssl_key"]     = v
 
@@ -178,13 +187,13 @@ def build_arg_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  hydracast.py                         # HTTPS on :443 (auto self-signed cert)\n"
-            "  hydracast.py --web-port 8080         # HTTP on :8080 (no cert required)\n"
-            "  hydracast.py --web-port 80           # HTTP on :80   (needs root/cap)\n"
-            "  hydracast.py --port 9000             # alias for --web-port\n"
-            "  hydracast.py --listen 192.168.1.10  # bind to specific interface\n"
+            "  hydracast.py                              # HTTPS :443 + HTTP→HTTPS redirect :80\n"
+            "  hydracast.py --web-port 8443             # HTTPS on :8443, redirect on :80\n"
+            "  hydracast.py --http-port 8080            # redirect listener on :8080 instead\n"
+            "  hydracast.py --http-port 0               # disable the HTTP redirect listener\n"
+            "  hydracast.py --listen 192.168.1.10       # bind to specific interface\n"
             "  hydracast.py --ssl-cert /etc/ssl/cert.pem --ssl-key /etc/ssl/key.pem\n"
-            "  hydracast.py --no-firewall            # skip OS firewall rule setup\n"
+            "  hydracast.py --no-firewall               # skip OS firewall rule setup\n"
         ),
     )
 
@@ -195,10 +204,22 @@ def build_arg_parser():
         type=validate_port,
         default=None,
         help=(
-            f"TCP port for the Web UI (default: {WEB_PORT}). "
-            "Port 443 uses HTTPS (auto self-signed if no cert present). "
-            "Any other port uses plain HTTP unless --ssl-cert/--ssl-key are given. "
+            f"TCP port for the HTTPS Web UI (default: {WEB_PORT}). "
+            "Auto-generates a self-signed cert when none is present. "
             "Ports below 1024 typically require elevated privileges."
+        ),
+    )
+    parser.add_argument(
+        "--http-port",
+        dest="http_port",
+        metavar="PORT",
+        type=validate_port,
+        default=None,
+        help=(
+            f"TCP port for the plain-HTTP redirect listener (default: {HTTP_REDIRECT_PORT}). "
+            "Visitors on this port are automatically redirected to HTTPS. "
+            "Set to 0 to disable the HTTP redirect listener entirely. "
+            "Only active when SSL is enabled."
         ),
     )
     parser.add_argument(
@@ -244,6 +265,8 @@ def apply_cli_args(args) -> None:
     """
     if args.web_port is not None:
         set_web_port(args.web_port)
+    if getattr(args, "http_port", None) is not None:
+        set_http_port(args.http_port)
     set_listen_addr(args.listen_addr)
     if args.ssl_cert:
         set_ssl_cert(args.ssl_cert)
