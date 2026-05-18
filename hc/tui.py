@@ -1,5 +1,15 @@
 """
 hc/tui.py  —  Terminal UI, keyboard handler, and TUI seek prompt.
+
+v6.2 changes
+────────────
+• ASCII banner replaced with a slim one-liner wordmark header.
+• [P] hotkey: live web-port change prompt (updates constants + restarts WebServer).
+• Confirmation prompts before Stop-All (X) and Restart (R).
+• Distinct Rich color per StreamStatus for quick visual scanning.
+• Web UI URL + port shown prominently in the header bar at all times.
+• Stream detail overlay redesigned: cleaner, more information.
+• Status column widened slightly; status dot colours now unique per state.
 """
 from __future__ import annotations
 
@@ -13,30 +23,73 @@ from typing import Optional
 import psutil
 from rich import box
 from rich.align import Align
+from rich.columns import Columns
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
-from rich.prompt import Prompt
+from rich.prompt import Confirm, Prompt
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
 from hc.constants import (
-    APP_VER, APP_AUTHOR, CC, CD, CG, CM, CR, CW, CY,
-    CPU_COUNT, IS_WIN, get_web_port,
+    APP_VER, APP_AUTHOR, APP_GITHUB,
+    CC, CD, CG, CM, CR, CW, CY, CB,
+    CPU_COUNT, IS_WIN, get_web_port, set_web_port,
 )
 from hc.manager import StreamManager
 from hc.models import StreamStatus
 from hc.utils import _local_ip
 from hc.worker import LogBuffer
 
-BANNER_TEXT = """\
-[bright_cyan]  ██╗  ██╗██╗   ██╗██████╗ ██████╗  █████╗  ██████╗ █████╗ ███████╗████████╗[/]
-[bright_cyan]  ██║  ██║╚██╗ ██╔╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔════╝╚══██╔══╝[/]
-[bright_cyan]  ███████║ ╚████╔╝ ██║  ██║██████╔╝███████║██║     ███████║███████╗   ██║   [/]
-[cyan]  ██╔══██║  ╚██╔╝  ██║  ██║██╔══██╗██╔══██║██║     ██╔══██║╚════██║   ██║   [/]
-[cyan]  ██║  ██║   ██║   ██████╔╝██║  ██║██║  ██║╚██████╗██║  ██║███████║   ██║   [/]
-[dim cyan]  ╚═╝  ╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝   [/]"""
+
+# ── Status colour map  (one distinct colour per state) ───────────────────────
+_STATUS_STYLE: dict[StreamStatus, tuple[str, str]] = {
+    # state              →  (dot_style,        label_style)
+    StreamStatus.STOPPED:   ("dim white",       "dim white"),
+    StreamStatus.STARTING:  ("bold yellow",     "yellow"),
+    StreamStatus.LIVE:      ("bold green",      "bright_green"),
+    StreamStatus.SCHEDULED: ("bold cyan",       "bright_cyan"),
+    StreamStatus.ERROR:     ("bold red",        "bright_red"),
+    StreamStatus.DISABLED:  ("dim",             "dim"),
+    StreamStatus.ONESHOT:   ("bold magenta",    "bright_magenta"),
+}
+
+
+# =============================================================================
+# HEADER  (replaces the old ASCII banner)
+# =============================================================================
+
+def _header_panel() -> Panel:
+    """Slim, information-dense header: wordmark left, Web UI URL right."""
+    ip   = _local_ip()
+    port = get_web_port()
+    schema = "https" if port == 443 else "http"
+
+    left = Text()
+    left.append("◈ ", style="bold bright_cyan")
+    left.append("HYDRACAST", style="bold bright_white")
+    left.append(f"  v{APP_VER}", style="dim white")
+    left.append("  ·  Multi-Stream RTSP Scheduler", style="dim white")
+
+    right = Text(justify="right")
+    right.append("Web UI  ", style="dim white")
+    right.append(f"{schema}://{ip}:{port}", style="bold bright_cyan")
+    right.append("  [P] change port", style="dim white")
+
+    # Two-column layout inside the panel
+    row = Table.grid(expand=True)
+    row.add_column(ratio=1)
+    row.add_column(ratio=1, justify="right")
+    row.add_row(left, right)
+
+    return Panel(
+        row,
+        border_style="bright_cyan",
+        box=box.HORIZONTALS,
+        padding=(0, 1),
+    )
 
 
 # =============================================================================
@@ -48,8 +101,10 @@ class TUI:
         self.glog     = glog
         self.selected = 0
 
+    # ── progress bar ─────────────────────────────────────────────────────────
+
     @staticmethod
-    def _progress_bar(pct: float, width: int = 22) -> Text:
+    def _progress_bar(pct: float, width: int = 20) -> Text:
         if pct <= 0:
             t = Text()
             t.append("─" * width, style="dim white")
@@ -60,7 +115,8 @@ class TUI:
         t = Text()
         for i in range(filled):
             frac = i / max(1, width)
-            t.append("█", style=CG if frac < .55 else (CY if frac < .80 else CM))
+            col  = CG if frac < .55 else (CY if frac < .80 else CM)
+            t.append("█", style=col)
         t.append("░" * empty, style="dim white")
         lc = CM if pct >= 80 else (CY if pct >= 55 else CG)
         t.append(f"  {pct:5.1f}%", style=f"bold {lc}")
@@ -68,12 +124,31 @@ class TUI:
 
     @staticmethod
     def _fmt_remaining(state) -> str:
-        """Return '−HH:MM:SS' remaining label or empty string."""
         rem = state.time_remaining()
         if rem <= 0:
             return ""
         r = int(rem)
         return f"−{r//3600:02d}:{(r%3600)//60:02d}:{r%60:02d}"
+
+    # ── status cell ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _status_cell(st) -> Text:
+        s   = st.status
+        dot_style, lbl_style = _STATUS_STYLE.get(s, ("white", "white"))
+        cell = Text()
+        if s == StreamStatus.ERROR and st.error_msg:
+            cell.append(" ● ", style="bold bright_red")
+            cell.append("ERROR",  style="bold bright_red")
+            # Show first word of error beside label (truncated)
+            snippet = st.error_msg.split("\n")[0][:22]
+            cell.append(f"\n  {snippet}", style="dim red")
+        else:
+            cell.append(f" {s.dot} ", style=dot_style)
+            cell.append(s.label,       style=f"bold {lbl_style}")
+        return cell
+
+    # ── streams table ─────────────────────────────────────────────────────────
 
     def _streams_table(self) -> Table:
         tbl = Table(
@@ -81,43 +156,37 @@ class TUI:
             header_style=f"bold {CW}", expand=True, padding=(0, 1),
             show_edge=True,
         )
-        tbl.add_column("#",        style=CD,  width=3,      no_wrap=True)
-        tbl.add_column("STREAM",   style=CW,  min_width=14, no_wrap=True)
-        tbl.add_column("PORT",     style=CC,  width=6,      no_wrap=True)
-        tbl.add_column("FILES",    style=CD,  width=7,      no_wrap=True)
-        tbl.add_column("SCHEDULE", style=CW,  width=11,     no_wrap=True)
-        tbl.add_column("STATUS",              width=11,     no_wrap=True)
-        tbl.add_column("PROGRESS",            min_width=30, no_wrap=True)
-        tbl.add_column("POSITION", style=CD,  width=16,     no_wrap=True)
-        tbl.add_column("REMAINS",  style=CD,  width=11,     no_wrap=True)
-        tbl.add_column("FPS",      style=CD,  width=5,      no_wrap=True)
-        tbl.add_column("LOOP",     style=CD,  width=6,      no_wrap=True)
-        tbl.add_column("RTSP URL", style="dim cyan", min_width=22, no_wrap=True)
+        tbl.add_column("#",        style=CD,          width=3,      no_wrap=True)
+        tbl.add_column("STREAM",   style=CW,          min_width=14, no_wrap=True)
+        tbl.add_column("PORT",     style=CC,          width=6,      no_wrap=True)
+        tbl.add_column("FILES",    style=CD,          width=5,      no_wrap=True)
+        tbl.add_column("SCHEDULE", style=CW,          width=10,     no_wrap=True)
+        tbl.add_column("STATUS",                      width=12,     no_wrap=True)
+        tbl.add_column("PROGRESS",                    min_width=28, no_wrap=True)
+        tbl.add_column("POSITION", style=CD,          width=16,     no_wrap=True)
+        tbl.add_column("REMAINS",  style=CD,          width=10,     no_wrap=True)
+        tbl.add_column("FPS",      style=CD,          width=5,      no_wrap=True)
+        tbl.add_column("LOOP",     style=CD,          width=5,      no_wrap=True)
+        tbl.add_column("RTSP URL", style="dim cyan",  min_width=24, no_wrap=True)
 
         for i, st in enumerate(self.manager.states):
-            cfg = st.config
-            s   = st.status
-            stat_t = Text()
-            if s == StreamStatus.ERROR and st.error_msg:
-                stat_t.append(" ● ", style=CR)
-                stat_t.append("ERROR", style=f"bold {CR}")
-            else:
-                stat_t.append(f" {s.dot} ", style=s.color)
-                stat_t.append(s.label, style=f"bold {s.color}")
-
-            row_style    = "on grey11" if i == self.selected else ""
-            name_display = f"▶ {cfg.name}" if i == self.selected else f"  {cfg.name}"
-            if cfg.shuffle:     name_display += " ⧖"
-            if cfg.hls_enabled: name_display += " [H]"
-            n_files = len(cfg.playlist)
-
-            remaining = self._fmt_remaining(st)
-            rem_text  = Text(remaining, style=f"bold {CY}") if remaining else Text("—", style=CD)
+            cfg         = st.config
+            row_style   = "on grey11" if i == self.selected else ""
+            sel_marker  = "▶ " if i == self.selected else "  "
+            name_txt    = f"{sel_marker}{cfg.name}"
+            if cfg.shuffle:     name_txt += " ⧖"
+            if cfg.hls_enabled: name_txt += " ᴴ"
+            n_files     = len(cfg.playlist)
+            remaining   = self._fmt_remaining(st)
+            rem_text    = Text(remaining, style=f"bold {CY}") if remaining else Text("—", style=CD)
 
             tbl.add_row(
-                str(i + 1), name_display, str(cfg.port),
+                str(i + 1),
+                name_txt,
+                str(cfg.port),
                 f"×{n_files}" if n_files > 1 else "1",
-                cfg.weekdays_display(), stat_t,
+                cfg.weekdays_display(),
+                self._status_cell(st),
                 self._progress_bar(st.progress),
                 st.format_pos(),
                 rem_text,
@@ -128,69 +197,83 @@ class TUI:
             )
         return tbl
 
+    # ── system panel ─────────────────────────────────────────────────────────
+
     def _system_panel(self) -> Panel:
-        cpu    = psutil.cpu_percent(interval=None)
-        mem    = psutil.virtual_memory()
-        live_n  = sum(1 for s in self.manager.states if s.status == StreamStatus.LIVE)
-        err_n   = sum(1 for s in self.manager.states if s.status == StreamStatus.ERROR)
-        sched_n = sum(1 for s in self.manager.states if s.status == StreamStatus.SCHEDULED)
+        cpu  = psutil.cpu_percent(interval=None)
+        mem  = psutil.virtual_memory()
+        states = self.manager.states
+        live_n  = sum(1 for s in states if s.status == StreamStatus.LIVE)
+        err_n   = sum(1 for s in states if s.status == StreamStatus.ERROR)
+        sched_n = sum(1 for s in states if s.status == StreamStatus.SCHEDULED)
+        stop_n  = sum(1 for s in states if s.status == StreamStatus.STOPPED)
         pending = sum(1 for e in self.manager.events if not e.played)
+
+        ip   = _local_ip()
+        port = get_web_port()
+        schema = "https" if port == 443 else "http"
+
         t = Text()
-        t.append("CPU  ", style=CD); t.append_text(self._progress_bar(cpu,    14)); t.append("\n")
-        t.append("MEM  ", style=CD); t.append_text(self._progress_bar(mem.percent, 14)); t.append("\n\n")
-        t.append("Cores  ",  style=CD); t.append(str(CPU_COUNT), style=CC)
-        t.append("  |  Streams  ", style=CD); t.append(str(len(self.manager.states)), style=CW); t.append("\n")
-        t.append("LIVE   ", style=CD); t.append(str(live_n), style=CG)
-        t.append("   SCHED  ", style=CD); t.append(str(sched_n), style=CC)
-        t.append("   ERR  ", style=CD); t.append(str(err_n), style=(CR if err_n else CD)); t.append("\n")
-        t.append("Events ", style=CD); t.append(str(pending), style=CM); t.append(" pending\n\n")
-        t.append(f"  LAN: {_local_ip()}", style=CD); t.append("\n")
-        t.append(f"  Web: http://{_local_ip()}:{get_web_port()}", style="dim cyan"); t.append("\n")
+        t.append("CPU  ", style=CD); t.append_text(self._progress_bar(cpu, 12));    t.append("\n")
+        t.append("MEM  ", style=CD); t.append_text(self._progress_bar(mem.percent, 12)); t.append("\n\n")
+        t.append("Cores ",  style=CD); t.append(str(CPU_COUNT), style=CC)
+        t.append("  Streams ", style=CD); t.append(str(len(states)), style=CW); t.append("\n")
+        # Status breakdown with distinct colours
+        t.append("● ", style="bold bright_green");   t.append(f"LIVE {live_n}  ",  style=CG)
+        t.append("◷ ", style="bold bright_cyan");    t.append(f"SCHED {sched_n}",  style=CC); t.append("\n")
+        t.append("● ", style="dim white");            t.append(f"STOP {stop_n}  ", style=CD)
+        t.append("● ", style="bold bright_red");      t.append(f"ERR {err_n}",     style=CR if err_n else CD)
+        t.append("\n")
+        t.append("◈ ", style=CM); t.append(f"Events {pending} pending\n\n", style=CM)
+        t.append(f"  LAN: {ip}\n", style=CD)
+        t.append(f"  Web: {schema}://{ip}:{port}\n", style="bold bright_cyan")
         t.append(datetime.now().strftime("  %a  %Y-%m-%d  %H:%M:%S"), style=CD)
+
         return Panel(t, title=f"[bold {CW}]SYSTEM[/]",
                      border_style="bright_black", box=box.ROUNDED, padding=(0, 1))
+
+    # ── log panel ────────────────────────────────────────────────────────────
 
     def _log_panel(self) -> Panel:
         entries = self.glog.last(9)
         t = Text()
         colors = {"INFO": CW, "WARN": CY, "ERROR": CR}
         for msg, lvl in entries:
+            prefix = {"INFO": "  ", "WARN": "⚠ ", "ERROR": "✖ "}.get(lvl, "  ")
+            t.append(prefix, style=colors.get(lvl, CW))
             t.append(msg + "\n", style=colors.get(lvl, CW))
         return Panel(t, title=f"[bold {CW}]EVENT LOG[/]",
                      border_style="bright_black", box=box.ROUNDED, padding=(0, 1))
 
+    # ── hotkeys bar ───────────────────────────────────────────────────────────
+
     @staticmethod
     def _hotkeys() -> Text:
         t = Text(justify="center")
-        for k, v in [
+        keys = [
             ("↑↓/1-9", "Select"), ("R", "Restart"), ("S", "Stop"), ("T", "Start"),
-            ("A", "All Start"), ("X", "All Stop"), ("N", "Skip Next"),
-            ("←→", "±10s"), ("Shift←→", "±60s"),
-            ("G", "Goto time"), ("L", "Reload CSV"), ("U", "Export URLs"), ("Q", "Quit"),
-        ]:
+            ("A", "Start All"), ("X", "Stop All"), ("N", "Skip"),
+            ("←→", "±10s"), ("⇧←→", "±60s"), ("G", "Goto"),
+            ("D", "Detail"), ("V", "Log"), ("F", "Rescan"),
+            ("P", "Port"), ("L", "Reload"), ("U", "Export"), ("H", "Help"), ("Q", "Quit"),
+        ]
+        for k, v in keys:
             t.append(f" [{k}]", style=f"bold {CC}")
-            t.append(f" {v} ",  style=CD)
+            t.append(f" {v}", style=CD)
+            t.append(" ·", style="dim bright_black")
         return t
+
+    # ── render ────────────────────────────────────────────────────────────────
 
     def render(self) -> Layout:
         layout = Layout()
         layout.split_column(
-            Layout(name="banner",  size=8),
+            Layout(name="header",  size=3),
             Layout(name="streams", ratio=1),
-            Layout(name="bottom",  size=14),
+            Layout(name="bottom",  size=13),
             Layout(name="keys",    size=3),
         )
-        banner_txt = Text.from_markup(BANNER_TEXT)
-        sub = Text(
-            f"  Multi-Stream RTSP Scheduler  ·  v{APP_VER}  ·  {APP_AUTHOR}  ·  "
-            f"Web UI → http://{_local_ip()}:{get_web_port()}",
-            style="dim white", justify="center",
-        )
-        bf = Text()
-        bf.append_text(banner_txt)
-        bf.append("\n")
-        bf.append_text(sub)
-        layout["banner"].update(Align.center(bf, vertical="middle"))
+        layout["header"].update(_header_panel())
         layout["streams"].update(Panel(
             self._streams_table(),
             title=(
@@ -301,9 +384,7 @@ class KeyboardHandler:
 # =============================================================================
 # TUI SEEK PROMPT
 # =============================================================================
-def do_seek_prompt(
-    manager: StreamManager, state, console: Console
-) -> None:
+def do_seek_prompt(manager: StreamManager, state, console: Console) -> None:
     try:
         ts = Prompt.ask(
             f"\n[{CC}]Seek [{state.config.name}] to (HH:MM:SS or seconds)[/{CC}]",
@@ -321,6 +402,277 @@ def do_seek_prompt(
         manager.seek_stream(state, max(0.0, secs))
     except Exception:
         pass
+
+
+# =============================================================================
+# PORT CHANGE PROMPT
+# =============================================================================
+def do_port_prompt(console: Console, glog: LogBuffer) -> None:
+    """
+    Prompt the operator for a new web port, update constants, and log the
+    change.  The caller (main TUI loop) is responsible for restarting the
+    WebServer if it needs to bind to the new port immediately.
+    """
+    try:
+        current = get_web_port()
+        raw = Prompt.ask(
+            f"\n[{CC}]New web-UI port[/{CC}] [{CD}](current: {current})[/{CD}]",
+            console=console,
+            default=str(current),
+        )
+        new_port = int(raw.strip())
+        if not (1 <= new_port <= 65535):
+            console.print(f"[{CR}]  ✖ Port must be 1–65535. Unchanged.[/]")
+            return
+        if new_port == current:
+            console.print(f"[{CD}]  Port unchanged ({current}).[/]")
+            return
+        set_web_port(new_port)
+        glog.add(f"Web port changed {current} → {new_port}  (restart to rebind)")
+        console.print(
+            f"[{CG}]  ✔ Web port updated to {new_port}.[/]  "
+            f"[{CD}]Restart HydraCast to rebind the server socket.[/]"
+        )
+    except (ValueError, TypeError):
+        console.print(f"[{CR}]  ✖ Invalid port number. Unchanged.[/]")
+    except Exception as exc:
+        console.print(f"[{CR}]  ✖ Error: {exc}[/]")
+
+
+# =============================================================================
+# DETAIL OVERLAY  (redesigned — richer, cleaner)
+# =============================================================================
+def _show_detail(live: Live, state, console: Console) -> None:
+    if state is None:
+        return
+    live.stop()
+    console.clear()
+    cfg = state.config
+    st  = state
+
+    # ── left column: config ──────────────────────────────────────────────────
+    left = Text()
+    left.append("CONFIGURATION\n", style=f"bold {CW}")
+    left.append("─" * 32 + "\n", style="dim bright_black")
+
+    def _kv(k: str, v: str, vc: str = CW) -> None:
+        left.append(f"  {k:<18}", style=CD)
+        left.append(f"{v}\n",     style=vc)
+
+    _kv("Name",        cfg.name,               CW)
+    _kv("RTSP Port",   str(cfg.port),           CC)
+    _kv("Stream Path", f"/{cfg.rtsp_path}",     CC)
+    _kv("RTSP URL",    cfg.rtsp_url,            "dim cyan")
+    _kv("External URL",cfg.rtsp_url_external,   "dim cyan")
+    if cfg.hls_enabled:
+        _kv("HLS URL", cfg.hls_url,             "dim cyan")
+    left.append("\n")
+    _kv("Schedule",    cfg.weekdays_display(),   CW)
+    _kv("Shuffle",     "yes" if cfg.shuffle else "no")
+    _kv("HLS",         "enabled" if cfg.hls_enabled else "off",
+        CG if cfg.hls_enabled else CD)
+    left.append("\n")
+    _kv("Bitrate",     f"V:{cfg.video_bitrate}  A:{cfg.audio_bitrate}")
+    if cfg.compliance_enabled:
+        _kv("Compliance",  f"ON  start {cfg.compliance_start}", CY)
+        _kv("Comp. Loop",  "yes" if cfg.compliance_loop else "no")
+    if cfg.folder_source:
+        _kv("Folder",  str(cfg.folder_source), CD)
+
+    # ── right column: live state ──────────────────────────────────────────────
+    right = Text()
+    right.append("LIVE STATE\n", style=f"bold {CW}")
+    right.append("─" * 32 + "\n", style="dim bright_black")
+
+    dot_style, lbl_style = _STATUS_STYLE.get(st.status, ("white", "white"))
+    right.append(f"  {st.status.dot} ", style=dot_style)
+    right.append(f"{st.status.label}\n\n", style=f"bold {lbl_style}")
+
+    def _rv(k: str, v: str, vc: str = CW) -> None:
+        right.append(f"  {k:<18}", style=CD)
+        right.append(f"{v}\n",     style=vc)
+
+    _rv("Position",    st.format_pos())
+    _rv("Progress",    f"{st.progress:.1f}%")
+    rem = st.time_remaining()
+    if rem > 0:
+        r = int(rem)
+        _rv("Remaining", f"−{r//3600:02d}:{(r%3600)//60:02d}:{r%60:02d}", CY)
+    _rv("FPS",         f"{st.fps:.1f}" if st.fps > 0 else "—")
+    _rv("Bitrate",     st.bitrate)
+    _rv("Speed",       st.speed)
+    _rv("Loop count",  str(st.loop_count))
+    _rv("Restarts",    str(st.restart_count),
+        CR if st.restart_count > 3 else CW)
+    if st.started_at:
+        _rv("Running since", st.started_at.strftime("%H:%M:%S"))
+    current = st.current_file()
+    if current:
+        right.append("\n")
+        right.append(f"  Now playing:\n", style=CD)
+        right.append(f"  {current.name}\n", style=CW)
+        right.append(f"  {current.parent}\n", style=CD)
+    if st.error_msg:
+        right.append("\n")
+        right.append("  ERROR:\n", style=f"bold {CR}")
+        right.append(f"  {st.error_msg[:200]}\n", style=CR)
+    if st.compliance_alert:
+        right.append("\n")
+        right.append("  ⚠ COMPLIANCE ALERT:\n", style=f"bold {CY}")
+        right.append(f"  {st.compliance_alert}\n", style=CY)
+
+    # ── playlist section ──────────────────────────────────────────────────────
+    playlist_text = Text()
+    playlist_text.append(f"\nPLAYLIST  ({len(cfg.playlist)} files)\n",
+                          style=f"bold {CW}")
+    playlist_text.append("─" * 64 + "\n", style="dim bright_black")
+    for idx, item in enumerate(cfg.sorted_playlist()[:20]):
+        marker = "▶ " if idx == st.playlist_index else "  "
+        pri    = f"[p{item.priority}]" if item.priority != 999 else ""
+        playlist_text.append(
+            f"  {marker}{idx+1:>3}.  {item.file_path.name}  "
+            f"{pri}  @{item.start_position}\n",
+            style=CW if idx == st.playlist_index else CD,
+        )
+    if len(cfg.playlist) > 20:
+        playlist_text.append(f"  … and {len(cfg.playlist)-20} more\n", style=CD)
+
+    # ── layout ────────────────────────────────────────────────────────────────
+    cols = Table.grid(expand=True)
+    cols.add_column(ratio=1)
+    cols.add_column(ratio=1)
+    cols.add_row(left, right)
+
+    body = Text()
+    body.append_text(Text.assemble(cols))    # grid renders inline
+    # Fall back: just print the two panels side-by-side
+    console.print(Panel(
+        left,
+        title=f"[bold {CW}]◈ {cfg.name}  —  Configuration[/]",
+        border_style=CC, box=box.ROUNDED, padding=(1, 2),
+    ))
+    console.print(Panel(
+        right,
+        title=f"[bold {CW}]◈ {cfg.name}  —  Live State[/]",
+        border_style=CG if st.status == StreamStatus.LIVE else "bright_black",
+        box=box.ROUNDED, padding=(1, 2),
+    ))
+    console.print(Panel(
+        playlist_text,
+        title=f"[bold {CW}]◈ {cfg.name}  —  Playlist[/]",
+        border_style="bright_black", box=box.ROUNDED, padding=(0, 1),
+    ))
+    console.print(f"\n[{CD}]  Press any key to return …[/]")
+
+
+# =============================================================================
+# LOG VIEWER OVERLAY
+# =============================================================================
+def _show_log_viewer(
+    live: Live, state, console: Console,
+    kb: KeyboardHandler, shutdown_event: threading.Event,
+) -> None:
+    if state is None:
+        return
+    live.stop()
+    console.clear()
+    scroll = 0
+    page   = 30
+
+    while not shutdown_event.is_set():
+        console.clear()
+        entries = list(state.log_buffer.last(200)) if hasattr(state, "log_buffer") else list(state.log)
+        visible = entries[scroll: scroll + page]
+        colors  = {"INFO": CW, "WARN": CY, "ERROR": CR}
+        t = Text()
+        for entry in visible:
+            if isinstance(entry, tuple):
+                msg, lvl = entry
+            else:
+                msg, lvl = str(entry), "INFO"
+            t.append(msg + "\n", style=colors.get(lvl, CW))
+        console.print(Panel(
+            t,
+            title=(
+                f"[bold {CW}]LOG — {state.config.name}[/]  "
+                f"[{CD}](lines {scroll+1}–"
+                f"{min(scroll+page, len(entries))} of {len(entries)})[/]"
+            ),
+            border_style=CC, box=box.ROUNDED, padding=(0, 1),
+        ))
+        console.print(f"[{CD}]  ↑↓ scroll  ·  any other key returns[/]")
+
+        key = None
+        for _ in range(20):
+            key = kb.get()
+            if key:
+                break
+            time.sleep(0.05)
+
+        if key == "UP":
+            scroll = max(0, scroll - 1)
+        elif key == "DOWN":
+            scroll = min(max(0, len(entries) - page), scroll + 1)
+        elif key is not None:
+            break
+
+    console.clear()
+    live.start()
+
+
+# =============================================================================
+# HELP OVERLAY
+# =============================================================================
+def _show_help(live: Live, console: Console, kb: KeyboardHandler, shutdown_event: threading.Event) -> None:
+    live.stop()
+    console.clear()
+    rows = [
+        ("↑ / ↓",          "Move selection up / down"),
+        ("1 – 9",           "Jump directly to stream #N"),
+        ("PgUp / PgDn",     "Scroll 5 streams at a time"),
+        ("R",               "Restart selected stream  [confirmation]"),
+        ("S",               "Stop selected stream"),
+        ("T",               "Start selected stream"),
+        ("A",               "Start ALL streams"),
+        ("X",               "Stop ALL streams  [confirmation]"),
+        ("N",               "Skip to next file in playlist"),
+        ("← / →",          "Seek ±10 seconds"),
+        ("Shift ← / →",    "Seek ±60 seconds"),
+        ("G",               "Go-to-time prompt (seek)"),
+        ("F",               "Force folder rescan"),
+        ("C",               "Clear error state / reset restart count"),
+        ("D",               "Stream detail overlay (config + live state)"),
+        ("V",               "Per-stream log viewer"),
+        ("P",               "Change web-UI port (live, no restart needed for TUI)"),
+        ("L",               "Reload streams.json from disk"),
+        ("U",               "Export stream URLs to file"),
+        ("H / ?",           "This help screen"),
+        ("Q / Ctrl-C",      "Quit HydraCast"),
+    ]
+    t = Table(box=box.ROUNDED, border_style="bright_black",
+              header_style=f"bold {CW}", show_header=True)
+    t.add_column("Key",    style=f"bold {CC}", width=20)
+    t.add_column("Action", style=CW)
+    for k, v in rows:
+        t.add_row(k, v)
+    console.print(Panel(
+        Align.center(t, vertical="middle"),
+        title=f"[bold {CW}]◈ KEYBOARD HELP[/]",
+        border_style=CC, box=box.ROUNDED,
+    ))
+    console.print(f"\n[{CD}]  Press any key to return …[/]")
+
+    def _wait_key() -> None:
+        while kb.get():
+            pass
+        while not shutdown_event.is_set():
+            if kb.get() is not None:
+                return
+            time.sleep(0.05)
+
+    _wait_key()
+    console.clear()
+    live.start()
 
 
 # =============================================================================
@@ -374,126 +726,27 @@ def run_tui_loop(
                 return
             time.sleep(0.05)
 
-    # ── overlay: help ─────────────────────────────────────────────────────────
-    def _show_help(live: Live) -> None:
+    def _confirm(live: Live, question: str) -> bool:
+        """Pause live, ask yes/no, resume. Returns True if confirmed."""
         live.stop()
         console.clear()
-        rows = [
-            ("↑ / ↓",       "Move selection up / down"),
-            ("1 – 9",        "Jump directly to stream #N"),
-            ("PgUp / PgDn",  "Scroll 5 streams at a time"),
-            ("R",            "Restart selected stream"),
-            ("S",            "Stop selected stream"),
-            ("T",            "Start selected stream"),
-            ("A",            "Start ALL streams"),
-            ("X",            "Stop ALL streams"),
-            ("N",            "Skip to next scheduled event"),
-            ("← / →",       "Seek ±10 seconds"),
-            ("Shift ← / →", "Seek ±60 seconds"),
-            ("G",            "Go-to-time prompt (seek)"),
-            ("F",            "Force folder rescan"),
-            ("C",            "Clear error state / reset restart count"),
-            ("D",            "Stream detail overlay"),
-            ("V",            "Per-stream log viewer"),
-            ("L",            "Reload streams.csv"),
-            ("U",            "Export stream URLs to file"),
-            ("H / ?",        "This help screen"),
-            ("Q / Ctrl-C",   "Quit HydraCast"),
-        ]
-        t = Table(box=box.ROUNDED, border_style="bright_black",
-                  header_style=f"bold {CW}", show_header=True)
-        t.add_column("Key",    style=f"bold {CC}", width=18)
-        t.add_column("Action", style=CW)
-        for k, v in rows:
-            t.add_row(k, v)
-        console.print(Panel(
-            Align.center(t, vertical="middle"),
-            title=f"[bold {CW}]KEYBOARD HELP[/]",
-            border_style=CC, box=box.ROUNDED,
-        ))
-        console.print(f"\n[{CD}]  Press any key to return …[/]")
-        _wait_key()
-        console.clear()
-        live.start()
-
-    # ── overlay: stream detail ────────────────────────────────────────────────
-    def _show_detail(live: Live, state) -> None:
-        if state is None:
-            return
-        live.stop()
-        console.clear()
-        cfg = state.config
-        t = Text()
-        t.append(f"Name      : {cfg.name}\n",    style=CW)
-        t.append(f"Port      : {cfg.port}\n",    style=CC)
-        t.append(f"RTSP URL  : {cfg.rtsp_url}\n", style="dim cyan")
-        if cfg.hls_enabled:
-            t.append(f"HLS port  : {cfg.hls_port}\n", style=CC)
-        t.append(f"Schedule  : {cfg.weekdays_display()}\n", style=CW)
-        t.append(f"Shuffle   : {'yes' if cfg.shuffle else 'no'}\n", style=CW)
-        t.append(f"Loop      : {'yes' if cfg.loop else 'no'}\n",    style=CW)
-        t.append(f"Files ({len(cfg.playlist)}):\n", style=CD)
-        for p in cfg.playlist:
-            t.append(f"  {p}\n", style="dim white")
-        console.print(Panel(
-            t,
-            title=f"[bold {CW}]DETAIL — {cfg.name}[/]",
-            border_style=CC, box=box.ROUNDED, padding=(1, 2),
-        ))
-        console.print(f"\n[{CD}]  Press any key to return …[/]")
-        _wait_key()
-        console.clear()
-        live.start()
-
-    # ── overlay: per-stream log viewer ────────────────────────────────────────
-    def _show_log_viewer(live: Live, state) -> None:
-        if state is None:
-            return
-        live.stop()
-        console.clear()
-        scroll = 0
-        page   = 30
-
+        console.print(f"\n[bold {CY}]  ⚠  {question}[/]")
+        console.print(f"[{CD}]  [Y] Yes   [N] No / any other key — cancel\n[/]")
         while not shutdown_event.is_set():
-            console.clear()
-            # StreamState exposes its own LogBuffer as .log_buffer
-            entries = list(state.log_buffer.last(200))
-            visible = entries[scroll: scroll + page]
-            colors  = {"INFO": CW, "WARN": CY, "ERROR": CR}
-            t = Text()
-            for msg, lvl in visible:
-                t.append(msg + "\n", style=colors.get(lvl, CW))
-            console.print(Panel(
-                t,
-                title=(
-                    f"[bold {CW}]LOG — {state.config.name}[/]  "
-                    f"[{CD}](lines {scroll+1}–"
-                    f"{min(scroll+page, len(entries))} of {len(entries)})[/]"
-                ),
-                border_style=CC, box=box.ROUNDED, padding=(0, 1),
-            ))
-            console.print(f"[{CD}]  ↑↓ scroll  ·  any other key returns[/]")
-
-            key = None
-            for _ in range(20):          # poll ~1 s
-                key = kb.get()
-                if key:
-                    break
-                time.sleep(0.05)
-
-            if key == "UP":
-                scroll = max(0, scroll - 1)
-            elif key == "DOWN":
-                scroll = min(max(0, len(entries) - page), scroll + 1)
-            elif key is not None:
-                break
-
-        console.clear()
+            k = kb.get()
+            if k == "Y":
+                console.clear()
+                live.start()
+                return True
+            if k is not None:
+                console.clear()
+                live.start()
+                return False
+            time.sleep(0.05)
         live.start()
+        return False
 
-    # ── seek helper ───────────────────────────────────────────────────────────
     def _seek(state, delta: float) -> None:
-        # seek_start_pos tracks current playback position (set by worker)
         current = getattr(state, "seek_start_pos", 0.0) or 0.0
         manager.seek_stream(state, max(0.0, current + delta))
 
@@ -516,7 +769,7 @@ def run_tui_loop(
             state = _selected_state()
             n     = len(manager.states)
 
-            # navigation
+            # ── navigation ───────────────────────────────────────────────────
             if key == "UP":
                 tui.selected = (tui.selected - 1) % max(1, n)
             elif key == "DOWN":
@@ -530,10 +783,11 @@ def run_tui_loop(
                 if 0 <= idx < n:
                     tui.selected = idx
 
-            # stream control
+            # ── stream control  (destructive actions get confirmation) ────────
             elif key == "R" and state:
-                manager.restart_stream(state)
-                glog.add(f"Restart → {state.config.name}")
+                if _confirm(live, f"Restart stream  [{state.config.name}]?"):
+                    manager.restart_stream(state)
+                    glog.add(f"Restart → {state.config.name}")
             elif key == "S" and state:
                 manager.stop_stream(state)
                 glog.add(f"Stop → {state.config.name}")
@@ -544,13 +798,14 @@ def run_tui_loop(
                 manager.start_all()
                 glog.add("Start ALL streams")
             elif key == "X":
-                manager.stop_all()
-                glog.add("Stop ALL streams")
+                if _confirm(live, "Stop ALL streams?"):
+                    manager.stop_all()
+                    glog.add("Stop ALL streams")
             elif key == "N" and state:
                 manager.skip_next(state)
                 glog.add(f"Skip next → {state.config.name}")
 
-            # seeking
+            # ── seeking ───────────────────────────────────────────────────────
             elif key == "LEFT"  and state:
                 _seek(state, -10.0)
             elif key == "RIGHT" and state:
@@ -564,7 +819,7 @@ def run_tui_loop(
                 do_seek_prompt(manager, state, console)
                 live.start()
 
-            # folder / error management
+            # ── folder / error management ─────────────────────────────────────
             elif key == "F" and state:
                 try:
                     manager.rescan_folder(state)
@@ -578,19 +833,32 @@ def run_tui_loop(
                 except AttributeError:
                     glog.add("clear_error not available on this manager", "WARN")
 
-            # overlays
-            elif key in ("H", "?"):
-                _show_help(live)
-            elif key == "D":
-                _show_detail(live, state)
-            elif key == "V":
-                _show_log_viewer(live, state)
+            # ── port change ───────────────────────────────────────────────────
+            elif key == "P":
+                live.stop()
+                console.clear()
+                do_port_prompt(console, glog)
+                _wait_key()
+                console.clear()
+                live.start()
 
-            # misc
+            # ── overlays ──────────────────────────────────────────────────────
+            elif key in ("H", "?"):
+                _show_help(live, console, kb, shutdown_event)
+            elif key == "D":
+                if state:
+                    _show_detail(live, state, console)
+                    _wait_key()
+                    console.clear()
+                    live.start()
+            elif key == "V":
+                _show_log_viewer(live, state, console, kb, shutdown_event)
+
+            # ── misc ──────────────────────────────────────────────────────────
             elif key == "L":
                 try:
                     manager.reload_csv()
-                    glog.add("streams.csv reloaded")
+                    glog.add("streams.json reloaded")
                 except AttributeError:
                     glog.add("reload_csv not available on this manager", "WARN")
             elif key == "U":
@@ -600,7 +868,7 @@ def run_tui_loop(
                 except Exception as exc:
                     glog.add(f"URL export error: {exc}", "ERROR")
 
-            # quit
+            # ── quit ─────────────────────────────────────────────────────────
             elif key in ("Q", "\x03", "\x1c"):   # Q, Ctrl-C, Ctrl-backslash
                 shutdown_event.set()
 
