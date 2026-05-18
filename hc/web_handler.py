@@ -1839,6 +1839,143 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             status = 400 if not created else (207 if errors else 200)
             self._json({"created": created, "errors": errors}, status)
 
+        elif action == "open_firewall":
+            # POST /api/open_firewall  {"ports": [8555, 8556, 8558, 8559]}
+            # Attempt to open the given TCP ports in the system firewall.
+            # Returns {ok, msg, opened, failed, platform, elevated}
+            import sys as _sys
+            raw_ports = data.get("ports", [])
+            try:
+                ports_to_open = [int(p) for p in raw_ports if 0 < int(p) < 65536]
+            except (TypeError, ValueError):
+                self._json({"ok": False, "msg": "Invalid ports list"}); return
+            if not ports_to_open:
+                self._json({"ok": False, "msg": "No valid ports provided"}); return
+
+            platform = _sys.platform
+            opened: list = []
+            failed: list = []
+            elevated = False
+            msg = ""
+
+            try:
+                if platform.startswith("win"):
+                    import ctypes
+                    elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
+                    if not elevated:
+                        self._json({
+                            "ok": False,
+                            "msg": "Administrator privileges required to modify Windows Firewall.",
+                            "platform": "windows",
+                            "elevated": False,
+                            "hint": "Re-launch HydraCast as Administrator to auto-open ports.",
+                        }); return
+                    import subprocess as _sp
+                    for p in ports_to_open:
+                        rule = f"HydraCast Port {p}"
+                        # Check if already exists
+                        chk = _sp.run(
+                            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule}"],
+                            capture_output=True, text=True,
+                        )
+                        if "No rules match" not in chk.stdout and chk.returncode == 0:
+                            opened.append(p)  # already open
+                            continue
+                        r = _sp.run(
+                            ["netsh", "advfirewall", "firewall", "add", "rule",
+                             f"name={rule}", "dir=in", "action=allow",
+                             "protocol=TCP", f"localport={p}"],
+                            capture_output=True, text=True,
+                        )
+                        if r.returncode == 0:
+                            opened.append(p)
+                        else:
+                            failed.append({"port": p, "error": r.stderr.strip() or "netsh error"})
+                    msg = (
+                        f"Opened {len(opened)} port(s) via Windows Firewall (netsh)."
+                        if opened else "No ports were opened."
+                    )
+
+                elif platform.startswith("linux"):
+                    import os as _os, subprocess as _sp
+                    elevated = (_os.geteuid() == 0)
+                    if not elevated:
+                        self._json({
+                            "ok": False,
+                            "msg": "Root privileges required to modify Linux firewall.",
+                            "platform": "linux",
+                            "elevated": False,
+                            "hint": "Run HydraCast as root, or manually open ports with:\n"
+                                    + "\n".join(f"  sudo ufw allow {p}/tcp" for p in ports_to_open),
+                        }); return
+                    import shutil as _sh
+                    if _sh.which("ufw"):
+                        for p in ports_to_open:
+                            r = _sp.run(["ufw", "allow", f"{p}/tcp"], capture_output=True, text=True)
+                            (opened if r.returncode == 0 else failed).append(
+                                p if r.returncode == 0 else {"port": p, "error": r.stderr.strip()}
+                            )
+                        _sp.run(["ufw", "--force", "enable"], capture_output=True)
+                        msg = f"Opened {len(opened)} port(s) via ufw."
+                    elif _sh.which("firewall-cmd"):
+                        for p in ports_to_open:
+                            r = _sp.run(
+                                ["firewall-cmd", "--permanent", "--add-port", f"{p}/tcp"],
+                                capture_output=True, text=True,
+                            )
+                            (opened if r.returncode == 0 else failed).append(
+                                p if r.returncode == 0 else {"port": p, "error": r.stderr.strip()}
+                            )
+                        _sp.run(["firewall-cmd", "--reload"], capture_output=True)
+                        msg = f"Opened {len(opened)} port(s) via firewalld."
+                    elif _sh.which("iptables"):
+                        for p in ports_to_open:
+                            chk = _sp.run(
+                                ["iptables", "-C", "INPUT", "-p", "tcp", "--dport", str(p), "-j", "ACCEPT"],
+                                capture_output=True,
+                            )
+                            if chk.returncode == 0:
+                                opened.append(p); continue
+                            r = _sp.run(
+                                ["iptables", "-I", "INPUT", "-p", "tcp", "--dport", str(p), "-j", "ACCEPT"],
+                                capture_output=True, text=True,
+                            )
+                            (opened if r.returncode == 0 else failed).append(
+                                p if r.returncode == 0 else {"port": p, "error": r.stderr.strip()}
+                            )
+                        msg = f"Opened {len(opened)} port(s) via iptables."
+                    else:
+                        self._json({
+                            "ok": False,
+                            "msg": "No supported firewall tool found (ufw / firewall-cmd / iptables).",
+                            "platform": "linux",
+                            "elevated": elevated,
+                        }); return
+
+                else:
+                    self._json({
+                        "ok": False,
+                        "msg": "Automatic firewall configuration is not supported on this OS. "
+                               "Please open the required ports manually.",
+                        "platform": platform,
+                        "elevated": False,
+                    }); return
+
+            except Exception as exc:
+                log.error("open_firewall error: %s", exc)
+                self._json({"ok": False, "msg": f"Firewall error: {exc}"}); return
+
+            ok = len(opened) > 0 and len(failed) == 0
+            log.info("open_firewall: opened=%s failed=%s", opened, failed)
+            self._json({
+                "ok":       ok,
+                "msg":      msg,
+                "opened":   opened,
+                "failed":   failed,
+                "platform": platform,
+                "elevated": elevated,
+            })
+
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
 
