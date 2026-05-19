@@ -1,6 +1,17 @@
 """
 hc/constants.py  —  All global constants and directory paths.
 
+v6.3 changes
+────────────
+• Multi-root media support: get_media_roots() / set_media_roots() / add_media_root()
+  / remove_media_root() manage an ordered list of media root directories.
+  The default <base>/media is always the primary root.  Roots are persisted to
+  config/media_roots.json and loaded automatically on startup.
+• load_media_roots() / save_media_roots() — called once from main.py after
+  set_base_dir(); the Web UI and TUI write through save_media_roots() so the
+  list survives restarts.
+• Backup/restore includes the roots list via the "media_roots" key.
+
 v6.2 changes
 ────────────
 • apply_cli_args(args) helper: call it from main.py after argparse.parse_args()
@@ -17,7 +28,7 @@ from __future__ import annotations
 import multiprocessing
 import platform
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 # ── App metadata ──────────────────────────────────────────────────────────────
 APP_NAME   = "HydraCast"
@@ -54,6 +65,7 @@ def set_base_dir(script_path: Path) -> None:
         _dirs[key].mkdir(parents=True, exist_ok=True)
 
 
+
 # ── Path accessors ─────────────────────────────────────────────────────────────
 def _require(key: str) -> Path:
     if key not in _dirs:
@@ -77,7 +89,138 @@ def EVENTS_FILE()    -> Path: return _require("EVENTS_JSON")
 def CSV_FILE()       -> Path: return _require("CSV")
 def EVENTS_CSV()     -> Path: return _require("EVENTS_CSV")
 
-# ── Web / upload ──────────────────────────────────────────────────────────────
+
+# ── Multi-root media support ──────────────────────────────────────────────────
+# The list is stored in config/media_roots.json.
+# The default <base>/media is *always* treated as the primary root even when
+# absent from the persisted list (get_media_roots() injects it automatically).
+_media_roots: List[Path] = []
+
+
+def _media_roots_file() -> Path:
+    """Return path to config/media_roots.json (requires set_base_dir first)."""
+    return _require("CONFIG") / "media_roots.json"
+
+
+def load_media_roots() -> None:
+    """
+    Load extra media roots from config/media_roots.json.
+    Call once from main.py after set_base_dir().  Missing file is fine —
+    the in-memory list stays empty and get_media_roots() returns the default.
+    """
+    import json as _json
+    global _media_roots
+    p = _media_roots_file()
+    if not p.exists():
+        _media_roots = []
+        return
+    try:
+        raw = _json.loads(p.read_text(encoding="utf-8"))
+        _media_roots = [Path(r) for r in raw if r]
+    except Exception:
+        _media_roots = []
+
+
+def save_media_roots() -> None:
+    """
+    Persist the current _media_roots list to config/media_roots.json.
+    Excludes the default MEDIA_DIR so it is re-injected dynamically on load.
+    """
+    import json as _json
+    try:
+        default = _require("MEDIA")
+    except RuntimeError:
+        return
+    to_save = [str(r) for r in _media_roots if r.resolve() != default.resolve()]
+    p = _media_roots_file()
+    tmp = p.with_suffix(".json.tmp")
+    try:
+        tmp.write_text(_json.dumps(to_save, indent=2), encoding="utf-8")
+        tmp.replace(p)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def get_media_roots() -> List[Path]:
+    """
+    Return the ordered list of media root directories.
+    The default MEDIA_DIR is always first.  Additional user-defined roots
+    follow in the order they were added.
+    """
+    try:
+        default = _require("MEDIA")
+    except RuntimeError:
+        return []
+    seen: set[Path] = {default.resolve()}
+    result: List[Path] = [default]
+    for r in _media_roots:
+        resolved = r.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            result.append(r)
+    return result
+
+
+def set_media_roots(roots: List[Path]) -> None:
+    """
+    Replace the extra roots list and persist to disk.
+    The default MEDIA_DIR is always kept as the first root; duplicates removed.
+    """
+    try:
+        default = _require("MEDIA")
+    except RuntimeError:
+        return
+    seen: set[Path] = {default.resolve()}
+    extras: List[Path] = []
+    for r in roots:
+        p = Path(r)
+        res = p.resolve()
+        if res not in seen:
+            seen.add(res)
+            extras.append(p)
+    global _media_roots
+    _media_roots = extras
+    save_media_roots()
+
+
+def add_media_root(path: Path) -> bool:
+    """
+    Add *path* as an extra media root.
+    Returns True if added, False if already present or equals the default root.
+    """
+    try:
+        default = _require("MEDIA")
+    except RuntimeError:
+        return False
+    r = path.resolve()
+    if r == default.resolve():
+        return False
+    for existing in _media_roots:
+        if existing.resolve() == r:
+            return False
+    _media_roots.append(path)
+    save_media_roots()
+    return True
+
+
+def remove_media_root(path: Path) -> bool:
+    """
+    Remove *path* from the extra roots list.
+    The default MEDIA_DIR cannot be removed.
+    Returns True if removed, False if not found.
+    """
+    global _media_roots
+    r = path.resolve()
+    before = len(_media_roots)
+    _media_roots = [x for x in _media_roots if x.resolve() != r]
+    if len(_media_roots) != before:
+        save_media_roots()
+        return True
+    return False
+
+
+
 # Default is 443 (HTTPS).  WebServer will auto-generate a self-signed cert when
 # ssl/cert.pem + ssl/key.pem are absent.  Override with --web-port 8080 for
 # plain HTTP (no cert required).
@@ -275,7 +418,7 @@ def apply_cli_args(args) -> None:
 
 
 # ── Weekdays ──────────────────────────────────────────────────────────────────
-from typing import Any, List, Union  # noqa: E402
+from typing import Any, Union  # noqa: E402
 WEEKDAY_MAP: Dict[str, Any] = {
     "mon": 0, "monday": 0, "tue": 1, "tuesday": 1,
     "wed": 2, "wednesday": 2, "thu": 3, "thursday": 3,
