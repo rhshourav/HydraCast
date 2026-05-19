@@ -321,7 +321,7 @@ class _FileManagerMixin:
             target = root_dir / rel_within
             safe   = _safe_in_root(target, root_dir)
             if safe is None or not safe.is_dir():
-                self._json({"error": "Directory not found or access denied"}, 404)
+                self._json({"error": f"Directory not found or access denied: '{rel_raw}'"}, 404)
                 return
         else:
             safe = root_dir
