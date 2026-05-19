@@ -36,6 +36,80 @@ log = logging.getLogger(__name__)
 # Module-level manager reference (set by hydracast.py)
 _WEB_MANAGER = None
 
+
+# =============================================================================
+# MULTI-ROOT PATH HELPERS
+# =============================================================================
+
+def _safe_in_root(target: Path, root: Path) -> Optional[Path]:
+    """
+    Return resolved *target* if it sits inside *root*; None otherwise.
+    Works for any root directory, not just MEDIA_DIR().
+    """
+    try:
+        resolved_target = target.resolve()
+        resolved_root   = root.resolve()
+        resolved_target.relative_to(resolved_root)
+        return resolved_target
+    except (ValueError, OSError):
+        return None
+
+
+def _safe_in_any_root(target: Path) -> Optional[Path]:
+    """
+    Return resolved *target* if it sits inside ANY configured media root.
+    Use instead of _safe_path(p, MEDIA_DIR()) for multi-root support.
+    """
+    try:
+        resolved = target.resolve()
+    except OSError:
+        return None
+    for root in get_media_roots():
+        try:
+            resolved.relative_to(root.resolve())
+            return resolved
+        except ValueError:
+            continue
+    return None
+
+
+def _decode_upload_subdir(subdir: str) -> Optional[Path]:
+    """
+    Resolve an upload subdir value to an absolute directory path.
+
+    Accepts two formats:
+      "@N/rel/path"  — multi-root encoded (root N, relative sub-path)
+      "@N"           — root N itself
+      "rel/path"     — legacy: relative to MEDIA_DIR() root 0
+      ""             — MEDIA_DIR() (default root)
+
+    Returns the absolute directory Path, or None if invalid/outside roots.
+    """
+    from hc.web_filemanager import _decode_root
+    roots = get_media_roots()
+    if not roots:
+        return None
+
+    subdir = subdir.strip()
+    if not subdir:
+        return roots[0].resolve()
+
+    if subdir.startswith("@"):
+        decoded = _decode_root(subdir)
+        if decoded is None:
+            return None
+        _, root_dir, rel_within = decoded
+        resolved_root = root_dir.resolve()
+        if rel_within:
+            target = resolved_root / rel_within
+            return _safe_in_root(target, resolved_root)
+        return resolved_root
+    else:
+        # Legacy bare relative path → root 0 (MEDIA_DIR)
+        root = roots[0].resolve()
+        target = root / subdir
+        return _safe_in_root(target, root)
+
 # =============================================================================
 # SECURITY HEADERS
 # =============================================================================
@@ -581,22 +655,26 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         self._json(_get_library_cached())
 
     def _get_subdirs(self) -> None:
-        dirs: List[str] = []
-        for root in get_media_roots():
+        from hc.web_filemanager import _encode_path
+        dirs: List[Dict] = []
+        roots = get_media_roots()
+        for root_idx, root in enumerate(roots):
             if not root.is_dir():
                 continue
-            for d in root.rglob("*"):
+            for d in sorted(root.rglob("*")):
                 if d.is_dir():
                     try:
                         rel = str(d.relative_to(root))
                         if rel:
-                            dirs.append(rel)
+                            encoded = _encode_path(root_idx, rel)
+                            label = rel if root_idx == 0 else f"[{root.name}] {rel}"
+                            dirs.append({"path": encoded, "label": label})
                     except ValueError:
                         pass
         self._json({
-            "dirs":       sorted(set(dirs)),
+            "dirs":       dirs,
             "root_label": str(MEDIA_DIR()),
-            "roots":      [str(r) for r in get_media_roots()],
+            "roots":      [str(r) for r in roots],
         })
 
     def _get_media_roots(self) -> None:
@@ -1289,7 +1367,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 if folder_source_raw:
                     from hc.folder_scanner import scan_folder, SortMode
                     _fp = Path(folder_source_raw)
-                    # Relative paths from the media browser are relative to MEDIA_DIR
+                    # Relative paths: resolve against MEDIA_DIR as fallback
                     if not _fp.is_absolute():
                         _fp = MEDIA_DIR() / _fp
                     folder_source = _safe_path(_fp, MEDIA_DIR())
@@ -1380,9 +1458,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 if dt is None:
                     raise ValueError("Invalid datetime format")
                 fp   = Path(file_path)
-                safe = _safe_path(fp, MEDIA_DIR())
+                safe = _safe_in_any_root(fp)
                 if safe is None and not fp.exists():
-                    raise ValueError("File not found or path outside media directory")
+                    raise ValueError("File not found or path outside any media root")
                 ev_id = hashlib.md5(
                     f"{stream_name}{play_at}{file_path}".encode()
                 ).hexdigest()[:8]
@@ -1434,9 +1512,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                     ev.stream_name = sn
                 if "file_path" in data:
                     fp = Path(str(data["file_path"]).strip())
-                    safe = _safe_path(fp, MEDIA_DIR())
+                    safe = _safe_in_any_root(fp)
                     if safe is None and not fp.exists():
-                        raise ValueError("File not found or path outside media directory")
+                        raise ValueError("File not found or path outside any media root")
                     ev.file_path = fp
                 if "play_at" in data:
                     play_at_s = str(data["play_at"]).strip()
@@ -1488,9 +1566,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 if dt <= datetime.now():
                     raise ValueError("Cannot schedule an event in the past")
                 fp   = Path(file_path)
-                safe = _safe_path(fp, MEDIA_DIR())
+                safe = _safe_in_any_root(fp)
                 if safe is None and not fp.exists():
-                    raise ValueError("File not found or path outside media directory")
+                    raise ValueError("File not found or path outside any media root")
                 ev_id = hashlib.md5(
                     f"{stream_name}{play_at}{file_path}".encode()
                 ).hexdigest()[:8]
@@ -1649,9 +1727,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 self._json({"ok": False, "msg": "Missing path"})
                 return
             p    = Path(raw_path)
-            safe = _safe_path(p, MEDIA_DIR())
+            safe = _safe_in_any_root(p)
             if safe is None or not safe.is_file():
-                self._json({"ok": False, "msg": "File not in media dir or not found"})
+                self._json({"ok": False, "msg": "File not in any media root or not found"})
                 return
             try:
                 safe.unlink()
@@ -1662,17 +1740,23 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
 
         elif action == "create_subdir":
             raw = str(data.get("name", "")).strip()
-            if not raw or re.search(r'[/\\<>"|?*\x00]', raw) or ".." in raw:
+            if not raw or ".." in raw:
                 self._json({"ok": False, "msg": "Invalid folder name"})
                 return
-            target = MEDIA_DIR() / raw
-            safe   = _safe_path(target, MEDIA_DIR())
-            if safe is None:
-                self._json({"ok": False, "msg": "Path traversal denied"})
-                return
+            # Support @N/rel encoded paths (from the file manager) or plain names
+            dest_dir = _decode_upload_subdir(raw)
+            if dest_dir is None:
+                # Plain name without @N prefix — create inside current FM path or MEDIA_DIR
+                safe_name = re.sub(r'[/\\<>"|?*\x00]', '_', raw)
+                dest_dir = MEDIA_DIR() / safe_name
+                dest_dir_safe = _safe_in_root(dest_dir, MEDIA_DIR())
+                if dest_dir_safe is None:
+                    self._json({"ok": False, "msg": "Path traversal denied"})
+                    return
+                dest_dir = dest_dir_safe
             try:
-                safe.mkdir(parents=True, exist_ok=True)
-                self._json({"ok": True, "msg": f"Created: {raw}"})
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                self._json({"ok": True, "msg": f"Created: {dest_dir.name}"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
@@ -2095,8 +2179,12 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 self._json({"ok": False, "msg": "No file field found"})
                 return
 
-            subdir      = re.sub(r'[/\\<>"|?*\x00]', '_', subdir)[:128]
-            subdir      = re.sub(r'\.\.', '_', subdir)
+            subdir_raw  = re.sub(r'\.\.', '_', subdir)
+            dest_dir = _decode_upload_subdir(subdir_raw)
+            if dest_dir is None:
+                self._json({"ok": False, "msg": "Invalid upload directory"})
+                return
+
             fname_clean = Path(file_name).name
             ext         = Path(fname_clean).suffix.lower()
             if ext not in SUPPORTED_EXTS:
@@ -2108,14 +2196,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 self._json({"ok": False, "msg": "Invalid filename"})
                 return
 
-            dest_dir = (MEDIA_DIR() / subdir) if subdir else MEDIA_DIR()
-            safe_dir = _safe_path(dest_dir, MEDIA_DIR())
-            if safe_dir is None:
-                self._json({"ok": False, "msg": "Invalid upload directory"})
-                return
-            safe_dir.mkdir(parents=True, exist_ok=True)
+            dest_dir.mkdir(parents=True, exist_ok=True)
 
-            dest     = safe_dir / safe_name
+            dest     = dest_dir / safe_name
             tmp_path = dest.with_suffix(dest.suffix + ".tmp")
             try:
                 tmp_path.write_bytes(file_bytes)
@@ -2132,7 +2215,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             )
             log.info("Upload saved: %s (ip=%s)", dest, client_ip)
             # ── Notify folder-source streams about the new file ──
-            _notify_folder_upload(safe_dir)
+            _notify_folder_upload(dest_dir)
             self._json({"ok": True, "msg": f"Saved: {safe_name}"})
         except Exception as exc:
             log.error("Upload error: %s", exc)
