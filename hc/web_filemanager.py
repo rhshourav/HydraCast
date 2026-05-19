@@ -36,12 +36,33 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from hc.constants import SUPPORTED_EXTS, get_media_roots
-from hc.utils import _safe_path
 
 if TYPE_CHECKING:
     pass
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Multi-root safe path helper
+# ---------------------------------------------------------------------------
+
+def _safe_in_root(target: Path, root: Path) -> Optional[Path]:
+    """
+    Return the resolved absolute path of *target* if and only if it sits
+    inside *root* (after resolving symlinks on both sides).
+    Returns None if the path escapes the root (path traversal guard).
+
+    This is a root-agnostic replacement for _safe_path(target, MEDIA_DIR())
+    so that extra media roots outside MEDIA_DIR are handled correctly.
+    """
+    try:
+        resolved_target = target.resolve()
+        resolved_root   = root.resolve()
+        resolved_target.relative_to(resolved_root)   # raises ValueError if outside
+        return resolved_target
+    except (ValueError, OSError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +129,7 @@ def _resolve_fm_path(raw_path: str) -> Optional[Tuple[Path, Path]]:
         resolved_root = root_dir
     if rel_within:
         target = resolved_root / rel_within
-        safe = _safe_path(target, resolved_root)
+        safe = _safe_in_root(target, resolved_root)
         if safe is None:
             return None
         return (resolved_root, safe)
@@ -298,7 +319,7 @@ class _FileManagerMixin:
 
         if rel_within:
             target = root_dir / rel_within
-            safe   = _safe_path(target, root_dir)
+            safe   = _safe_in_root(target, root_dir)
             if safe is None or not safe.is_dir():
                 self._json({"error": "Directory not found or access denied"}, 404)
                 return
