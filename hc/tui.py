@@ -291,7 +291,7 @@ class TUI:
             ("A", "Start All"), ("X", "Stop All"), ("N", "Skip"),
             ("←→", "±10s"), ("⇧←→", "±60s"), ("G", "Goto"),
             ("D", "Detail"), ("V", "Log"), ("F", "Rescan"),
-            ("P", "Port"), ("L", "Reload"), ("U", "Export"), ("H", "Help"), ("Q", "Quit"),
+            ("P", "Port"), ("M", "Media Roots"), ("L", "Reload"), ("U", "Export"), ("H", "Help"), ("Q", "Quit"),
         ]
         for k, v in keys:
             t.append(f" [{k}]", style=f"bold {CC}")
@@ -476,8 +476,126 @@ def do_port_prompt(console: Console, glog: LogBuffer) -> None:
 
 
 # =============================================================================
-# DETAIL OVERLAY  (redesigned — richer, cleaner)
+# MEDIA ROOTS MANAGER PROMPT
 # =============================================================================
+def do_media_roots_prompt(console: Console, glog: LogBuffer) -> None:
+    """
+    Interactive TUI prompt to manage extra media root directories.
+    Commands:
+      list              — show current roots
+      add <path>        — add an extra root
+      remove <path>     — remove an extra root (default root cannot be removed)
+      clear             — remove all extra roots (keeps default)
+      done / q / enter  — exit prompt
+    """
+    from pathlib import Path
+    from hc.constants import (
+        MEDIA_DIR, get_media_roots, add_media_root,
+        remove_media_root, set_media_roots,
+    )
+
+    def _print_roots() -> None:
+        roots = get_media_roots()
+        console.print(f"\n[bold {CW}]  Media root directories ({len(roots)} total):[/]")
+        for i, r in enumerate(roots):
+            tag  = f"[{CD}](default)[/]" if i == 0 else ""
+            exists_style = CG if r.is_dir() else CR
+            console.print(f"    [{CC}]{i + 1}.[/{CC}] [{exists_style}]{r}[/] {tag}")
+        console.print()
+
+    console.print(f"\n[bold {CC}]◈ Media Root Folder Manager[/]")
+    console.print(f"[{CD}]  Commands: list · add <path> · remove <path> · clear · done[/]\n")
+    _print_roots()
+
+    while True:
+        try:
+            raw = Prompt.ask(
+                f"[{CC}]media-roots[/{CC}]",
+                console=console,
+                default="done",
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if not raw or raw.lower() in ("done", "q", "quit", "exit"):
+            console.print(f"[{CD}]  Exiting media roots manager.[/]\n")
+            break
+
+        parts = raw.split(None, 1)
+        cmd   = parts[0].lower()
+        arg   = parts[1].strip() if len(parts) > 1 else ""
+
+        if cmd == "list":
+            _print_roots()
+
+        elif cmd == "add":
+            if not arg:
+                console.print(f"[{CR}]  ✖ Usage: add <absolute-path>[/]")
+                continue
+            p = Path(arg)
+            if not p.is_absolute():
+                console.print(f"[{CR}]  ✖ Path must be absolute: {p}[/]")
+                continue
+            if not p.exists():
+                console.print(f"[{CR}]  ✖ Path does not exist: {p}[/]")
+                continue
+            if not p.is_dir():
+                console.print(f"[{CR}]  ✖ Path is not a directory: {p}[/]")
+                continue
+            added = add_media_root(p)
+            if added:
+                glog.add(f"[MediaRoots] Added extra root: {p}", "INFO")
+                console.print(f"[{CG}]  ✔ Added: {p}[/]")
+                _print_roots()
+            else:
+                console.print(
+                    f"[{CY}]  ⚠ Already present (or is the default root): {p}[/]"
+                )
+
+        elif cmd == "remove":
+            if not arg:
+                console.print(f"[{CR}]  ✖ Usage: remove <absolute-path>[/]")
+                continue
+            p = Path(arg)
+            try:
+                default = MEDIA_DIR()
+                if p.resolve() == default.resolve():
+                    console.print(
+                        f"[{CR}]  ✖ The default media root cannot be removed: {default}[/]"
+                    )
+                    continue
+            except RuntimeError:
+                pass
+            removed = remove_media_root(p)
+            if removed:
+                glog.add(f"[MediaRoots] Removed extra root: {p}", "INFO")
+                console.print(f"[{CG}]  ✔ Removed: {p}[/]")
+                _print_roots()
+            else:
+                console.print(f"[{CY}]  ⚠ Not found in extra roots list: {p}[/]")
+
+        elif cmd == "clear":
+            confirmed = Confirm.ask(
+                f"  [{CY}]Remove ALL extra roots (default root is kept)?[/{CY}]",
+                console=console,
+                default=False,
+            )
+            if confirmed:
+                set_media_roots([])
+                glog.add("[MediaRoots] All extra roots cleared.", "INFO")
+                console.print(f"[{CG}]  ✔ Extra roots cleared.[/]")
+                _print_roots()
+            else:
+                console.print(f"[{CD}]  Cancelled.[/]")
+
+        else:
+            console.print(
+                f"[{CR}]  ✖ Unknown command '{cmd}'.[/] "
+                f"[{CD}]Use: list · add <path> · remove <path> · clear · done[/]"
+            )
+
+
+
 def _show_detail(live: Live, state, console: Console) -> None:
     if state is None:
         return
@@ -680,6 +798,7 @@ def _show_help(live: Live, console: Console, kb: KeyboardHandler, shutdown_event
         ("D",               "Stream detail overlay (config + live state)"),
         ("V",               "Per-stream log viewer"),
         ("P",               "Change web-UI port (live, no restart needed for TUI)"),
+        ("M",               "Manage media root folders (add / remove / list)"),
         ("L",               "Reload streams.json from disk"),
         ("U",               "Export stream URLs to file"),
         ("H / ?",           "This help screen"),
@@ -874,6 +993,20 @@ def run_tui_loop(
                 live.stop()
                 console.clear()
                 do_port_prompt(console, glog)
+                _wait_key()
+                console.clear()
+                live.start()
+
+            elif key == "M":
+                live.stop()
+                console.clear()
+                do_media_roots_prompt(console, glog)
+                # Invalidate library cache so next Web UI poll reflects new roots
+                try:
+                    from hc.web_handler import _invalidate_lib_cache
+                    _invalidate_lib_cache()
+                except Exception:
+                    pass
                 _wait_key()
                 console.clear()
                 live.start()
