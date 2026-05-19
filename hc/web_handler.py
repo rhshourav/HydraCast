@@ -17,6 +17,7 @@ import psutil
 
 from hc.constants import (
     APP_VER, BASE_DIR, MEDIA_DIR, SUPPORTED_EXTS, UPLOAD_MAX_BYTES,
+    get_web_port, get_media_roots, add_media_root, remove_media_root, set_media_roots,
     get_web_port,
 )
 from hc.json_manager import JSONManager
@@ -59,31 +60,47 @@ def _get_library_cached() -> List[Dict[str, Any]]:
         if _LIB_CACHE is not None and (time.time() - _LIB_CACHE_TS) < 60.0:
             return _LIB_CACHE
     result: List[Dict[str, Any]] = []
-    for ext in SUPPORTED_EXTS:
-        for f in MEDIA_DIR().rglob(f"*{ext}"):
-            try:
-                meta = probe_metadata(f)
-                result.append({
-                    "path":          str(f.relative_to(MEDIA_DIR())),
-                    "full_path":     str(f),
-                    "size":          _fmt_size(meta["size"]),
-                    "size_bytes":    meta["size"],
-                    "duration":      _fmt_duration(meta["duration"]) if meta["duration"] else "—",
-                    "duration_secs": meta["duration"],
-                    "video_codec":   meta["video_codec"],
-                    "audio_codec":   meta["audio_codec"],
-                    "width":         meta["width"],
-                    "height":        meta["height"],
-                    "fps":           meta["fps"],
-                    "bitrate":       meta["bitrate"],
-                })
-            except Exception:
-                pass
-    result.sort(key=lambda x: x["path"])
+    roots = get_media_roots()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for ext in SUPPORTED_EXTS:
+            for f in root.rglob(f"*{ext}"):
+                try:
+                    meta = probe_metadata(f)
+                    try:
+                        rel = str(f.relative_to(root))
+                    except ValueError:
+                        rel = str(f)
+                    result.append({
+                        "path":          rel,
+                        "full_path":     str(f),
+                        "root":          str(root),
+                        "size":          _fmt_size(meta["size"]),
+                        "size_bytes":    meta["size"],
+                        "duration":      _fmt_duration(meta["duration"]) if meta["duration"] else "—",
+                        "duration_secs": meta["duration"],
+                        "video_codec":   meta["video_codec"],
+                        "audio_codec":   meta["audio_codec"],
+                        "width":         meta["width"],
+                        "height":        meta["height"],
+                        "fps":           meta["fps"],
+                        "bitrate":       meta["bitrate"],
+                    })
+                except Exception:
+                    pass
+    # Deduplicate by full_path (overlapping/symlinked roots)
+    seen: set = set()
+    deduped: List[Dict[str, Any]] = []
+    for item in result:
+        if item["full_path"] not in seen:
+            seen.add(item["full_path"])
+            deduped.append(item)
+    deduped.sort(key=lambda x: x["path"])
     with _LIB_LOCK:
-        _LIB_CACHE    = result
+        _LIB_CACHE    = deduped
         _LIB_CACHE_TS = time.time()
-    return result
+    return deduped
 
 def _invalidate_lib_cache() -> None:
     global _LIB_CACHE, _LIB_CACHE_TS
@@ -264,6 +281,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             "/api/streams_config": self._get_streams_config,
             "/api/library":        self._get_library,
             "/api/subdirs":        self._get_subdirs,
+            "/api/media_roots":    self._get_media_roots,
             "/api/files":          lambda: self._get_files(qs),
             "/api/events":         self._get_events,
             "/api/holidays":        lambda: self._get_holidays(qs),
@@ -563,13 +581,31 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         self._json(_get_library_cached())
 
     def _get_subdirs(self) -> None:
-        dirs = []
-        for d in MEDIA_DIR().rglob("*"):
-            if d.is_dir():
-                rel = str(d.relative_to(MEDIA_DIR()))
-                if rel:
-                    dirs.append(rel)
-        self._json({"dirs": sorted(set(dirs)), "root_label": str(MEDIA_DIR())})
+        dirs: List[str] = []
+        for root in get_media_roots():
+            if not root.is_dir():
+                continue
+            for d in root.rglob("*"):
+                if d.is_dir():
+                    try:
+                        rel = str(d.relative_to(root))
+                        if rel:
+                            dirs.append(rel)
+                    except ValueError:
+                        pass
+        self._json({
+            "dirs":       sorted(set(dirs)),
+            "root_label": str(MEDIA_DIR()),
+            "roots":      [str(r) for r in get_media_roots()],
+        })
+
+    def _get_media_roots(self) -> None:
+        """Return the list of configured media root directories."""
+        roots = get_media_roots()
+        self._json({
+            "roots":   [str(r) for r in roots],
+            "default": str(MEDIA_DIR()),
+        })
 
     def _get_events(self) -> None:
         mgr = _WEB_MANAGER
@@ -1746,6 +1782,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         elif action == "restore":
             self._handle_restore(data)
 
+        elif action == "save_media_roots":
+            self._handle_save_media_roots(data)
+
         elif action == "holidays/custom":
             # POST /api/holidays/custom — add a user-defined holiday
             self._post_holidays_custom(raw)
@@ -2082,6 +2121,57 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             log.error("Upload error: %s", exc)
             self._json({"ok": False, "msg": f"Upload error: {exc}"}, 500)
 
+    # ── Media roots management ────────────────────────────────────────────────
+    def _handle_save_media_roots(self, data: Dict[str, Any]) -> None:
+        """
+        POST action: save_media_roots
+        Body: { "roots": ["/path/a", "/path/b"] }
+
+        Replaces the extra media roots list.  The default MEDIA_DIR is always
+        kept as the first root and cannot be removed.  Invalidates the library
+        cache so the new roots are reflected immediately in the Web UI.
+        """
+        from pathlib import Path as _Path
+        try:
+            raw_roots = data.get("roots", [])
+            if not isinstance(raw_roots, list):
+                self._json({"ok": False, "msg": "'roots' must be a list of path strings"})
+                return
+            new_roots: List[Path] = []
+            errors: List[str] = []
+            for r in raw_roots:
+                p = _Path(str(r).strip())
+                if not p.is_absolute():
+                    errors.append(f"'{p}' is not an absolute path — skipped")
+                    continue
+                if not p.exists():
+                    errors.append(f"'{p}' does not exist — skipped")
+                    continue
+                if not p.is_dir():
+                    errors.append(f"'{p}' is not a directory — skipped")
+                    continue
+                new_roots.append(p)
+            set_media_roots(new_roots)
+            _invalidate_lib_cache()
+            roots_now = get_media_roots()
+            log.info(
+                "media_roots updated: %d root(s) total%s",
+                len(roots_now),
+                f" | warnings: {'; '.join(errors)}" if errors else "",
+            )
+            self._json({
+                "ok":       True,
+                "roots":    [str(r) for r in roots_now],
+                "warnings": errors,
+                "msg":      (
+                    f"Media roots updated: {len(roots_now)} root(s) active."
+                    + (f" Warnings: {'; '.join(errors)}." if errors else "")
+                ),
+            })
+        except Exception as exc:
+            log.error("save_media_roots error: %s", exc)
+            self._json({"ok": False, "msg": f"Error: {exc}"}, 500)
+
     # ── Backup ───────────────────────────────────────────────────────────────
     def _handle_backup(self, include: Dict[str, Any]) -> None:
         """
@@ -2147,6 +2237,16 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                         p.read_text(encoding="utf-8")) if p.exists() else {}
                 except Exception:
                     payload["app_settings"] = {}
+
+            # ── Media roots (extra user-defined root directories) ────────────
+            if include.get("media_roots", True):
+                p = CONFIG_DIR() / "media_roots.json"
+                try:
+                    payload["media_roots"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else []
+                except Exception:
+                    payload["media_roots"] = []
+
 
             body = _json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
             ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2268,6 +2368,22 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 except Exception as exc:
                     failed.append(f"app_settings: {exc}")
                     log.error("restore: app_settings section failed: %s", exc)
+
+            # ── Media roots ──────────────────────────────────────────────────
+            if "media_roots" in payload:
+                try:
+                    if not isinstance(payload["media_roots"], list):
+                        raise ValueError("media_roots must be a list")
+                    new_roots = [Path(r) for r in payload["media_roots"] if r]
+                    set_media_roots(new_roots)
+                    _invalidate_lib_cache()
+                    restored.append("media_roots")
+                    log.info("restore: media_roots updated (%d extra root(s))",
+                             len(new_roots))
+                except Exception as exc:
+                    failed.append(f"media_roots: {exc}")
+                    log.error("restore: media_roots section failed: %s", exc)
+
 
             # ── Reload manager state ─────────────────────────────────────────
             mgr = _WEB_MANAGER
