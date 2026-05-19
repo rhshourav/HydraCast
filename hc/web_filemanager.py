@@ -341,13 +341,24 @@ class _FileManagerMixin:
 
                 if entry.is_dir():
                     try:
-                        item_count = sum(1 for _ in entry.iterdir())
+                        children = list(entry.iterdir())
+                        item_count = len(children)
+                        # Count media files in ALL subdirs for richer UI info
+                        has_media = any(
+                            c.is_file() and c.suffix.lower() in SUPPORTED_EXTS
+                            for c in children
+                        )
+                        has_subdirs = any(c.is_dir() for c in children)
                     except OSError:
                         item_count = 0
+                        has_media = False
+                        has_subdirs = False
                     dirs_out.append({
-                        "name":  entry.name,
-                        "path":  encoded,
-                        "items": item_count,
+                        "name":       entry.name,
+                        "path":       encoded,
+                        "items":      item_count,
+                        "has_media":  has_media,
+                        "has_subdirs": has_subdirs,
                     })
                 elif entry.is_file():
                     ext = entry.suffix.lower()
