@@ -2717,15 +2717,26 @@ async function loadSubdirs(){
   try{
     const data=await fetch('/api/subdirs').then(r=>r.json());
     const sel=document.getElementById('upload-subdir');
+    const dirs=data.dirs||[];
+    // API now returns [{path:"@N/rel", label:"..."}] objects;
+    // fall back to plain strings for backwards compatibility.
     sel.innerHTML='<option value="">/ (root)</option>'+
-      (data.dirs||[]).filter(Boolean).map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+      dirs.filter(Boolean).map(d=>{
+        const p=typeof d==='object'?d.path:d;
+        const l=typeof d==='object'?d.label:d;
+        return `<option value="${esc(p)}">${esc(l)}</option>`;
+      }).join('');
   }catch(_){}
 }
 async function mkSubdir(){
   const n=prompt('New folder name:');
   if(!n||!n.trim())return;
-  const fullName=_fmCurrentPath?_fmCurrentPath+'/'+n.trim():n.trim();
-  const r=await api('create_subdir',{name:fullName});
+  // Send the @N/rel encoded current path + the new folder name.
+  // The server will decode the root and create the subfolder inside it.
+  const parentEncoded = _fmCurrentPath || '';
+  const newFolderName = n.trim().replace(/[/\\<>"|?*\x00]/g,'_');
+  const fullEncoded = parentEncoded ? parentEncoded + '/' + newFolderName : newFolderName;
+  const r=await api('create_subdir',{name:fullEncoded});
   if(r&&r.ok){loadSubdirs();loadFiles(_fmCurrentPath);}
 }
 
