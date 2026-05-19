@@ -93,18 +93,26 @@ def _resolve_fm_path(raw_path: str) -> Optional[Tuple[Path, Path]]:
     Decode *raw_path* and validate it as a safe path inside its root.
 
     Returns (root_dir, absolute_safe_path) or None if invalid / access denied.
+    Uses the resolved (canonical) root so _safe_path works correctly for
+    extra roots that may be symlinked or mounted outside MEDIA_DIR.
     """
     decoded = _decode_root(raw_path)
     if decoded is None:
         return None
     _, root_dir, rel_within = decoded
+    # Resolve the root so that symlinks and extra roots outside MEDIA_DIR
+    # are handled correctly by _safe_path's relative_to check.
+    try:
+        resolved_root = root_dir.resolve()
+    except Exception:
+        resolved_root = root_dir
     if rel_within:
-        target = root_dir / rel_within
-        safe = _safe_path(target, root_dir)
+        target = resolved_root / rel_within
+        safe = _safe_path(target, resolved_root)
         if safe is None:
             return None
-        return (root_dir, safe)
-    return (root_dir, root_dir)
+        return (resolved_root, safe)
+    return (resolved_root, resolved_root)
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +286,12 @@ class _FileManagerMixin:
 
         root_idx, root_dir, rel_within = decoded
 
+        # Use the resolved root so _safe_path works for symlinked/extra roots.
+        try:
+            root_dir = root_dir.resolve()
+        except Exception:
+            pass
+
         if not root_dir.exists():
             self._json({"error": f"Root directory does not exist: {root_dir}"}, 500)
             return
@@ -330,8 +344,12 @@ class _FileManagerMixin:
                     })
 
             # Breadcrumb: Media > RootLabel [> sub > …]
+            # When only one root exists the top-level "Media" and the root
+            # label would both read "Media", so we collapse them into one.
             crumbs = [{"name": "Media", "path": ""}]
-            crumbs.append({"name": root_label, "path": f"@{root_idx}"})
+            if len(roots) > 1:
+                # Multi-root: always show the per-root label as a second crumb
+                crumbs.append({"name": root_label, "path": f"@{root_idx}"})
             if rel_within:
                 parts = Path(rel_within).parts
                 for i, part in enumerate(parts):
