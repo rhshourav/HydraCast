@@ -349,10 +349,6 @@ _HTML = r"""
   font-family:var(--font-mono);font-size:13px;font-weight:600;
   text-align:center;
 }
-/* Hide native browser spinner arrows on port inputs — we use our own button */
-.port-field-row input[type=number]::-webkit-outer-spin-button,
-.port-field-row input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.port-field-row input[type=number]{-moz-appearance:textfield}
 /* Icon-only square button (Suggest) */
 .port-icon-btn{
   display:inline-flex;align-items:center;justify-content:center;
@@ -3171,8 +3167,13 @@ function renderConfigEditor(s){
             <button type="button" id="suggest-btn-cfg-port"
               class="port-icon-btn"
               onclick="suggestNextPort('cfg-port','cfg-port-check-result')"
-              title="Auto-find the next free odd port and verify it">
-              <i class="ti ti-sparkles"></i>
+              title="Auto-find next free odd port">
+              ✦
+            </button>
+            <button type="button" class="port-action-btn check"
+              onclick="checkPort('cfg-port','cfg-port-check-result')"
+              title="Check if this port is free and firewall is open">
+              <i class="ti ti-radar"></i> Check
             </button>
           </div>
           <div id="cfg-port-check-result" style="display:none"></div>
@@ -3582,8 +3583,13 @@ function showNewStreamForm(){
             <button type="button" id="suggest-btn-new-port"
               class="port-icon-btn"
               onclick="suggestNextPort('new-port','new-port-check-result')"
-              title="Auto-find the next free odd port and verify it">
-              <i class="ti ti-sparkles"></i>
+              title="Auto-find next free odd port">
+              ✦
+            </button>
+            <button type="button" class="port-action-btn check"
+              onclick="checkPort('new-port','new-port-check-result')"
+              title="Check if this port is free and firewall is open">
+              <i class="ti ti-radar"></i> Check
             </button>
           </div>
           <div id="new-port-check-result" style="display:none"></div>
@@ -3961,7 +3967,21 @@ let _mb = {
   loading:  false,
   rootDirs: [],        // top-level dirs for sidebar
   _fmRootMeta: [],     // [{path, label}] for dir-select dropdowns
+  // ── path cache: avoids re-fetching a folder already visited this session ──
+  _cache:   {},        // path → {data, ts}
+  _rootCache: null,    // cached root listing (never changes in a session)
 };
+const _MB_CACHE_TTL = 30000; // ms — stale after 30 s
+
+function _mbCacheGet(path) {
+  const e = _mb._cache[path];
+  if (!e) return null;
+  if (Date.now() - e.ts > _MB_CACHE_TTL) { delete _mb._cache[path]; return null; }
+  return e.data;
+}
+function _mbCacheSet(path, data) {
+  _mb._cache[path] = { data, ts: Date.now() };
+}
 
 function mbOpen(mode, target) {
   _mb.mode    = mode;
@@ -3969,6 +3989,9 @@ function mbOpen(mode, target) {
   _mb.path    = '';
   _mb.selected = null;
   _mb.loading  = false;
+  // Clear per-path cache on each open so fresh content is shown.
+  // Root cache is kept — root dirs never change during a session.
+  _mb._cache = {};
 
   // Update modal chrome
   document.getElementById('mb-mode-icon').textContent = mode === 'folder' ? '📁' : '🎬';
@@ -4044,19 +4067,31 @@ async function _mbLoad(path) {
   _mb.loading = true;
   _mb.path = path;
 
-  const listing = document.getElementById('mb-listing');
-  const sidebar = document.getElementById('mb-sidebar');
+  const listing   = document.getElementById('mb-listing');
+  const sidebar   = document.getElementById('mb-sidebar');
   const statusBar = document.getElementById('mb-status-bar');
+
+  // ── Serve from cache instantly, then revalidate in background ────────────
+  const cached = _mbCacheGet(path);
+  if (cached) {
+    _mbRender(cached, path, listing, sidebar, statusBar);
+    _mb.loading = false;
+    // Silent background revalidation — update cache but don't re-render
+    // unless the content actually changed (avoids flicker).
+    fetch('/api/files?path=' + encodeURIComponent(path))
+      .then(r => r.json())
+      .then(fresh => { if (!fresh.error) _mbCacheSet(path, fresh); })
+      .catch(() => {});
+    return;
+  }
 
   listing.innerHTML = '<div class="fm-empty"><div class="empty-icon" style="animation:spin 1s linear infinite;font-size:28px">⟳</div></div>';
   statusBar.textContent = 'Loading…';
 
   try {
-    // Load current dir + root dirs in parallel
-    const [data, rootData] = await Promise.all([
-      fetch('/api/files?path=' + encodeURIComponent(path)).then(r => r.json()),
-      path ? fetch('/api/files?path=').then(r => r.json()).catch(() => ({dirs:[]})) : Promise.resolve(null),
-    ]);
+    // Root dirs are fetched once and reused — no need to re-fetch on every navigation
+    const needRoots = !path && !_mb._rootCache;
+    const data = await fetch('/api/files?path=' + encodeURIComponent(path)).then(r => r.json());
 
     if (data.error) {
       listing.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>${esc(data.error)}</div></div>`;
@@ -4065,6 +4100,26 @@ async function _mbLoad(path) {
       return;
     }
 
+    // Cache the result
+    _mbCacheSet(path, data);
+
+    // Cache root dirs on first successful load
+    if (!path && !data.error) {
+      _mb._rootCache = data.dirs || [];
+      _mb.rootDirs   = _mb._rootCache;
+    } else if (_mb._rootCache) {
+      _mb.rootDirs = _mb._rootCache;
+    }
+
+    _mbRender(data, path, listing, sidebar, statusBar);
+  } catch(e) {
+    listing.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>Failed to load: ${esc(e.message)}</div></div>`;
+    statusBar.textContent = 'Error';
+  }
+  _mb.loading = false;
+}
+
+function _mbRender(data, path, listing, sidebar, statusBar) {
     // ── Breadcrumb ────────────────────────────────────────────
     const bc = document.getElementById('mb-breadcrumb');
     bc.innerHTML = (data.breadcrumb || [{name:'Files', path:''}]).map((crumb, i, arr) => {
@@ -4079,8 +4134,7 @@ async function _mbLoad(path) {
     }).join('');
 
     // ── Sidebar (root dirs) ───────────────────────────────────
-    const rootDirs = (rootData || data).dirs || [];
-    if (!path) _mb.rootDirs = rootDirs;
+    const rootDirs = _mb.rootDirs.length ? _mb.rootDirs : (data.dirs || []);
     sidebar.innerHTML =
       `<div onclick="_mbLoad('')"
             style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;
@@ -4091,7 +4145,7 @@ async function _mbLoad(path) {
             title="Root directory">
          <span style="opacity:0.65">📁</span> ${(data.breadcrumb && data.breadcrumb[0]) ? esc(data.breadcrumb[0].name) : 'Files'}
        </div>` +
-      (_mb.rootDirs.length ? _mb.rootDirs : rootDirs).map(d => {
+      rootDirs.map(d => {
         const isActive = path === d.path || path.startsWith(d.path + '/');
         return `<div onclick="_mbLoad('${d.path}')"
                      style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;
@@ -4108,9 +4162,7 @@ async function _mbLoad(path) {
     const rows = [];
     const isFolderMode = _mb.mode === 'folder';
 
-    // In folder mode: the current dir is itself selectable
     if (isFolderMode) {
-      const curLabel = path ? (data.breadcrumb || []).slice(-1)[0]?.name || path.split('/').pop() : ((data.breadcrumb && data.breadcrumb[0]) ? data.breadcrumb[0].name : 'Files');
       rows.push(`
         <div onclick="_mbSelectRow(this, {path:'${esc(path)}', isDir:true})"
              ondblclick="_mbSelectRow(this,{path:'${esc(path)}',isDir:true});mbConfirm()"
@@ -4125,7 +4177,6 @@ async function _mbLoad(path) {
         </div>`);
     }
 
-    // Sub-folders
     (data.dirs || []).forEach(d => {
       const isSelectable = isFolderMode;
       rows.push(`
@@ -4141,7 +4192,6 @@ async function _mbLoad(path) {
              title="${isSelectable ? 'Click to select · Double-click to navigate into' : 'Double-click to navigate into'}: ${esc(d.path)}">
           <span style="font-size:15px">📁</span>
           <span style="flex:1;color:var(--text);font-weight:500">${esc(d.name)}</span>
-          <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)">${d.items} item${d.items!==1?'s':''}</span>
           <button onclick="event.stopPropagation();_mbLoad('${esc(d.path)}')"
                   style="background:none;border:1px solid var(--border);color:var(--text3);cursor:pointer;
                          font-size:10px;padding:2px 8px;border-radius:5px;transition:all 0.15s"
@@ -4151,12 +4201,10 @@ async function _mbLoad(path) {
         </div>`);
     });
 
-    // Files (only shown in files mode, or greyed out in folder mode)
     (data.files || []).forEach(f => {
       const isMedia = f.supported;
       const ico = (f.ext||'').match(/\.(mp3|aac|flac|wav|ogg|m4a)$/i) ? '🎵' : '🎬';
       if (isFolderMode) {
-        // Show files greyed out as context, not clickable
         rows.push(`
           <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);
                       font-size:12px;opacity:0.35;cursor:default" title="${esc(f.full_path||f.path)}">
@@ -4190,7 +4238,6 @@ async function _mbLoad(path) {
 
     listing.innerHTML = rows.join('');
 
-    // Restore selection highlight if same path still selected
     if (_mb.selected) {
       listing.querySelectorAll('.mb-row').forEach(row => {
         if (row.title && row.title.includes(_mb.selected.path)) {
@@ -4206,12 +4253,6 @@ async function _mbLoad(path) {
     statusBar.innerHTML = isFolderMode
       ? `<b>${nDirs}</b> subfolder${nDirs!==1?'s':''} &ensp;·&ensp; <b>${nFiles}</b> file${nFiles!==1?'s':''}`
       : `<b>${nDirs}</b> subfolder${nDirs!==1?'s':''} &ensp;·&ensp; <b>${nMediaFiles}</b> supported media file${nMediaFiles!==1?'s':''} of ${nFiles}`;
-
-  } catch(e) {
-    listing.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>Failed to load: ${esc(e.message)}</div></div>`;
-    statusBar.textContent = 'Error';
-  }
-  _mb.loading = false;
 }
 
 function _mbSelectRow(rowEl, item) {
