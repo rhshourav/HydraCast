@@ -1653,7 +1653,7 @@ select option{background:var(--bg3)}
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <button class="btn g" onclick="saveHolidaySettings()" title="Save holiday country to disk">💾 Save</button>
+        <button class="btn g" onclick="saveHolidaySettings()" title="Save holiday country to disk">📁 Save</button>
         <div id="hol-status" style="font-size:11px;color:var(--text3)"></div>
       </div>
     </div>
@@ -1852,7 +1852,7 @@ select option{background:var(--bg3)}
           </label>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          <button class="btn g" onclick="saveMailConfig()" title="Save mail alert configuration to disk">💾 Save Config</button>
+          <button class="btn g" onclick="saveMailConfig()" title="Save mail alert configuration to disk">📁 Save Config</button>
           <div class="fg" style="flex-direction:row;gap:6px;align-items:center;flex:1;min-width:200px">
             <input id="ml-test-to" placeholder="Test recipient (optional)" style="flex:1" title="Optional: override the To address just for this test email">
             <button class="btn b" onclick="testMailAlert()" title="Send a test email to verify your mail settings">✉ Send Test</button>
@@ -1965,13 +1965,34 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- Service Restart -->
+  <div style="margin-top:4px">
+    <div class="section-hdr"><h2>⚡ Service Control</h2><span class="sep"></span></div>
+    <div class="card card-body" style="padding:16px">
+      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">↺ Restart Everything</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5">Stops all streams, then relaunches the entire application process (<code style="font-size:11px">os.execv</code>). The page will reconnect automatically in ~5 s.</div>
+          <button class="btn r" style="font-weight:600" onclick="svcRestartAll()"
+                  title="Stop all streams then restart the web server process (os.execv)">&#x26A1; Restart All Services</button>
+        </div>
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">↺ Streams only</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5">Restarts every stream without touching the web UI process. Faster — no page reload needed.</div>
+          <button class="btn b" onclick="if(confirm('Restart ALL streams?')) api('restart_all',{})"
+                  title="Stop and restart every stream">↺ Restart Streams</button>
+        </div>
+      </div>
+      <div id="svc-restart-status" style="font-size:11px;color:var(--text3);margin-top:10px"></div>
+    </div>
+  </div>
+
   <!-- Danger Zone -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2 style="color:var(--red)">Danger Zone</h2><span class="sep"></span></div>
     <div class="card card-body" style="border-color:rgba(248,113,113,0.2);padding:16px">
       <div style="display:flex;flex-wrap:wrap;gap:10px">
         <button class="btn r" onclick="if(confirm('Stop ALL streams?')) api('stop_all',{})" title="Immediately stop every running stream">■ Stop All Streams</button>
-        <button class="btn r" onclick="if(confirm('Restart ALL streams?')) api('restart_all',{})" title="Stop and restart every stream">↺ Restart All</button>
         <button class="btn r" onclick="clearPlayedEvents()" title="Delete all events that have already been played from the schedule" style="background:rgba(194,120,120,0.1);border-color:var(--red)">🗑 Clear Played Events</button>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:10px">These actions affect all streams or event history immediately.</div>
@@ -5111,6 +5132,44 @@ async function saveHolidaySettings(){
 // ═══════════════════════════════════
 // CLEAR PLAYED EVENTS
 // ═══════════════════════════════════
+// ── Service restart (streams + web process) ───────────────
+async function svcRestartAll() {
+  const el = document.getElementById('svc-restart-status');
+  if (!confirm('This will stop all streams and restart the entire application.\nThe page will reconnect automatically in ~5 seconds.\n\nContinue?')) return;
+  el.textContent = '⟳ Stopping streams…';
+  el.style.color = 'var(--accent-light)';
+  try {
+    // 1) stop all streams gracefully
+    await api('stop_all', {});
+    el.textContent = '⟳ Restarting process…';
+    // 2) tell the server to execv itself; this request will not return
+    fetch('/api/action', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'restart_process'}),
+    }).catch(() => {});  // connection drop is expected
+    // 3) poll until the server responds again, then reload
+    el.textContent = '⟳ Waiting for server to come back…';
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      if (attempts > 40) {  // give up after ~20 s
+        clearInterval(poll);
+        el.style.color = 'var(--red)';
+        el.textContent = '⚠ Server did not respond after 20 s. Refresh manually.';
+        return;
+      }
+      try {
+        const r = await fetch('/api/streams', {cache: 'no-store'});
+        if (r.ok) { clearInterval(poll); location.reload(); }
+      } catch(_) {}
+    }, 500);
+  } catch(e) {
+    el.style.color = 'var(--red)';
+    el.textContent = '⚠ ' + (e.message || 'Request failed');
+  }
+}
+
 async function clearPlayedEvents(){
   const st=document.getElementById('danger-status');
   try{
@@ -5342,7 +5401,7 @@ async function loadFiles(path) {
         _fmRootMeta.push({ path: root.path, label: root.name });
         sidebar.insertAdjacentHTML('beforeend',
           `<div class="fm-dir-item${isActive ? ' active' : ''}" onclick="loadFiles('${root.path}')">`+
-          `<span class="fm-dir-icon">💾</span> ${root.name}</div>`);
+          `<span class="fm-dir-icon">📁</span> ${root.name}</div>`);
       });
     } else {
       // Single-root mode: show @0's immediate subdirs in the sidebar
