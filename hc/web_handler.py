@@ -110,6 +110,68 @@ def _decode_upload_subdir(subdir: str) -> Optional[Path]:
         target = root / subdir
         return _safe_in_root(target, root)
 
+def _decode_fm_path_to_absolute(raw: str) -> Optional[Path]:
+    """
+    Convert any path string the frontend may send into a real absolute Path.
+
+    Accepts:
+      "@N/rel/path"  — multi-root encoded (from _get_files / file-manager)
+      "@N"           — a root directory itself
+      "/abs/path"    — already absolute (legacy or direct entry)
+      "rel/path"     — relative, resolved against root-0 (MEDIA_DIR)
+
+    Returns the resolved absolute Path (confirmed inside a valid media root),
+    or None if the path is invalid, escapes a root, or cannot be resolved.
+
+    This is the single conversion point that fixes the
+    "Folder/file not found: '@2/21.211'" class of errors where the frontend
+    sends @N/rel encoded paths and the backend was calling Path() on them
+    directly.
+    """
+    if not raw:
+        return None
+    raw = raw.strip()
+
+    # Strip any @start_position or #priority suffixes that _plToStr appends
+    # (e.g. "@2/21.211/file.mp4@00:01:00#2") before doing path decode.
+    # Strategy: walk from the end, stripping a trailing #priority first, then
+    # a trailing @HH:MM:SS start-position, being careful NOT to strip the
+    # root-index @N prefix which always appears at the start.
+    import re as _re
+    # Strip trailing #priority
+    raw = _re.sub(r'#\d+$', '', raw).strip()
+    # Strip trailing @HH:MM:SS start-position  (NOT the @N prefix at start)
+    raw = _re.sub(r'@\d{1,2}:\d{2}:\d{2}$', '', raw).strip()
+
+    # ── @N / @N/rel encoded path (from file-manager) ─────────────────────────
+    if raw.startswith("@"):
+        from hc.web_filemanager import _decode_root, _safe_in_root as _fm_sir
+        decoded = _decode_root(raw)
+        if decoded is None:
+            return None
+        _, root_dir, rel_within = decoded
+        try:
+            resolved_root = root_dir.resolve()
+        except Exception:
+            resolved_root = root_dir
+        if rel_within:
+            target = resolved_root / rel_within
+            return _fm_sir(target, resolved_root)
+        return resolved_root if resolved_root.exists() else None
+
+    # ── Absolute path ─────────────────────────────────────────────────────────
+    p = Path(raw)
+    if p.is_absolute():
+        return _safe_in_any_root(p)
+
+    # ── Relative path → root-0 fallback ──────────────────────────────────────
+    roots = get_media_roots()
+    if roots:
+        candidate = roots[0].resolve() / raw
+        return _safe_in_any_root(candidate)
+    return None
+
+
 # =============================================================================
 # SECURITY HEADERS
 # =============================================================================
@@ -1366,11 +1428,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 raw_files = str(data.get("files", "")).strip()
                 if folder_source_raw:
                     from hc.folder_scanner import scan_folder, SortMode
-                    _fp = Path(folder_source_raw)
-                    # Relative paths: resolve against MEDIA_DIR as fallback
-                    if not _fp.is_absolute():
-                        _fp = MEDIA_DIR() / _fp
-                    folder_source = _safe_in_any_root(_fp)
+                    folder_source = _decode_fm_path_to_absolute(folder_source_raw)
                     if folder_source is None or not folder_source.is_dir():
                         raise ValueError(f"Folder not found or access denied: '{folder_source_raw}'")
                     playlist, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
@@ -1382,7 +1440,25 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                     cfg.folder_source = folder_source
                 elif raw_files:
                     raw_files = raw_files.replace("\n", ";")
-                    parsed = CSVManager.parse_files(raw_files)
+                    # Decode any @N/rel encoded paths to real absolute paths
+                    decoded_parts = []
+                    for tok in raw_files.split(";"):
+                        tok = tok.strip()
+                        if not tok:
+                            continue
+                        # Preserve @start and #priority suffixes
+                        import re as _re2
+                        m_pri   = _re2.search(r'#(\d+)$', tok)
+                        m_start = _re2.search(r'@(\d{1,2}:\d{2}:\d{2})$', tok.split('#')[0])
+                        pri_sfx   = f"#{m_pri.group(1)}"   if m_pri   else ""
+                        start_sfx = f"@{m_start.group(1)}" if m_start else ""
+                        path_part = _re2.sub(r'@\d{1,2}:\d{2}:\d{2}$', '', _re2.sub(r'#\d+$', '', tok)).strip()
+                        abs_p = _decode_fm_path_to_absolute(path_part)
+                        if abs_p is not None:
+                            decoded_parts.append(f"{abs_p}{start_sfx}{pri_sfx}")
+                        else:
+                            decoded_parts.append(tok)  # pass through; parse_files will reject
+                    parsed = CSVManager.parse_files(";".join(decoded_parts))
                     if parsed:
                         cfg.playlist      = parsed
                         cfg.folder_source = None
@@ -1457,10 +1533,13 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                         continue
                 if dt is None:
                     raise ValueError("Invalid datetime format")
-                fp   = Path(file_path)
-                safe = _safe_in_any_root(fp)
-                if safe is None and not fp.exists():
-                    raise ValueError("File not found or path outside any media root")
+                fp = _decode_fm_path_to_absolute(file_path)
+                if fp is None:
+                    fp_bare = Path(file_path)
+                    if fp_bare.is_absolute() and fp_bare.exists():
+                        fp = fp_bare
+                    else:
+                        raise ValueError("File not found or path outside any media root")
                 ev_id = hashlib.md5(
                     f"{stream_name}{play_at}{file_path}".encode()
                 ).hexdigest()[:8]
@@ -1511,10 +1590,13 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                         raise ValueError(f"Stream '{sn}' not found")
                     ev.stream_name = sn
                 if "file_path" in data:
-                    fp = Path(str(data["file_path"]).strip())
-                    safe = _safe_in_any_root(fp)
-                    if safe is None and not fp.exists():
-                        raise ValueError("File not found or path outside any media root")
+                    fp = _decode_fm_path_to_absolute(str(data["file_path"]).strip())
+                    if fp is None:
+                        fp_bare = Path(str(data["file_path"]).strip())
+                        if fp_bare.is_absolute() and fp_bare.exists():
+                            fp = fp_bare
+                        else:
+                            raise ValueError("File not found or path outside any media root")
                     ev.file_path = fp
                 if "play_at" in data:
                     play_at_s = str(data["play_at"]).strip()
@@ -1565,10 +1647,13 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                     raise ValueError("Invalid datetime format")
                 if dt <= datetime.now():
                     raise ValueError("Cannot schedule an event in the past")
-                fp   = Path(file_path)
-                safe = _safe_in_any_root(fp)
-                if safe is None and not fp.exists():
-                    raise ValueError("File not found or path outside any media root")
+                fp = _decode_fm_path_to_absolute(file_path)
+                if fp is None:
+                    fp_bare = Path(file_path)
+                    if fp_bare.is_absolute() and fp_bare.exists():
+                        fp = fp_bare
+                    else:
+                        raise ValueError("File not found or path outside any media root")
                 ev_id = hashlib.md5(
                     f"{stream_name}{play_at}{file_path}".encode()
                 ).hexdigest()[:8]
@@ -1617,10 +1702,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 playlist: "List[PlaylistItem]" = []
                 if folder_source_raw:
                     from hc.folder_scanner import scan_folder, SortMode
-                    _fp = Path(folder_source_raw)
-                    if not _fp.is_absolute():
-                        _fp = MEDIA_DIR() / _fp
-                    folder_source = _safe_in_any_root(_fp)
+                    folder_source = _decode_fm_path_to_absolute(folder_source_raw)
                     if folder_source is None or not folder_source.is_dir():
                         raise ValueError(f"Folder not found or access denied: '{folder_source_raw}'")
                     playlist, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
@@ -1630,7 +1712,24 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                         raise ValueError(f"No supported media files found in '{folder_source_raw}'")
                 else:
                     raw_files = str(data.get("files", "")).strip().replace("\n", ";")
-                    playlist  = CSVManager.parse_files(raw_files)
+                    # Decode any @N/rel encoded paths to real absolute paths
+                    import re as _re3
+                    decoded_parts2 = []
+                    for tok in raw_files.split(";"):
+                        tok = tok.strip()
+                        if not tok:
+                            continue
+                        m_pri2   = _re3.search(r'#(\d+)$', tok)
+                        m_start2 = _re3.search(r'@(\d{1,2}:\d{2}:\d{2})$', tok.split('#')[0])
+                        pri_sfx2   = f"#{m_pri2.group(1)}"   if m_pri2   else ""
+                        start_sfx2 = f"@{m_start2.group(1)}" if m_start2 else ""
+                        path_part2 = _re3.sub(r'@\d{1,2}:\d{2}:\d{2}$', '', _re3.sub(r'#\d+$', '', tok)).strip()
+                        abs_p2 = _decode_fm_path_to_absolute(path_part2)
+                        if abs_p2 is not None:
+                            decoded_parts2.append(f"{abs_p2}{start_sfx2}{pri_sfx2}")
+                        else:
+                            decoded_parts2.append(tok)
+                    playlist = CSVManager.parse_files(";".join(decoded_parts2))
                     if not playlist:
                         raise ValueError("At least one valid file path is required.")
 
