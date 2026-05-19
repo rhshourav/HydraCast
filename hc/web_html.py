@@ -1357,7 +1357,7 @@ select option{background:var(--bg3)}
         <div style="padding:10px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border);font-family:var(--font-display)">Folders</div>
         <div class="fm-dir-list" id="fm-dir-list" style="flex:1;overflow-y:auto">
           <div class="fm-dir-item active" onclick="loadFiles('')">
-            <span class="fm-dir-icon">📁</span> Media (root)
+            <span class="fm-dir-icon">📁</span> Media
           </div>
         </div>
       </div>
@@ -1407,7 +1407,7 @@ select option{background:var(--bg3)}
     <h4>↗ Move to folder</h4>
     <div class="fg" style="margin-bottom:10px">
       <label>Destination folder</label>
-      <select id="fm-move-dest" style="width:100%"><option value="">Media (root)</option></select>
+      <select id="fm-move-dest" style="width:100%"><option value="">Media (top)</option></select>
     </div>
     <div class="fm-dialog-footer">
       <button class="btn" onclick="fmCloseDialogs()" title="Close without moving">Cancel</button>
@@ -1421,7 +1421,7 @@ select option{background:var(--bg3)}
     <h4>⎘ Copy to folder</h4>
     <div class="fg" style="margin-bottom:10px">
       <label>Destination folder</label>
-      <select id="fm-copy-dest" style="width:100%"><option value="">Media (root)</option></select>
+      <select id="fm-copy-dest" style="width:100%"><option value="">Media (top)</option></select>
     </div>
     <div class="fg">
       <label>New filename <span style="color:var(--text3);font-weight:400">(optional)</span></label>
@@ -3934,6 +3934,7 @@ let _mb = {
   selected: null,      // {path, isDir, fullServerPath}
   loading:  false,
   rootDirs: [],        // top-level dirs for sidebar
+  _fmRootMeta: [],     // [{path, label}] for dir-select dropdowns
 };
 
 function mbOpen(mode, target) {
@@ -4062,7 +4063,7 @@ async function _mbLoad(path) {
             onmouseover="this.style.background='var(--bg3)'"
             onmouseout="this.style.background='${!path?'rgba(184,115,51,0.09)':''}'"
             title="Media root directory">
-         <span style="opacity:0.65">📁</span> Media (root)
+         <span style="opacity:0.65">📁</span> Media
        </div>` +
       (_mb.rootDirs.length ? _mb.rootDirs : rootDirs).map(d => {
         const isActive = path === d.path || path.startsWith(d.path + '/');
@@ -4083,7 +4084,7 @@ async function _mbLoad(path) {
 
     // In folder mode: the current dir is itself selectable
     if (isFolderMode) {
-      const curLabel = path ? (data.breadcrumb || []).slice(-1)[0]?.name || path.split('/').pop() : 'Media (root)';
+      const curLabel = path ? (data.breadcrumb || []).slice(-1)[0]?.name || path.split('/').pop() : 'Media';
       rows.push(`
         <div onclick="_mbSelectRow(this, {path:'${esc(path)}', isDir:true})"
              ondblclick="_mbSelectRow(this,{path:'${esc(path)}',isDir:true});mbConfirm()"
@@ -5306,26 +5307,57 @@ async function loadFiles(path) {
                class="${isLast ? 'fm-cur' : ''}">${crumb.name}</span>`;
     }).join('');
 
-    // ── Sidebar rebuild (root dirs only) ────────────────────────
-    _fmAllDirs = [''];
+    // ── Sidebar rebuild (multi-root aware) ────────────────────
+    //
+    // Three cases the backend can return:
+    //   (A) multi_root:true, path='' — show each root as a top-level drive
+    //   (B) single root, path=''    — backend auto-entered @0; show @0's subdirs
+    //   (C) inside a root           — fetch path='' to discover roots for sidebar
+    _fmAllDirs = [''];          // '' always means 'top of everything'
+    _fmRootMeta = [];           // [{path, label}] for _fmPopulateDirSelect
     const sidebar = document.getElementById('fm-dir-list');
+
+    // Always fetch path='' once to build the sidebar root list.
+    // (If we are already at path='', re-use d directly.)
+    let rootResp = d;
+    if (_fmCurrentPath !== '') {
+      try {
+        rootResp = await fetch('/api/files?path=').then(r => r.json());
+      } catch(_) { rootResp = { dirs: [], multi_root: false }; }
+    }
+
+    const isMultiRoot = rootResp.multi_root === true;
+
+    // Top-level 'Media' button always navigates to ''
     sidebar.innerHTML =
-      `<div class="fm-dir-item${_fmCurrentPath===''?' active':''}" onclick="loadFiles('')">` +
-      `<span class="fm-dir-icon">📁</span> Media (root)</div>`;
-    try {
-      const rootDirs = _fmCurrentPath === '' ? (d.dirs || []) :
-        await fetch('/api/files?path=').then(r=>r.json()).then(r=>r.dirs||[]).catch(()=>[]);
+      `<div class="fm-dir-item${_fmCurrentPath === '' ? ' active' : ''}" onclick="loadFiles('')">`+
+      `<span class="fm-dir-icon">📁</span> Media</div>`;
+
+    if (isMultiRoot) {
+      // Show each root as a drive entry
+      (rootResp.dirs || []).forEach(root => {
+        const isActive = _fmCurrentPath === root.path ||
+                          _fmCurrentPath.startsWith(root.path + '/');
+        _fmAllDirs.push(root.path);
+        _fmRootMeta.push({ path: root.path, label: root.name });
+        sidebar.insertAdjacentHTML('beforeend',
+          `<div class="fm-dir-item${isActive ? ' active' : ''}" onclick="loadFiles('${root.path}')">`+
+          `<span class="fm-dir-icon">💾</span> ${root.name}</div>`);
+      });
+    } else {
+      // Single-root mode: show @0's immediate subdirs in the sidebar
+      const sidebarDirs = rootResp.dirs || [];
       const seenSidebar = new Set();
-      rootDirs.forEach(dir => {
+      sidebarDirs.forEach(dir => {
         if (seenSidebar.has(dir.path)) return;
         seenSidebar.add(dir.path);
         _fmAllDirs.push(dir.path);
+        _fmRootMeta.push({ path: dir.path, label: dir.name });
         sidebar.insertAdjacentHTML('beforeend',
-          `<div class="fm-dir-item${dir.path===_fmCurrentPath?' active':''}"
-                onclick="loadFiles('${dir.path}')">` +
+          `<div class="fm-dir-item${dir.path === _fmCurrentPath ? ' active' : ''}" onclick="loadFiles('${dir.path}')">`+
           `<span class="fm-dir-icon">📂</span> ${dir.name}</div>`);
       });
-    } catch(_) {}
+    }
 
     // ── Body rows ───────────────────────────────────────────────
     const rows = [];
@@ -5387,10 +5419,15 @@ async function loadFiles(path) {
     }
 
     const total = d.dirs.length + d.files.length;
+    const _pathLabel = _fmCurrentPath
+      ? (d.root_label
+          ? d.root_label + (_fmCurrentPath.includes('/') ? '/' + _fmCurrentPath.split('/').slice(1).join('/') : '')
+          : _fmCurrentPath)
+      : 'Media';
     status.innerHTML =
       `<b>${d.dirs.length}</b> folder${d.dirs.length!==1?'s':''}&nbsp;&nbsp;` +
       `<b>${d.files.length}</b> file${d.files.length!==1?'s':''}&ensp;·&ensp;` +
-      `<span style="color:var(--accent-light)">${_fmCurrentPath||'Media (root)'}</span>`;
+      `<span style="color:var(--accent-light)">${_pathLabel}</span>`;
 
   } catch(e) {
     body.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>Load failed: ${e.message}</div></div>`;
@@ -5402,8 +5439,12 @@ async function loadFiles(path) {
 async function fmNewFolder() {
   const name = prompt('New folder name:');
   if (!name || !name.trim()) return;
-  const fullName = _fmCurrentPath ? _fmCurrentPath + '/' + name.trim() : name.trim();
-  const r = await api('create_subdir', {name: fullName});
+  // _fmCurrentPath is now @N/rel or '' for root.
+  // Pass it as 'parent' so the backend can resolve it via _decode_root.
+  const r = await api('create_subdir', {
+    parent: _fmCurrentPath || '',
+    name:   name.trim(),
+  });
   if (r.ok) { loadFiles(_fmCurrentPath); loadSubdirs(); }
 }
 
@@ -5465,11 +5506,16 @@ async function fmDoCopy() {
 // ── Dir select helper ─────────────────────────────────────────
 function _fmPopulateDirSelect(selectId, excludePath) {
   const sel = document.getElementById(selectId);
-  sel.innerHTML = '<option value="">Media (root)</option>';
+  sel.innerHTML = '<option value="">Media (top)</option>';
+  // Build a label map from _fmRootMeta (populated by loadFiles).
+  const labelMap = {};
+  (_fmRootMeta || []).forEach(m => { labelMap[m.path] = m.label; });
   _fmAllDirs
     .filter(d => d && d !== excludePath)
-    .forEach(d => sel.insertAdjacentHTML('beforeend',
-      `<option value="${d}">${d}</option>`));
+    .forEach(d => {
+      const label = labelMap[d] || d;
+      sel.insertAdjacentHTML('beforeend', `<option value="${d}">${label}</option>`);
+    });
 }
 
 // ── Close all FM dialogs ──────────────────────────────────────
