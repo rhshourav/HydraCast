@@ -799,7 +799,7 @@ def _show_help(live: Live, console: Console, kb: KeyboardHandler, shutdown_event
         ("V",               "Per-stream log viewer"),
         ("P",               "Change web-UI port (live, no restart needed for TUI)"),
         ("M",               "Manage media root folders (add / remove / list)"),
-        ("L",               "Reload streams.json from disk"),
+        ("L",               "Reload streams.hcf from disk"),
         ("U",               "Export stream URLs to file"),
         ("H / ?",           "This help screen"),
         ("Q / Ctrl-C",      "Quit HydraCast"),
@@ -1027,7 +1027,7 @@ def run_tui_loop(
             elif key == "L":
                 try:
                     manager.reload_csv()
-                    glog.add("streams.json reloaded")
+                    glog.add("streams.hcf reloaded")
                 except AttributeError:
                     glog.add("reload_csv not available on this manager", "WARN")
             elif key == "U":
