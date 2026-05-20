@@ -20,6 +20,31 @@ from hc.utils import _fmt_duration, _fmt_size, _local_ip
 log = logging.getLogger(__name__)
 
 
+def _clean_error_msg(msg):
+    """Convert raw FFmpeg stderr into a short human-readable string."""
+    if not msg:
+        return None
+    _PATTERNS = [
+        ("Broken pipe",                        "Stream ended (broken pipe) — auto-restarting"),
+        ("Connection refused",                 "RTSP connection refused — MediaMTX not ready"),
+        ("Connection timed out",               "RTSP connection timed out"),
+        ("No such file",                       "Media file not found"),
+        ("Invalid data",                       "Invalid media file or codec error"),
+        ("Error muxing",                       "Muxer error — stream restarting"),
+        ("Task finished with error code: -32", "Broken pipe — stream restarting"),
+        ("Error opening",                      "Could not open media file"),
+        ("Conversion failed",                  "FFmpeg conversion failed"),
+        ("Out of memory",                      "Out of memory"),
+    ]
+    for fragment, friendly in _PATTERNS:
+        if fragment.lower() in msg.lower():
+            return friendly
+    import re as _re
+    cleaned = _re.sub(r'\[[\w#/.:@ 0-9]+\]\s*', '', msg)
+    lines = [l.strip() for l in cleaned.strip().splitlines() if l.strip()]
+    return (lines[-1][:120] if lines else "FFmpeg error (see logs)")
+
+
 # ---------------------------------------------------------------------------
 # Library cache (module-level so it survives handler instantiation cycles)
 # ---------------------------------------------------------------------------
@@ -130,7 +155,7 @@ class _GetHandlersMixin:
                 "shuffle":        cfg.shuffle,
                 "playlist_count": len(cfg.playlist),
                 "enabled":        cfg.enabled,
-                "error_msg":      st.error_msg,
+                "error_msg":      _clean_error_msg(st.error_msg) if st.status.label != "LIVE" else None,
                 "loop_count":     st.loop_count,
                 "restart_count":  st.restart_count,
                 "bitrate":        st.bitrate,
@@ -287,7 +312,7 @@ class _GetHandlersMixin:
             "fps":           st.fps,
             "loop_count":    st.loop_count,
             "restart_count": st.restart_count,
-            "error_msg":     st.error_msg,
+            "error_msg":     _clean_error_msg(st.error_msg) if st.status.label != "LIVE" else None,
             "playlist":      playlist,
             "log":           log_snap,
             "started_at":    st.started_at.isoformat() if st.started_at else None,
