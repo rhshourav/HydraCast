@@ -29,7 +29,7 @@ from hc import APP_NAME as _APP_NAME, APP_VER as _APP_VER_INIT
 from hc.web_access_log import log_access as _log_access
 
 # Pre-render the HTML template with APP_NAME from hc/__init__.py
-_HTML_RENDERED = _HTML.replace("__APP_NAME__", _APP_NAME)
+_HTML_RENDERED = _HTML.replace("__APP_NAME__", _APP_NAME).replace("__APP_VER__", _APP_VER_INIT)
 
 log = logging.getLogger(__name__)
 
@@ -896,10 +896,10 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         })
 
     def _get_mail_config(self) -> None:
-        """Return the current mail_config.json contents (password redacted)."""
+        """Return the current mail_config.hcf contents (password redacted)."""
         from hc.constants import BASE_DIR
         import json as _json
-        path = BASE_DIR() / "mail_config.json"
+        path = BASE_DIR() / "mail_config.hcf"
         try:
             if path.exists():
                 cfg = _json.loads(path.read_text(encoding="utf-8"))
@@ -948,7 +948,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             import json as _json
             cfg: dict = {}
             try:
-                cfg = _json.loads((BASE_DIR() / "mail_config.json").read_text(encoding="utf-8"))
+                cfg = _json.loads((BASE_DIR() / "mail_config.hcf").read_text(encoding="utf-8"))
             except Exception:
                 pass
             from hc.mailer import get_microsoft_oauth2_status
@@ -1936,7 +1936,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 smtp_port = int(data.get("smtp_port", 587))
                 if not (1 <= smtp_port <= 65535):
                     raise ValueError(f"Invalid SMTP port: {smtp_port}")
-                path = BASE_DIR() / "mail_config.json"
+                path = BASE_DIR() / "mail_config.hcf"
                 # Preserve the stored password if the client sent the redaction placeholder
                 password = str(data.get("password", ""))
                 if password in ("••••••••", ""):
@@ -1964,8 +1964,8 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                     "ms_username":   str(data.get("ms_username", "")).strip(),
                 }
                 path.write_text(_json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
-                log.info("mail_config.json updated via Web UI (mode=%s enabled=%s)", mode, cfg["enabled"])
-                self._json({"ok": True, "msg": "mail_config.json saved"})
+                log.info("mail_config.hcf updated via Web UI (mode=%s enabled=%s)", mode, cfg["enabled"])
+                self._json({"ok": True, "msg": "mail_config.hcf saved"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
@@ -2001,11 +2001,11 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             try:
                 client_id = str(data.get("ms_client_id", "")).strip()
                 if not client_id:
-                    # Fall back to value already saved in mail_config.json
+                    # Fall back to value already saved in mail_config.hcf
                     from hc.constants import BASE_DIR
                     import json as _json
                     try:
-                        saved = _json.loads((BASE_DIR() / "mail_config.json").read_text("utf-8"))
+                        saved = _json.loads((BASE_DIR() / "mail_config.hcf").read_text("utf-8"))
                         client_id = saved.get("ms_client_id", "").strip()
                     except Exception:
                         pass
@@ -2033,7 +2033,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 import json as _json
                 cfg: dict = {}
                 try:
-                    cfg = _json.loads((BASE_DIR() / "mail_config.json").read_text("utf-8"))
+                    cfg = _json.loads((BASE_DIR() / "mail_config.hcf").read_text("utf-8"))
                 except Exception:
                     pass
                 from hc.mailer import revoke_microsoft_token
@@ -2455,7 +2455,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
 
             # ── Streams ─────────────────────────────────────────────────────
             if include.get("streams", True):
-                p = CONFIG_DIR() / "streams.json"
+                p = CONFIG_DIR() / "streams.hcf"
                 try:
                     payload["streams"] = _json.loads(
                         p.read_text(encoding="utf-8")) if p.exists() else []
@@ -2464,7 +2464,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
 
             # ── Events ──────────────────────────────────────────────────────
             if include.get("events", True):
-                p = CONFIG_DIR() / "events.json"
+                p = CONFIG_DIR() / "events.hcf"
                 try:
                     payload["events"] = _json.loads(
                         p.read_text(encoding="utf-8")) if p.exists() else []
@@ -2473,7 +2473,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
 
             # ── Mail config (password redacted for safety) ───────────────────
             if include.get("mail", True):
-                p = BASE_DIR() / "mail_config.json"
+                p = BASE_DIR() / "mail_config.hcf"
                 try:
                     if p.exists():
                         mc = _json.loads(p.read_text(encoding="utf-8"))
@@ -2487,7 +2487,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
 
             # ── Resume positions ────────────────────────────────────────────
             if include.get("resume", True):
-                p = BASE_DIR() / "resume_positions.json"
+                p = BASE_DIR() / "resume_positions.hcf"
                 try:
                     payload["resume_positions"] = _json.loads(
                         p.read_text(encoding="utf-8")) if p.exists() else {}
@@ -2496,7 +2496,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
 
             # ── App settings (holiday country, UI prefs persisted server-side) ──
             if include.get("app_settings", True):
-                p = CONFIG_DIR() / "app_settings.json"
+                p = CONFIG_DIR() / "app_settings.hcf"
                 try:
                     payload["app_settings"] = _json.loads(
                         p.read_text(encoding="utf-8")) if p.exists() else {}
@@ -2505,7 +2505,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
 
             # ── Media roots (extra user-defined root directories) ────────────
             if include.get("media_roots", True):
-                p = CONFIG_DIR() / "media_roots.json"
+                p = CONFIG_DIR() / "media_roots.hcf"
                 try:
                     payload["media_roots"] = _json.loads(
                         p.read_text(encoding="utf-8")) if p.exists() else []
@@ -2555,7 +2555,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             # ── Streams ─────────────────────────────────────────────────────
             if "streams" in payload:
                 try:
-                    p = CONFIG_DIR() / "streams.json"
+                    p = CONFIG_DIR() / "streams.hcf"
                     if not isinstance(payload["streams"], list):
                         raise ValueError("streams must be a list")
                     p.write_text(
@@ -2563,7 +2563,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                         encoding="utf-8",
                     )
                     restored.append("streams")
-                    log.info("restore: streams.json written (%d streams)",
+                    log.info("restore: streams.hcf written (%d streams)",
                              len(payload["streams"]))
                 except Exception as exc:
                     failed.append(f"streams: {exc}")
@@ -2572,7 +2572,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             # ── Events ──────────────────────────────────────────────────────
             if "events" in payload:
                 try:
-                    p = CONFIG_DIR() / "events.json"
+                    p = CONFIG_DIR() / "events.hcf"
                     if not isinstance(payload["events"], list):
                         raise ValueError("events must be a list")
                     p.write_text(
@@ -2587,7 +2587,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             # ── Mail config (password intentionally absent — user must re-enter) ──
             if "mail_config" in payload:
                 try:
-                    p = BASE_DIR() / "mail_config.json"
+                    p = BASE_DIR() / "mail_config.hcf"
                     existing: Dict[str, Any] = {}
                     try:
                         if p.exists():
@@ -2610,7 +2610,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             # ── Resume positions ────────────────────────────────────────────
             if "resume_positions" in payload:
                 try:
-                    p = BASE_DIR() / "resume_positions.json"
+                    p = BASE_DIR() / "resume_positions.hcf"
                     if not isinstance(payload["resume_positions"], dict):
                         raise ValueError("resume_positions must be an object")
                     p.write_text(
