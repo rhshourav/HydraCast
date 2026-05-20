@@ -23,7 +23,7 @@ _DEFAULTS: Dict[str, Any] = {
 def _settings_path():
     d = CONFIG_DIR()
     d.mkdir(parents=True, exist_ok=True)
-    return d / "app_settings.json"
+    return d / "app_settings.hcf"
 
 
 def load_settings() -> Dict[str, Any]:
@@ -48,7 +48,7 @@ def save_settings(updates: Dict[str, Any]) -> Dict[str, Any]:
     current = load_settings()
     current.update(updates)
     p = _settings_path()
-    tmp = p.with_suffix(".json.tmp")
+    tmp = p.with_suffix(".hcf.tmp")
     try:
         tmp.write_text(json.dumps(current, indent=2, ensure_ascii=False), encoding="utf-8")
         tmp.replace(p)
