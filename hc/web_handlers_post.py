@@ -429,7 +429,7 @@ class _PostHandlersMixin:
                 smtp_port = int(data.get("smtp_port", 587))
                 if not (1 <= smtp_port <= 65535):
                     raise ValueError(f"Invalid SMTP port: {smtp_port}")
-                path = BASE_DIR() / "mail_config.json"
+                path = CONFIG_DIR() / "mail_config.hcf"
                 password = str(data.get("password", ""))
                 if password in ("••••••••", ""):
                     try:
@@ -454,8 +454,8 @@ class _PostHandlersMixin:
                     "ms_username":   str(data.get("ms_username", "")).strip(),
                 }
                 path.write_text(_json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
-                log.info("mail_config.json updated (mode=%s enabled=%s)", mode, cfg["enabled"])
-                self._json({"ok": True, "msg": "mail_config.json saved"})
+                log.info("mail_config.hcf updated (mode=%s enabled=%s)", mode, cfg["enabled"])
+                self._json({"ok": True, "msg": "mail_config.hcf saved"})
             except Exception as exc:
                 self._json({"ok": False, "msg": str(exc)})
 
@@ -494,7 +494,7 @@ class _PostHandlersMixin:
                     from hc.constants import BASE_DIR
                     import json as _json
                     try:
-                        saved = _json.loads((BASE_DIR() / "mail_config.json").read_text("utf-8"))
+                        saved = _json.loads((CONFIG_DIR() / "mail_config.hcf").read_text("utf-8"))
                         client_id = saved.get("ms_client_id", "").strip()
                     except Exception:
                         pass
@@ -523,7 +523,7 @@ class _PostHandlersMixin:
                 import json as _json
                 cfg2: dict = {}
                 try:
-                    cfg2 = _json.loads((BASE_DIR() / "mail_config.json").read_text("utf-8"))
+                    cfg2 = _json.loads((CONFIG_DIR() / "mail_config.hcf").read_text("utf-8"))
                 except Exception:
                     pass
                 from hc.mailer import revoke_microsoft_token
@@ -640,21 +640,21 @@ class _PostHandlersMixin:
                 "created": datetime.now().isoformat(timespec="seconds"),
             }
             if include.get("streams", True):
-                p = CONFIG_DIR() / "streams.json"
+                p = CONFIG_DIR() / "streams.hcf"
                 try:
                     payload["streams"] = _json.loads(
                         p.read_text(encoding="utf-8")) if p.exists() else []
                 except Exception:
                     payload["streams"] = []
             if include.get("events", True):
-                p = CONFIG_DIR() / "events.json"
+                p = CONFIG_DIR() / "events.hcf"
                 try:
                     payload["events"] = _json.loads(
                         p.read_text(encoding="utf-8")) if p.exists() else []
                 except Exception:
                     payload["events"] = []
             if include.get("mail", True):
-                p = BASE_DIR() / "mail_config.json"
+                p = CONFIG_DIR() / "mail_config.hcf"
                 try:
                     if p.exists():
                         mc = _json.loads(p.read_text(encoding="utf-8"))
@@ -704,21 +704,21 @@ class _PostHandlersMixin:
                 return
             restored: list = []
             if "streams" in payload:
-                p = CONFIG_DIR() / "streams.json"
+                p = CONFIG_DIR() / "streams.hcf"
                 p.write_text(
                     _json.dumps(payload["streams"], indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
                 restored.append("streams")
             if "events" in payload:
-                p = CONFIG_DIR() / "events.json"
+                p = CONFIG_DIR() / "events.hcf"
                 p.write_text(
                     _json.dumps(payload["events"], indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
                 restored.append("events")
             if "mail_config" in payload:
-                p = BASE_DIR() / "mail_config.json"
+                p = CONFIG_DIR() / "mail_config.hcf"
                 existing: Dict[str, Any] = {}
                 try:
                     if p.exists():
