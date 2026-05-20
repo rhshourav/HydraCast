@@ -1,7026 +1,2757 @@
-"""hc/web_html.py  —  HTML template for the HydraCast Web UI.
-
-This module contains only the _HTML string. Import it via::
-
-    from hc.web_html import _HTML
-"""
-_HTML = r"""
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HydraCast</title>
-<link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
-*{box-sizing:border-box;margin:0;padding:0}
-
-/* ── CryptoVault Dark Theme ── */
-:root,[data-theme="dark"]{
-  --bg:#1c1c1e;
-  --bg2:#232325;
-  --bg3:#2c2c2e;
-  --bg4:#363638;
-  --border:#3a3a3c;
-  --border2:#505052;
-  --text:#f5f0e8;
-  --text2:#b8b8b8;
-  --text3:#787878;
-  --green:#6b8e6b;
-  --green-dim:rgba(107,142,107,0.15);
-  --red:#c27878;
-  --red-dim:rgba(194,120,120,0.15);
-  --yellow:#c9a878;
-  --yellow-dim:rgba(201,168,120,0.15);
-  --blue:#7a9fc2;
-  --blue-dim:rgba(122,159,194,0.12);
-  --cyan:#7ab8c2;
-  --purple:#9a8ab0;
-  --purple-dim:rgba(154,138,176,0.15);
-  --accent:#b87333;
-  --accent-light:#d4945a;
-  --accent-gradient:linear-gradient(135deg,#b87333 0%,#d4945a 50%,#c9845a 100%);
-  --accent-gradient-hover:linear-gradient(135deg,#c9845a 0%,#daa57a 50%,#d4945a 100%);
-  --shadow:rgba(0,0,0,0.35);
-  --font-sans:'Inter',system-ui,sans-serif;
-  --font-display:'Plus Jakarta Sans',system-ui,sans-serif;
-  --font-mono:'JetBrains Mono',monospace;
-  --radius:10px;
-  --radius-lg:14px;
-}
-
-/* ── CryptoVault Light Theme ── */
-[data-theme="light"]{
-  --bg:#f2f2f4;
-  --bg2:#ffffff;
-  --bg3:#f7f7f9;
-  --bg4:#ebebed;
-  --border:#dcdcde;
-  --border2:#c0c0c2;
-  --text:#1c1c1e;
-  --text2:#525252;
-  --text3:#9a9a9a;
-  --green:#4a7a4a;
-  --green-dim:rgba(74,122,74,0.10);
-  --red:#a85050;
-  --red-dim:rgba(168,80,80,0.10);
-  --yellow:#9a7030;
-  --yellow-dim:rgba(154,112,48,0.10);
-  --blue:#4a6a8a;
-  --blue-dim:rgba(74,106,138,0.10);
-  --cyan:#3a7a8a;
-  --purple:#6a5a7a;
-  --purple-dim:rgba(106,90,122,0.10);
-  --accent:#b87333;
-  --accent-light:#c9845a;
-  --accent-gradient:linear-gradient(135deg,#b87333 0%,#d4945a 50%,#c9845a 100%);
-  --accent-gradient-hover:linear-gradient(135deg,#c9845a 0%,#daa57a 50%,#d4945a 100%);
-  --shadow:rgba(0,0,0,0.07);
-  --font-sans:'Inter',system-ui,sans-serif;
-  --font-display:'Plus Jakarta Sans',system-ui,sans-serif;
-  --font-mono:'JetBrains Mono',monospace;
-  --radius:10px;
-  --radius-lg:14px;
-}
-
-/* ── Calendar design tokens — maps EventsCalendar generic vars to HydraCast theme ── */
-:root,[data-theme="dark"]{
-  --color-background-primary:var(--bg2);
-  --color-background-secondary:var(--bg3);
-  --color-background-info:var(--blue-dim);
-  --color-background-success:var(--green-dim);
-  --color-background-danger:var(--red-dim);
-  --color-text-primary:var(--text);
-  --color-text-secondary:var(--text2);
-  --color-text-tertiary:var(--text3);
-  --color-text-info:var(--blue);
-  --color-text-success:var(--green);
-  --color-text-danger:var(--red);
-  --color-border-primary:var(--border);
-  --color-border-secondary:var(--border2);
-  --color-border-tertiary:var(--border);
-  --color-border-info:rgba(122,159,194,0.45);
-  --color-border-success:rgba(107,142,107,0.45);
-  --color-border-danger:rgba(194,120,120,0.45);
-  --border-radius-sm:6px;
-  --border-radius-md:var(--radius);
-  --border-radius-lg:var(--radius-lg);
-}
-[data-theme="light"]{
-  --color-background-primary:var(--bg2);
-  --color-background-secondary:var(--bg3);
-  --color-background-info:var(--blue-dim);
-  --color-background-success:var(--green-dim);
-  --color-background-danger:var(--red-dim);
-  --color-text-primary:var(--text);
-  --color-text-secondary:var(--text2);
-  --color-text-tertiary:var(--text3);
-  --color-text-info:var(--blue);
-  --color-text-success:var(--green);
-  --color-text-danger:var(--red);
-  --color-border-primary:var(--border);
-  --color-border-secondary:var(--border2);
-  --color-border-tertiary:var(--border);
-  --color-border-info:rgba(74,106,138,0.4);
-  --color-border-success:rgba(74,122,74,0.4);
-  --color-border-danger:rgba(168,80,80,0.4);
-  --border-radius-sm:6px;
-  --border-radius-md:var(--radius);
-  --border-radius-lg:var(--radius-lg);
-}
-
-/* ── Calendar container ── */
-#events-calendar-root{
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius-lg);
-  overflow:hidden;
-  flex:1;
-  min-height:0;
-  transition:background 0.35s,border-color 0.35s;
-}
-#events-calendar-root button{
-  background:var(--bg3);
-  border:1px solid var(--border);
-  color:var(--text2);
-  cursor:pointer;
-  font:500 12px var(--font-sans);
-  padding:5px 12px;
-  border-radius:var(--radius);
-  display:inline-flex;align-items:center;gap:5px;
-  transition:all 0.18s;
-}
-#events-calendar-root button:hover{
-  border-color:var(--border2);color:var(--text);background:var(--bg4);
-}
-#events-calendar-root button:disabled{opacity:0.5;pointer-events:none}
-#events-calendar-root input,
-#events-calendar-root select{
-  background:var(--bg3);
-  border:1px solid var(--border);
-  color:var(--text);
-  font:14px var(--font-sans);
-  padding:6px 10px;
-  border-radius:var(--radius);
-  outline:none;
-  transition:border-color 0.18s;
-}
-#events-calendar-root input:focus,
-#events-calendar-root select:focus{border-color:var(--accent)}
-#events-calendar-root select[size]{padding:4px 6px}
-
-/* ─────────── KEYFRAMES ─────────── */
-@keyframes toastIn{
-  from{opacity:0;transform:translateX(-50%) translateY(12px) scale(0.92)}
-  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
-}
-@keyframes pulse{
-  0%,100%{opacity:1;transform:scale(1)}
-  50%{opacity:0.45;transform:scale(0.82)}
-}
-/* ── Calendar day cell hover glow ── */
-#events-calendar-root .cal-day-cell{
-  transition:background 0.15s, box-shadow 0.15s;
-}
-#events-calendar-root .cal-day-cell:hover{
-  box-shadow:inset 0 0 0 2px var(--accent);
-  z-index:1;
-}
-@keyframes fadeSlideIn{
-  from{opacity:0;transform:translateY(10px)}
-  to{opacity:1;transform:translateY(0)}
-}
-@keyframes fadeIn{
-  from{opacity:0}to{opacity:1}
-}
-@keyframes shimmer{
-  0%{background-position:-200% 0}
-  100%{background-position:200% 0}
-}
-@keyframes spin{
-  from{transform:rotate(0deg)}to{transform:rotate(360deg)}
-}
-@keyframes slideUp{
-  from{opacity:0;transform:translateY(16px)}
-  to{opacity:1;transform:translateY(0)}
-}
-@keyframes logEntry{
-  from{opacity:0;transform:translateX(-6px)}
-  to{opacity:1;transform:translateX(0)}
-}
-@keyframes borderGlow{
-  0%,100%{box-shadow:0 0 0 0 rgba(184,115,51,0)}
-  50%{box-shadow:0 0 0 3px rgba(184,115,51,0.15)}
-}
-@keyframes iconBounce{
-  0%,100%{transform:translateY(0)}
-  40%{transform:translateY(-4px)}
-  70%{transform:translateY(-2px)}
-}
-/* ─────────── COMPLIANCE ALERT BANNER ─────────── */
-@keyframes compliancePulse{
-  0%,100%{opacity:1;border-color:rgba(194,120,120,0.6);box-shadow:0 0 0 0 rgba(194,120,120,0)}
-  50%{opacity:0.88;border-color:rgba(194,120,120,1);box-shadow:0 0 10px 3px rgba(194,120,120,0.22)}
-}
-.compliance-alert-banner{
-  position:fixed;right:18px;top:72px;z-index:9999;
-  max-width:370px;min-width:260px;
-  background:var(--bg2);
-  border:1.5px solid var(--red);
-  border-radius:var(--radius-lg);
-  padding:14px 16px;
-  box-shadow:0 4px 20px rgba(194,120,120,0.18);
-  animation:compliancePulse 3s ease-in-out infinite;
-  display:flex;flex-direction:column;gap:8px;
-}
-.compliance-alert-banner .cab-hdr{
-  display:flex;align-items:center;gap:8px;font-weight:700;
-  font-size:12px;color:var(--red);font-family:var(--font-display);
-  letter-spacing:0.04em;text-transform:uppercase;
-}
-.compliance-alert-banner .cab-body{
-  font-size:12px;color:var(--text2);line-height:1.5;
-}
-.compliance-alert-banner .cab-stream{
-  font-size:11px;color:var(--text3);font-family:var(--font-mono);margin-top:2px;
-}
-.compliance-alert-banner .cab-dismiss{
-  align-self:flex-end;background:none;border:1px solid var(--border);
-  color:var(--text3);cursor:pointer;font:500 11px var(--font-sans);
-  padding:4px 10px;border-radius:6px;transition:all 0.2s;
-}
-.compliance-alert-banner .cab-dismiss:hover{
-  border-color:var(--red);color:var(--red);background:var(--red-dim);
-}
-.cab-dot{
-  display:inline-block;width:8px;height:8px;border-radius:50%;
-  background:var(--red);flex-shrink:0;
-  box-shadow:0 0 0 0 rgba(194,120,120,0.6);
-  animation:livePulse 1.8s ease-out infinite;
-}
-.st-comp-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)}
-.st-comp-row label{flex:1;font-size:13px;color:var(--text2);cursor:pointer;text-transform:none;letter-spacing:0}
-.st-comp-row small{display:block;font-size:11px;color:var(--text3);margin-top:2px}
-
-/* ─────────── PORT NOTIFICATION PANEL ─────────── */
-@keyframes portPanelIn{
-  from{opacity:0;transform:translateX(18px) scale(0.97)}
-  to{opacity:1;transform:translateX(0) scale(1)}
-}
-@keyframes portPanelOut{
-  from{opacity:1;transform:translateX(0) scale(1)}
-  to{opacity:0;transform:translateX(18px) scale(0.95)}
-}
-.port-notif-panel{
-  position:fixed;right:20px;top:80px;z-index:8000;
-  width:300px;
-  background:var(--bg2);
-  border:1px solid var(--border);
-  border-radius:var(--radius-lg);
-  box-shadow:0 8px 32px rgba(0,0,0,0.28),0 2px 8px rgba(0,0,0,0.18);
-  overflow:hidden;
-  display:none;
-  animation:portPanelIn 0.22s cubic-bezier(0.34,1.56,0.64,1) both;
-}
-.port-notif-panel.open{display:block}
-.port-notif-panel.closing{animation:portPanelOut 0.18s ease both}
-.port-notif-hdr{
-  display:flex;align-items:center;gap:8px;
-  padding:10px 14px;
-  background:var(--bg3);
-  border-bottom:1px solid var(--border);
-}
-.port-notif-hdr-title{
-  flex:1;font-size:12px;font-weight:700;
-  font-family:var(--font-display);
-  color:var(--text2);letter-spacing:0.04em;text-transform:uppercase;
-}
-.port-notif-close{
-  background:none;border:none;color:var(--text3);cursor:pointer;
-  font-size:14px;padding:2px 4px;border-radius:5px;
-  transition:color 0.15s,background 0.15s;line-height:1;
-}
-.port-notif-close:hover{color:var(--text);background:var(--bg4)}
-.port-notif-body{padding:12px 14px;display:flex;flex-direction:column;gap:8px}
-/* ── Uniform port map chip ── */
-.pmc{
-  display:inline-flex;align-items:center;gap:5px;
-  height:26px;padding:0 10px;
-  border-radius:6px;font-size:11px;font-weight:600;
-  font-family:var(--font-mono);
-  border:1px solid;
-  white-space:nowrap;cursor:default;
-  transition:box-shadow 0.15s;
-}
-.pmc.ok{background:var(--green-dim);border-color:rgba(107,142,107,0.4);color:var(--green)}
-.pmc.err{background:var(--red-dim);border-color:rgba(194,120,120,0.4);color:var(--red);cursor:help}
-.pmc-label{font-size:10px;font-weight:400;font-family:var(--font-sans);color:var(--text3);margin-left:2px}
-.pmc-icon{font-size:9px;opacity:0.8}
-/* Port status banner */
-.pnb{
-  display:flex;align-items:center;gap:8px;
-  padding:8px 11px;border-radius:8px;
-  font-size:12px;font-weight:500;border:1px solid;
-}
-.pnb.ok{background:var(--green-dim);border-color:rgba(107,142,107,0.45);color:var(--green)}
-.pnb.err{background:var(--red-dim);border-color:rgba(194,120,120,0.45);color:var(--red)}
-.pnb.warn{background:var(--yellow-dim);border-color:rgba(201,168,120,0.45);color:var(--yellow)}
-.pnb.info{background:var(--blue-dim);border-color:rgba(122,159,194,0.35);color:var(--blue)}
-/* Port map grid */
-.pmgrid{display:flex;flex-wrap:wrap;gap:5px}
-/* Firewall row */
-.fw-row{
-  display:flex;align-items:center;gap:7px;
-  padding:6px 10px;border-radius:7px;
-  font-size:11px;border:1px solid var(--border);
-  background:var(--bg3);color:var(--text3);
-}
-/* Port field row in config */
-.port-field-row{display:flex;align-items:center;gap:5px}
-.port-field-row input[type=number]{
-  width:80px;flex-shrink:0;
-  font-family:var(--font-mono);font-size:13px;font-weight:600;
-  text-align:center;
-}
-/* Icon-only square button (Suggest) */
-.port-icon-btn{
-  display:inline-flex;align-items:center;justify-content:center;
-  width:32px;height:32px;border-radius:7px;
-  font-size:14px;cursor:pointer;flex-shrink:0;
-  border:1px solid;transition:all 0.18s;
-  background:var(--bg3);border-color:var(--border);color:var(--text3);
-}
-.port-icon-btn:hover{background:var(--blue-dim);border-color:rgba(122,159,194,0.55);color:var(--blue)}
-.port-icon-btn:disabled{opacity:0.45;pointer-events:none}
-.port-action-btn{
-  display:inline-flex;align-items:center;gap:5px;
-  height:32px;padding:0 11px;border-radius:7px;
-  font-size:11px;font-weight:600;cursor:pointer;
-  border:1px solid;transition:all 0.18s;white-space:nowrap;flex-shrink:0;
-}
-.port-action-btn.suggest{
-  background:var(--blue-dim);border-color:rgba(122,159,194,0.45);color:var(--blue);
-}
-.port-action-btn.suggest:hover{background:rgba(122,159,194,0.22);border-color:var(--blue)}
-.port-action-btn.check{
-  background:var(--bg3);border-color:var(--border);color:var(--text2);
-}
-.port-action-btn.check:hover{border-color:var(--accent);color:var(--accent);background:rgba(184,115,51,0.07)}
-/* Firewall open button inside notification panel */
-.fw-open-btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:7px;
-  width:100%;height:34px;border-radius:8px;
-  font-size:12px;font-weight:600;cursor:pointer;
-  border:1px solid rgba(201,168,120,0.55);
-  background:var(--yellow-dim);color:var(--yellow);
-  transition:all 0.2s;
-}
-.fw-open-btn:hover{background:rgba(201,168,120,0.22);border-color:var(--yellow)}
-.fw-open-btn:disabled{opacity:0.5;pointer-events:none}
-.fw-open-btn.done{background:var(--green-dim);border-color:rgba(107,142,107,0.55);color:var(--green)}
-/* Info button */
-.info-btn{
-  display:inline-flex;align-items:center;justify-content:center;
-  width:18px;height:18px;border-radius:50%;
-  background:var(--bg4);border:1px solid var(--border);
-  color:var(--text3);font-size:9px;cursor:help;
-  transition:all 0.15s;flex-shrink:0;vertical-align:middle;
-  font-style:normal;font-weight:700;
-  position:relative;
-}
-.info-btn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-dim)}
-/* Tooltip */
-.info-btn .ibt{
-  display:none;position:absolute;bottom:calc(100% + 7px);left:50%;
-  transform:translateX(-50%);width:220px;
-  background:var(--bg);border:1px solid var(--border);border-radius:8px;
-  padding:8px 10px;font-size:10px;color:var(--text2);line-height:1.55;
-  font-family:var(--font-sans);font-weight:400;font-style:normal;
-  box-shadow:0 4px 18px rgba(0,0,0,0.25);z-index:200;
-  pointer-events:none;white-space:normal;text-align:left;
-}
-.info-btn:hover .ibt{display:block}
-
-html{background:var(--bg);transition:background 0.35s}
-body{
-  background:var(--bg);color:var(--text);
-  font-family:var(--font-sans);font-size:14px;line-height:1.6;
-  min-height:100vh;overflow-x:hidden;
-  transition:background 0.35s,color 0.35s;
-  -webkit-font-smoothing:antialiased;
-}
-a{color:var(--accent-light);text-decoration:none;transition:color 0.2s}
-a:hover{color:var(--accent)}
-::selection{background:rgba(184,115,51,0.28);color:var(--text)}
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px}
-::-webkit-scrollbar-thumb:hover{background:var(--text3)}
-
-/* ─────────── LAYOUT ─────────── */
-.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
-
-/* ─────────── TOP BAR ─────────── */
-.topbar{
-  background:var(--bg2);
-  border-bottom:1px solid var(--border);
-  padding:0 24px;
-  display:flex;align-items:center;gap:0;
-  height:60px;
-  flex-shrink:0;
-  position:relative;
-  z-index:100;
-  transition:background 0.35s,border-color 0.35s;
-  box-shadow:0 1px 0 var(--border),0 2px 12px var(--shadow);
-}
-.topbar::after{
-  content:'';position:absolute;bottom:0;left:0;right:0;height:2px;
-  background:var(--accent-gradient);
-  opacity:0.55;
-}
-
-.logo{
-  display:flex;align-items:center;gap:12px;
-  font-family:var(--font-display);font-weight:800;font-size:20px;
-  color:var(--text);letter-spacing:-0.3px;
-  margin-right:28px;white-space:nowrap;
-}
-.logo-icon{
-  width:36px;height:36px;
-  background:#ffffff;
-  border-radius:10px;display:flex;align-items:center;justify-content:center;
-  font-size:15px;font-weight:900;color:#333;flex-shrink:0;
-  box-shadow:0 3px 10px rgba(255,255,255,0.18);
-  transition:transform 0.2s,box-shadow 0.2s;
-}
-.logo-icon:hover{transform:scale(1.08);box-shadow:0 5px 16px rgba(255,255,255,0.28)}
-.logo sub{
-  font-family:var(--font-mono);font-size:11px;color:var(--text3);
-  font-weight:400;vertical-align:middle;margin-left:3px;
-}
-
-.nav-tabs{display:flex;gap:2px;align-items:stretch;height:100%;flex:1}
-.nav-tab{
-  background:none;border:none;color:var(--text3);cursor:pointer;
-  font-family:var(--font-sans);font-weight:500;font-size:13px;padding:0 18px;
-  border-bottom:2px solid transparent;
-  display:flex;align-items:center;gap:7px;
-  transition:all 0.22s;white-space:nowrap;
-  letter-spacing:0.01em;position:relative;
-}
-.nav-tab:hover{color:var(--text2);background:rgba(184,115,51,0.06)}
-.nav-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-.nav-tab .tab-dot{
-  width:5px;height:5px;border-radius:50%;background:currentColor;
-  opacity:0;transition:opacity 0.22s;flex-shrink:0;
-}
-.nav-tab.active .tab-dot{opacity:1;animation:pulse 2.5s ease-in-out infinite}
-
-.topbar-right{
-  margin-left:auto;display:flex;align-items:center;gap:8px;
-}
-.stat-pill{
-  display:flex;align-items:center;gap:7px;
-  background:var(--bg3);border:1px solid var(--border);
-  border-radius:20px;padding:5px 13px;font-size:12px;font-weight:500;
-  color:var(--text3);transition:background 0.35s,border-color 0.35s;
-  font-family:var(--font-sans);
-}
-.stat-pill b{color:var(--text);font-weight:600}
-.stat-pill.live{border-color:rgba(107,142,107,0.35)}
-.stat-pill.live b{color:var(--green)}
-.pulse-dot{
-  display:inline-block;width:7px;height:7px;border-radius:50%;
-  background:var(--green);
-  box-shadow:0 0 0 0 rgba(107,142,107,0.6);
-  animation:livePulse 2.2s ease-out infinite;
-}
-@keyframes livePulse{
-  0%{box-shadow:0 0 0 0 rgba(107,142,107,0.55)}
-  70%{box-shadow:0 0 0 6px rgba(107,142,107,0)}
-  100%{box-shadow:0 0 0 0 rgba(107,142,107,0)}
-}
-/* keep .pulse alias for badge usage */
-.pulse{display:inline-block;width:5px;height:5px;border-radius:50%;
-  background:currentColor;animation:pulse 2s infinite}
-
-/* ─────────── THEME TOGGLE ─────────── */
-/* ── THEME TOGGLE (moon/sun) ── */
-.hc-toggle-wrap{display:flex;align-items:center;flex-shrink:0}
-.hc-toggle-cb{opacity:0;position:absolute;width:0;height:0}
-.hc-toggle-label{
-  background-color:#111;
-  width:50px;height:26px;border-radius:50px;
-  position:relative;padding:5px;cursor:pointer;
-  display:flex;justify-content:space-between;align-items:center;
-  transition:background 0.2s linear;
-  box-shadow:0 2px 8px rgba(0,0,0,0.35);
-}
-[data-theme="light"] .hc-toggle-label{background-color:#b87333}
-.hc-toggle-label .fa-moon{color:#f1c40f;font-size:12px}
-.hc-toggle-label .fa-sun {color:#f39c12;font-size:12px}
-.hc-toggle-ball{
-  background-color:#fff;
-  width:22px;height:22px;
-  position:absolute;left:2px;top:2px;
-  border-radius:50%;
-  transition:transform 0.2s linear;
-  box-shadow:0 1px 4px rgba(0,0,0,0.3);
-}
-.hc-toggle-cb:checked + .hc-toggle-label .hc-toggle-ball{
-  transform:translateX(24px);
-}
-
-.topbar-btns{display:flex;gap:6px}
-.hbtn{
-  background:var(--bg3);border:1px solid var(--border);color:var(--text2);
-  cursor:pointer;font:500 12px var(--font-sans);padding:7px 14px;border-radius:20px;
-  display:inline-flex;align-items:center;gap:6px;
-  transition:all 0.22s;white-space:nowrap;letter-spacing:0.01em;
-}
-.hbtn:hover{border-color:var(--border2);color:var(--text);background:var(--bg4);transform:translateY(-1px)}
-.hbtn.g{border-color:rgba(107,142,107,0.5);color:var(--green);background:var(--green-dim)}
-.hbtn.g:hover{background:rgba(107,142,107,0.25)}
-.hbtn.r{border-color:rgba(194,120,120,0.5);color:var(--red);background:var(--red-dim)}
-.hbtn.r:hover{background:rgba(194,120,120,0.25)}
-
-/* ─────────── MAIN AREA ─────────── */
-.main-area{flex:1;min-height:0;display:flex;flex-direction:column}
-.tab-panel{display:none;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:24px}
-.tab-panel.active{
-  display:flex;flex-direction:column;gap:20px;
-  overflow-y:auto;overflow-x:hidden;
-  animation:fadeSlideIn 0.28s ease both;
-}
-
-/* ─────────── SECTION HEADER ─────────── */
-.section-hdr{
-  display:flex;align-items:center;gap:12px;margin-bottom:4px;
-}
-.section-hdr h2{
-  font-family:var(--font-display);font-size:11px;font-weight:700;
-  color:var(--text3);letter-spacing:0.12em;text-transform:uppercase;
-}
-.section-hdr .sep{flex:1;height:1px;background:var(--border);margin-left:4px}
-.count-badge{
-  font-size:11px;font-weight:600;
-  background:var(--bg3);border:1px solid var(--border);
-  color:var(--text3);border-radius:20px;padding:2px 10px;
-  font-family:var(--font-sans);
-}
-
-/* ─────────── CARD ─────────── */
-.card{
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  overflow:hidden;transition:background 0.35s,border-color 0.35s,box-shadow 0.25s;
-  box-shadow:0 1px 4px var(--shadow);
-  animation:fadeIn 0.25s ease both;
-  flex-shrink:0;
-}
-.card:hover{box-shadow:0 4px 16px var(--shadow)}
-.card-hdr{
-  padding:14px 20px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:10px;
-  background:var(--bg3);
-}
-.card-hdr h3{
-  font-family:var(--font-display);font-size:12px;font-weight:700;
-  color:var(--text2);letter-spacing:0.05em;text-transform:uppercase;
-}
-.card-body{padding:20px}
-
-/* ─────────── TABLE ─────────── */
-.tbl-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{
-  text-align:left;padding:11px 14px;color:var(--text3);font-weight:600;
-  border-bottom:1px solid var(--border);white-space:nowrap;font-size:11px;
-  text-transform:uppercase;letter-spacing:0.08em;background:var(--bg3);
-  font-family:var(--font-display);transition:background 0.35s;
-}
-td{
-  padding:12px 14px;border-bottom:1px solid var(--border);
-  vertical-align:middle;transition:background 0.18s;
-  font-family:var(--font-sans);
-}
-tr{animation:fadeIn 0.2s ease both}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:rgba(184,115,51,0.045)}
-.td-name{font-weight:600;color:var(--text);font-family:var(--font-display)}
-.td-muted{color:var(--text3);font-size:12px}
-
-/* ─────────── BUTTONS ─────────── */
-.btn{
-  background:var(--bg3);border:1px solid var(--border);color:var(--text2);
-  cursor:pointer;font:500 12px var(--font-sans);padding:6px 13px;border-radius:8px;
-  display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
-  transition:all 0.2s;letter-spacing:0.01em;
-}
-.btn:hover{
-  border-color:var(--accent);color:var(--accent);
-  background:rgba(184,115,51,0.09);transform:translateY(-1px);
-}
-.btn:active{transform:translateY(0)}
-.btn.g{border-color:rgba(107,142,107,0.5);color:var(--green);background:var(--green-dim)}
-.btn.g:hover{background:rgba(107,142,107,0.22);border-color:var(--green)}
-.btn.r{border-color:rgba(194,120,120,0.5);color:var(--red);background:var(--red-dim)}
-.btn.r:hover{background:rgba(194,120,120,0.22);border-color:var(--red)}
-.btn.b{border-color:rgba(122,159,194,0.4);color:var(--blue);background:var(--blue-dim)}
-.btn.b:hover{background:rgba(122,159,194,0.2);border-color:var(--blue)}
-.btn.y{border-color:rgba(201,168,120,0.4);color:var(--yellow);background:var(--yellow-dim)}
-.btn.y:hover{background:rgba(201,168,120,0.22);border-color:var(--yellow)}
-.btn.p{border-color:rgba(154,138,176,0.4);color:var(--purple);background:var(--purple-dim)}
-.btn.p:hover{background:rgba(154,138,176,0.22);border-color:var(--purple)}
-.btn-group{display:flex;gap:4px;flex-wrap:wrap}
-
-/* ─────────── BADGE ─────────── */
-.badge{
-  display:inline-flex;align-items:center;gap:5px;
-  font-size:11px;font-weight:600;
-  padding:3px 10px;border-radius:20px;letter-spacing:0.04em;
-  white-space:nowrap;font-family:var(--font-sans);
-}
-.LIVE{background:var(--green-dim);color:var(--green);border:1px solid rgba(107,142,107,0.4)}
-.LIVE::before{
-  content:'';width:6px;height:6px;border-radius:50%;background:var(--green);
-  display:inline-block;box-shadow:0 0 0 0 rgba(107,142,107,0.6);
-  animation:livePulse 2.2s ease-out infinite;
-}
-.STOPPED{background:rgba(100,100,100,0.09);color:var(--text3);border:1px solid var(--border)}
-.STARTING{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(201,168,120,0.4)}
-.ERROR{background:var(--red-dim);color:var(--red);border:1px solid rgba(194,120,120,0.4)}
-.SCHED{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(122,159,194,0.3)}
-.DISABLED{background:rgba(100,100,100,0.07);color:var(--text3);border:1px solid var(--border)}
-.ONESHOT{background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.4)}
-
-/* ─────────── PROGRESS ─────────── */
-.prog{
-  height:5px;background:var(--bg4);border-radius:3px;
-  overflow:hidden;min-width:110px;position:relative;
-}
-.prog-fill{
-  height:100%;border-radius:3px;background:var(--green);
-  transition:width .6s cubic-bezier(0.4,0,0.2,1);
-  position:relative;
-}
-.prog-fill::after{
-  content:'';position:absolute;inset:0;
-  background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.18) 50%,transparent 100%);
-  background-size:200% 100%;
-  animation:shimmer 2s linear infinite;
-}
-.prog-label{font-size:11px;color:var(--text3);margin-top:4px;font-family:var(--font-sans)}
-
-/* ─────────── CHIP / URL ─────────── */
-.chip{
-  display:inline-flex;align-items:center;gap:5px;
-  background:var(--bg3);border:1px solid var(--border);
-  border-radius:6px;padding:4px 10px;font-size:11px;color:var(--accent-light);
-  cursor:pointer;max-width:210px;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;vertical-align:middle;transition:all 0.2s;
-  font-family:var(--font-mono);
-}
-.chip:hover{
-  border-color:var(--accent);background:rgba(184,115,51,0.09);
-  color:var(--accent);transform:translateY(-1px);
-}
-
-/* ─────────── LOGBOX ─────────── */
-#logbox{
-  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
-  padding:16px;height:460px;overflow-y:auto;font-size:12px;line-height:1.9;
-  font-family:var(--font-mono);transition:background 0.35s,border-color 0.35s;
-}
-.le{color:var(--red)}.lw{color:var(--yellow)}.li{color:var(--text2)}
-.log-time{color:var(--text3);margin-right:8px}
-.log-row{
-  padding:2px 0;border-bottom:1px solid rgba(100,100,100,0.08);
-  animation:logEntry 0.15s ease both;
-}
-
-/* ─────────── FORMS ─────────── */
-.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;align-items:end}
-.form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:end}
-.fg{display:flex;flex-direction:column;gap:6px}
-label{
-  font-size:11px;color:var(--text3);text-transform:uppercase;
-  letter-spacing:0.08em;font-weight:600;font-family:var(--font-display);
-}
-input,select,textarea{
-  background:var(--bg3);border:1px solid var(--border);color:var(--text);
-  border-radius:var(--radius);padding:9px 13px;
-  font:14px var(--font-sans);width:100%;
-  transition:border-color 0.2s,box-shadow 0.2s,background 0.35s;
-}
-input:focus,select:focus,textarea:focus{
-  outline:none;border-color:var(--accent);
-  box-shadow:0 0 0 3px rgba(184,115,51,0.13);
-  animation:borderGlow 1.5s ease;
-}
-input::placeholder{color:var(--text3)}
-textarea{resize:vertical;min-height:90px;font-family:var(--font-mono);font-size:13px}
-select option{background:var(--bg3)}
-
-/* ─────────── UPLOAD ZONE ─────────── */
-#dropzone{
-  border:2px dashed var(--border);border-radius:var(--radius-lg);padding:48px 40px;
-  text-align:center;cursor:pointer;color:var(--text3);
-  transition:all 0.25s;background:var(--bg3);
-  display:flex;flex-direction:column;align-items:center;gap:10px;
-}
-#dropzone:hover,#dropzone.over{
-  border-color:var(--accent);color:var(--text);
-  background:rgba(184,115,51,0.05);transform:scale(1.005);
-}
-.dz-icon{
-  font-size:36px;opacity:0.45;margin-bottom:6px;
-  transition:transform 0.25s;
-}
-#dropzone:hover .dz-icon{animation:iconBounce 0.6s ease}
-#uplist{list-style:none;display:flex;flex-direction:column;gap:8px;margin-top:14px}
-#uplist li{
-  display:flex;align-items:center;gap:12px;font-size:13px;
-  background:var(--bg3);border:1px solid var(--border);
-  border-radius:var(--radius);padding:10px 14px;
-  animation:slideUp 0.2s ease both;
-}
-.ubar{flex:1;height:4px;background:var(--bg4);border-radius:2px;overflow:hidden}
-.ufill{height:100%;background:var(--accent);border-radius:2px;transition:width 0.2s}
-
-/* ─────────── TOAST ─────────── */
-#toast{
-  position:fixed;bottom:28px;right:28px;z-index:9999;
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  padding:13px 20px;font-size:13px;display:flex;align-items:center;gap:10px;
-  transform:translateX(130%);
-  transition:transform 0.28s cubic-bezier(0.34,1.56,0.64,1);
-  pointer-events:none;min-width:220px;max-width:380px;
-  box-shadow:0 10px 40px var(--shadow);
-  font-family:var(--font-sans);font-weight:500;
-}
-#toast.show{transform:translateX(0)}
-#toast.err{border-color:rgba(194,120,120,0.65);color:var(--red)}
-#toast.ok{border-color:rgba(107,142,107,0.65);color:var(--green)}
-#toast.info{border-color:rgba(184,115,51,0.55);color:var(--accent-light)}
-
-/* ─────────── STREAM VIEWER ─────────── */
-.viewer-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
-  gap:16px;
-}
-.stream-card{
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  overflow:hidden;transition:border-color 0.25s,box-shadow 0.25s,transform 0.25s,background 0.35s;
-  box-shadow:0 2px 8px var(--shadow);
-  animation:slideUp 0.25s ease both;
-}
-.stream-card:hover{
-  border-color:var(--accent);
-  box-shadow:0 8px 28px var(--shadow);
-  transform:translateY(-2px);
-}
-.stream-card.is-live{border-color:rgba(107,142,107,0.45)}
-.stream-card-header{
-  padding:12px 16px;display:flex;align-items:center;gap:10px;
-  border-bottom:1px solid var(--border);background:var(--bg3);
-}
-.stream-card-title{
-  font-weight:700;font-size:14px;flex:1;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-display);
-}
-.stream-preview{
-  height:170px;background:var(--bg);display:flex;align-items:center;justify-content:center;
-  font-size:12px;color:var(--text3);position:relative;overflow:hidden;
-}
-.stream-preview canvas{width:100%;height:100%;object-fit:contain}
-.stream-preview video{width:100%;height:100%;object-fit:contain;background:#000}
-.stream-overlay{
-  position:absolute;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:8px;
-  background:rgba(28,28,30,0.78);
-  transition:background 0.2s;
-}
-.stream-play-btn{
-  width:50px;height:50px;border-radius:50%;
-  background:rgba(184,115,51,0.18);border:2px solid var(--accent);
-  display:flex;align-items:center;justify-content:center;
-  cursor:pointer;font-size:18px;
-  transition:all 0.22s;color:var(--accent);
-}
-.stream-play-btn:hover{
-  background:rgba(184,115,51,0.32);transform:scale(1.12);
-  box-shadow:0 0 16px rgba(184,115,51,0.3);
-}
-.stream-card-footer{
-  padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;
-}
-.stream-stats{display:flex;gap:12px}
-.stat-item{font-size:11px;color:var(--text3);font-family:var(--font-sans)}
-.stat-item b{color:var(--text2);font-weight:600}
-
-/* ─────────── CONFIG PANEL ─────────── */
-.config-layout{display:grid;grid-template-columns:235px 1fr;gap:18px;height:100%}
-.config-sidebar{
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  overflow:hidden;transition:background 0.35s,border-color 0.35s;
-}
-.config-sidebar-hdr{
-  padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg3);
-  font-size:11px;font-weight:700;text-transform:uppercase;
-  letter-spacing:0.1em;color:var(--text3);font-family:var(--font-display);
-}
-.config-stream-item{
-  padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:10px;transition:background 0.18s;
-  font-size:13px;font-family:var(--font-sans);
-  animation:fadeIn 0.18s ease both;
-}
-.config-stream-item:hover{background:var(--bg3)}
-.config-stream-item.active{
-  background:rgba(184,115,51,0.09);border-left:3px solid var(--accent);
-  padding-left:14px;
-}
-.config-stream-item .dot{
-  width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--text3);
-  transition:background 0.2s,box-shadow 0.2s;
-}
-.config-stream-item .dot.live{background:var(--green);box-shadow:0 0 6px var(--green)}
-.config-stream-item .dot.error{background:var(--red)}
-.config-main{
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  overflow:hidden;display:flex;flex-direction:column;
-  transition:background 0.35s,border-color 0.35s;
-}
-.config-main-hdr{
-  padding:16px 22px;border-bottom:1px solid var(--border);background:var(--bg3);
-  display:flex;align-items:center;gap:12px;
-}
-.config-main-hdr h2{font-family:var(--font-display);font-size:17px;font-weight:700}
-.config-main-body{padding:24px;overflow:auto;flex:1}
-.config-section{margin-bottom:28px}
-.config-section-title{
-  font-size:11px;text-transform:uppercase;letter-spacing:0.1em;
-  color:var(--accent);font-weight:700;margin-bottom:14px;padding-bottom:8px;
-  border-bottom:1px solid var(--border);font-family:var(--font-display);
-}
-.config-main-footer{
-  padding:16px 22px;border-top:1px solid var(--border);background:var(--bg3);
-  display:flex;gap:10px;justify-content:flex-end;
-}
-
-/* ─────────── PLAYLIST EDITOR ─────────── */
-.pl-editor{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-top:8px}
-.pl-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg4);flex-wrap:wrap}
-.pl-toolbar-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);flex:1;min-width:0}
-.pl-table{width:100%;border-collapse:collapse}
-.pl-table th{padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);border-bottom:1px solid var(--border);background:var(--bg4);text-align:left;white-space:nowrap}
-.pl-table td{padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
-.pl-table tr:last-child td{border-bottom:none}
-.pl-table tr:hover td{background:rgba(184,115,51,0.04)}
-.pl-path{font-family:var(--font-mono);font-size:11px;color:var(--text2)}
-.pl-channel-tag{font-size:10px;color:var(--blue);background:var(--blue-dim);border:1px solid rgba(122,159,194,0.3);border-radius:20px;padding:1px 8px;white-space:nowrap;font-family:var(--font-sans);font-weight:500;display:inline-block}
-.pl-table input[type=text]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 7px;border-radius:5px;font-size:11px;font-family:var(--font-mono);width:100%;transition:border-color 0.2s;box-sizing:border-box}
-.pl-table input[type=number]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 5px;border-radius:5px;font-size:11px;font-family:var(--font-mono);transition:border-color 0.2s;box-sizing:border-box;text-align:center}
-.pl-table input:focus{outline:none;border-color:var(--accent)}
-.pl-add-row{display:flex;align-items:center;gap:8px;padding:9px 12px;border-top:1px solid var(--border);background:var(--bg3)}
-.pl-add-row input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:6px;font-size:11px;font-family:var(--font-mono);min-width:0}
-.pl-add-row input:focus{outline:none;border-color:var(--accent)}
-.pl-empty{padding:24px;text-align:center;color:var(--text3);font-size:12px;display:flex;flex-direction:column;align-items:center;gap:6px}
-.pl-priority-badge{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;border-radius:5px;font-size:10px;font-weight:700;font-family:var(--font-mono);padding:0 5px;margin-bottom:2px}
-.pl-priority-badge.high{background:rgba(107,142,107,0.18);color:var(--green);border:1px solid rgba(107,142,107,0.3)}
-.pl-priority-badge.mid{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(201,168,120,0.3)}
-.pl-priority-badge.low{background:var(--bg4);color:var(--text3);border:1px solid var(--border)}
-/* Dirty / unsaved indicator */
-.dirty-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--yellow);background:var(--yellow-dim);border:1px solid rgba(201,168,120,0.4);border-radius:20px;padding:2px 9px;margin-right:auto;animation:pulse 2s infinite}
-/* Unsaved modal */
-.unsaved-modal-body{font-size:13px;color:var(--text2);line-height:1.65;margin-bottom:20px}
-.unsaved-modal-body strong{color:var(--yellow)}
-
-/* ─────────── SETTINGS ─────────── */
-.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
-.setting-card{
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  padding:20px;
-  transition:background 0.35s,border-color 0.35s,box-shadow 0.25s,transform 0.25s;
-  box-shadow:0 1px 4px var(--shadow);
-  animation:slideUp 0.25s ease both;
-}
-.setting-card:hover{box-shadow:0 4px 16px var(--shadow);transform:translateY(-1px)}
-.setting-card h3{
-  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;
-  color:var(--accent);margin-bottom:16px;padding-bottom:10px;
-  border-bottom:1px solid var(--border);font-family:var(--font-display);
-}
-.setting-row{
-  display:flex;justify-content:space-between;align-items:center;
-  padding:10px 0;border-bottom:1px solid var(--border);
-}
-.setting-row:last-child{border-bottom:none}
-.setting-label{font-size:13px;color:var(--text2);font-weight:500;font-family:var(--font-sans)}
-.setting-desc{font-size:11px;color:var(--text3);margin-top:2px}
-.toggle{
-  position:relative;width:42px;height:24px;
-  background:var(--bg4);border:1px solid var(--border);border-radius:12px;
-  cursor:pointer;transition:all 0.25s;flex-shrink:0;
-}
-.toggle::after{
-  content:'';position:absolute;left:3px;top:3px;
-  width:16px;height:16px;border-radius:50%;background:var(--text3);
-  transition:all 0.25s cubic-bezier(0.34,1.56,0.64,1);
-  box-shadow:0 1px 4px rgba(0,0,0,0.2);
-}
-.toggle.on{background:rgba(184,115,51,0.22);border-color:var(--accent)}
-.toggle.on::after{transform:translateX(18px);background:var(--accent)}
-
-/* ─────────── RESPONSIVE ─────────── */
-.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
-
-/* ─────────── SEEK MODAL ─────────── */
-.modal-bg{
-  position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;
-  display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px);
-}
-.modal-bg.open{display:flex;animation:fadeIn 0.2s ease both}
-.modal{
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  padding:28px;width:400px;max-width:90vw;
-  box-shadow:0 28px 70px var(--shadow);
-  transition:background 0.35s,border-color 0.35s;
-  animation:slideUp 0.25s cubic-bezier(0.34,1.56,0.64,1) both;
-}
-.modal h3{
-  font-family:var(--font-display);font-size:18px;font-weight:700;
-  margin-bottom:18px;color:var(--text);
-}
-.modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:24px}
-
-/* ─────────── INLINE TAGS ─────────── */
-.tag-shuf{
-  font-size:10px;color:var(--purple);background:var(--purple-dim);
-  border:1px solid rgba(154,138,176,0.4);border-radius:20px;
-  padding:1px 7px;vertical-align:middle;font-family:var(--font-sans);font-weight:500;
-}
-.tag-dis{
-  font-size:10px;color:var(--text3);background:var(--bg4);
-  border:1px solid var(--border);border-radius:20px;
-  padding:1px 7px;vertical-align:middle;font-family:var(--font-sans);
-}
-
-/* ─────────── EMPTY STATE ─────────── */
-.empty{
-  padding:56px;text-align:center;color:var(--text3);
-  display:flex;flex-direction:column;align-items:center;gap:10px;
-  animation:fadeIn 0.3s ease both;
-}
-.empty-icon{
-  font-size:40px;opacity:0.28;margin-bottom:6px;
-  animation:iconBounce 3s ease-in-out infinite;
-}
-
-/* ─────────── STREAM INFO CHIP ROW ─────────── */
-.info-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
-.info-chip{
-  font-size:11px;background:var(--bg3);border:1px solid var(--border);
-  border-radius:6px;padding:3px 10px;color:var(--text3);
-  display:flex;align-items:center;gap:4px;font-family:var(--font-sans);
-}
-.info-chip b{color:var(--accent-light);font-weight:600}
-
-/* ─────────── COPPER ACCENT LINE ─────────── */
-.accent-line{
-  height:2px;background:var(--accent-gradient);border-radius:2px;
-  margin-bottom:18px;opacity:0.5;
-}
-
-/* ─────────── APP FOOTER ─────────── */
-.app-footer{
-  background:var(--bg2);border-top:1px solid var(--border);
-  padding:7px 24px;display:flex;align-items:center;justify-content:center;
-  gap:10px;font-size:11px;color:var(--text3);flex-shrink:0;
-  font-family:var(--font-sans);
-  transition:background 0.35s,border-color 0.35s;
-  letter-spacing:0.02em;
-}
-.app-footer a{color:var(--accent-light);transition:color 0.2s}
-.app-footer a:hover{color:var(--accent)}
-.app-footer .footer-sep{opacity:0.35;margin:0 2px}
-.author-badge{
-  display:inline-flex;align-items:center;gap:7px;
-  background:var(--bg3);border:1px solid var(--border);border-radius:20px;
-  padding:3px 11px;transition:all 0.22s;text-decoration:none !important;
-}
-.author-badge:hover{border-color:var(--accent);background:rgba(184,115,51,0.07)}
-.author-ico{
-  width:18px;height:18px;border-radius:50%;object-fit:cover;
-  flex-shrink:0;border:1px solid var(--border2);
-}
-.author-name{font-size:11px;color:var(--text2);font-weight:500}
-
-/* ─────────── LOGO IMAGE SUPPORT ─────────── */
-.logo-icon{position:relative;overflow:hidden}
-.logo-icon img{
-  position:absolute;inset:0;width:100%;height:100%;
-  object-fit:cover;border-radius:10px;
-}
-.logo-icon .logo-letter{
-  font-size:15px;font-weight:900;color:#fff;
-  position:relative;z-index:1;
-}
-
-/* ── FILE MANAGER ── */
-.fm-layout{display:grid;grid-template-columns:220px 1fr;gap:16px;height:100%;min-height:0}
-.fm-sidebar{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;display:flex;flex-direction:column;transition:background 0.35s,border-color 0.35s}
-.fm-sidebar-hdr{padding:12px 16px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);font-family:var(--font-display)}
-.fm-dir-list{flex:1;overflow-y:auto;padding:6px 0}
-.fm-dir-item{padding:9px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;transition:background 0.15s;font-family:var(--font-sans);color:var(--text2)}
-.fm-dir-item:hover{background:var(--bg3)}
-.fm-dir-item.active{background:rgba(184,115,51,0.09);color:var(--accent);border-left:2px solid var(--accent);padding-left:14px}
-.fm-dir-icon{font-size:14px;flex-shrink:0;opacity:0.65}
-.fm-main{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;display:flex;flex-direction:column;transition:background 0.35s,border-color 0.35s}
-.fm-main-hdr{padding:11px 16px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.fm-breadcrumb{display:flex;align-items:center;gap:3px;font-size:12px;flex:1;flex-wrap:wrap;min-width:0}
-.fm-breadcrumb span{color:var(--text3);cursor:pointer;padding:2px 6px;border-radius:5px;transition:color 0.15s,background 0.15s;white-space:nowrap}
-.fm-breadcrumb span:hover{color:var(--accent);background:rgba(184,115,51,0.08)}
-.fm-breadcrumb .fm-sep{color:var(--text3);opacity:0.4;font-size:10px;cursor:default;padding:0 2px}
-.fm-breadcrumb span.fm-cur{color:var(--text);font-weight:600;cursor:default}
-.fm-toolbar{display:flex;gap:6px;flex-shrink:0}
-.fm-body{flex:1;overflow-y:auto}
-.fm-empty{padding:56px 24px;text-align:center;color:var(--text3);display:flex;flex-direction:column;align-items:center;gap:10px}
-.fm-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);transition:background 0.12s;font-size:13px;font-family:var(--font-sans);position:relative}
-.fm-row:last-child{border-bottom:none}
-.fm-row:hover{background:rgba(184,115,51,0.04)}
-.fm-row-icon{font-size:16px;flex-shrink:0;width:22px;text-align:center}
-.fm-row-name{flex:1;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
-.fm-row-name.is-dir{cursor:pointer;color:var(--text)}
-.fm-row-name.is-dir:hover{color:var(--accent)}
-.fm-row-meta{font-size:11px;color:var(--text3);white-space:nowrap;font-family:var(--font-mono);flex-shrink:0}
-.fm-row-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.15s;flex-shrink:0}
-.fm-row:hover .fm-row-actions{opacity:1}
-.fm-action-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text3);cursor:pointer;font-size:11px;padding:3px 9px;border-radius:6px;transition:all 0.15s;white-space:nowrap;font-family:var(--font-sans)}
-.fm-action-btn:hover{color:var(--accent);border-color:var(--accent);background:rgba(184,115,51,0.09)}
-.fm-action-btn.del:hover{color:var(--red);border-color:var(--red);background:var(--red-dim)}
-.fm-action-btn.cp:hover{color:var(--blue);border-color:var(--blue);background:var(--blue-dim)}
-.fm-action-btn.mv:hover{color:var(--yellow);border-color:var(--yellow);background:var(--yellow-dim)}
-.fm-status-bar{padding:7px 16px;font-size:11px;color:var(--text3);border-top:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:10px;font-family:var(--font-sans);flex-shrink:0}
-.fm-status-bar b{color:var(--text2)}
-/* FM Dialogs */
-.fm-dialog-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(5px)}
-.fm-dialog-overlay.open{display:flex;animation:fadeIn 0.18s ease both}
-.fm-dialog{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:440px;max-width:92vw;box-shadow:0 24px 70px var(--shadow);animation:slideUp 0.22s ease both;transition:background 0.35s,border-color 0.35s}
-.fm-dialog h4{font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text)}
-.fm-dialog-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
-
-/* ─────────── HOLIDAY POPUP ─────────── */
-.hd-popup{
-  position:absolute;right:0;top:calc(100% + 8px);
-  width:310px;max-height:340px;overflow-y:auto;
-  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  box-shadow:0 8px 32px var(--shadow);z-index:500;
-  animation:slideUp 0.18s ease both;
-  scrollbar-width:thin;
-}
-.hd-popup-hdr{
-  padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg3);
-  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;
-  color:var(--text3);font-family:var(--font-display);
-  border-radius:var(--radius-lg) var(--radius-lg) 0 0;
-  position:sticky;top:0;z-index:1;
-}
-.hd-row{
-  padding:7px 14px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:10px;transition:background 0.15s;
-}
-.hd-row:last-child{border-bottom:none}
-.hd-row:hover{background:var(--bg3)}
-.hd-row.today{background:var(--green-dim) !important}
-.hd-row.past{opacity:0.42}
-.hd-date{font-family:var(--font-mono);font-size:11px;color:var(--accent-light);white-space:nowrap;min-width:82px}
-.hd-name{font-size:12px;color:var(--text2);flex:1;line-height:1.4}
-.hd-today-tag{font-size:10px;font-weight:700;color:var(--green);background:var(--green-dim);border:1px solid rgba(107,142,107,0.4);border-radius:20px;padding:1px 7px;white-space:nowrap}
-
-/* ─────────── MULTI-STREAM EVENT FORM ─────────── */
-.ev-stream-grid{
-  display:flex;flex-direction:column;gap:0;
-  background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);
-  max-height:220px;overflow-y:auto;
-  scrollbar-width:thin;
-}
-.ev-stream-row{
-  display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;align-items:center;
-  padding:7px 12px;border-bottom:1px solid var(--border);
-  font-size:12px;transition:background 0.15s;
-}
-.ev-stream-row:last-child{border-bottom:none}
-.ev-stream-row:hover{background:var(--bg4)}
-.ev-stream-row.checked{background:rgba(184,115,51,0.06)}
-.ev-stream-row label{
-  display:flex;align-items:center;gap:7px;cursor:pointer;
-  font-size:12px;color:var(--text2);font-weight:500;
-  text-transform:none;letter-spacing:0;
-}
-.ev-stream-row select{
-  background:var(--bg);border:1px solid var(--border);color:var(--text);
-  border-radius:6px;padding:4px 8px;font:12px var(--font-sans);
-  width:100%;transition:border-color 0.2s;
-}
-.ev-stream-row select:focus{outline:none;border-color:var(--accent)}
-.ev-stream-row select:disabled{opacity:0.35;pointer-events:none}
-
-
-</style>
-</head>
-<body>
-
-<div class="app">
-
-<!-- ══ TOP BAR ══ -->
-<header class="topbar">
-  <div class="logo">
-    <div class="logo-icon" id="logo-icon-wrap" style="cursor:default">
-      <img id="logo-img" src="/resources/logo.png" alt="HydraCast"
-           style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:10px"
-           onload="this.style.display='block';document.getElementById('logo-letter').style.display='none'"
-           onerror="this.style.display='none';document.getElementById('logo-letter').style.display=''">
-      <span class="logo-letter" id="logo-letter"
-            style="font-size:8px;font-weight:700;letter-spacing:0.06em;color:rgba(255,255,255,0.75);text-transform:uppercase;pointer-events:none;user-select:none;position:relative;z-index:1">
-        HC
-      </span>
-    </div>
-    __APP_NAME__
-    <sub id="ver-badge">v__APP_VER__</sub>
-  </div>
-
-  <nav class="nav-tabs">
-    <button class="nav-tab active" onclick="switchTab('streams',this)">
-      <span class="tab-dot"></span>Streams
-    </button>
-    <button class="nav-tab" onclick="switchTab('viewer',this)">
-      <span class="tab-dot"></span>Viewer
-    </button>
-    <button class="nav-tab" onclick="switchTab('config',this)">
-      <span class="tab-dot"></span>Configure
-    </button>
-    <button class="nav-tab" onclick="switchTab('logs',this)">
-      <span class="tab-dot"></span>Logs
-    </button>
-    <button class="nav-tab" onclick="switchTab('media',this);if(!_fmLoaded){_fmLoaded=true;loadFiles('');}">
-      <span class="tab-dot"></span>Media
-    </button>
-    <button class="nav-tab" onclick="switchTab('events',this)">
-      <span class="tab-dot"></span>Events
-    </button>
-    <button class="nav-tab" onclick="switchTab('settings',this)">
-      <span class="tab-dot"></span>Settings
-    </button>
-  </nav>
-
-  <div class="topbar-right">
-    <div class="stat-pill live">
-      <span class="pulse"></span>
-      LIVE <b id="h-live">0</b>
-    </div>
-    <div class="stat-pill">CPU <b id="h-cpu">—</b></div>
-    <div class="stat-pill">RAM <b id="h-ram">—</b></div>
-    <div class="stat-pill" style="font-variant-numeric:tabular-nums"><b id="h-time">—</b></div>
-
-    <!-- ── Holidays pill ── -->
-    <div style="position:relative" id="hd-wrap">
-      <button class="stat-pill" id="hd-btn" onclick="toggleHolidays(event)"
-          title="Public Holidays"
-          style="cursor:pointer;user-select:none;border-color:rgba(154,138,176,0.35)">
-        🗓&nbsp;<b id="hd-next-label" style="color:var(--purple)">Holidays</b>
-      </button>
-      <div class="hd-popup" id="hd-popup" style="display:none">
-        <div class="hd-popup-hdr" id="hd-popup-hdr" style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-          <span>🗓 Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)"></span></span>
-          <span style="display:flex;gap:4px;flex-shrink:0">
-            <button onclick="hdRefresh()" title="Force re-fetch from library" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px;padding:2px 5px;border-radius:4px" onmouseover="this.style.color='var(--accent-light)'" onmouseout="this.style.color='var(--text2)'">↻</button>
-            <button onclick="hdAddCustomOpen()" title="Add a custom holiday" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px;padding:2px 5px;border-radius:4px" onmouseover="this.style.color='var(--accent-light)'" onmouseout="this.style.color='var(--text2)'">＋</button>
-          </span>
-        </div>
-        <div id="hd-add-form" style="display:none;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--bg3)">
-          <div style="display:grid;grid-template-columns:130px 1fr 80px;gap:6px;align-items:end">
-            <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Date</label>
-              <input id="hd-add-date" type="date" style="width:100%;font-size:12px;padding:4px 6px;background:var(--bg4);border:1px solid var(--border2);border-radius:5px;color:var(--text)"></div>
-            <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:3px">Name</label>
-              <input id="hd-add-name" placeholder="Holiday name" style="width:100%;font-size:12px;padding:4px 6px;background:var(--bg4);border:1px solid var(--border2);border-radius:5px;color:var(--text)"></div>
-            <button onclick="hdAddCustomSave()" style="padding:4px 8px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;height:28px;margin-top:auto">Add</button>
-          </div>
-          <div id="hd-add-err" style="font-size:11px;color:var(--red);margin-top:4px;display:none"></div>
-        </div>
-        <div id="hd-list"><div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Loading…</div></div>
-      </div>
-    </div>
-
-    <div class="hc-toggle-wrap" title="Toggle between dark and light mode">
-      <input type="checkbox" class="hc-toggle-cb" id="hc-theme-cb">
-      <label for="hc-theme-cb" class="hc-toggle-label" title="Toggle between dark and light mode">
-        <i class="fas fa-moon"></i>
-        <i class="fas fa-sun"></i>
-        <span class="hc-toggle-ball"></span>
-      </label>
-    </div>
-    <div class="topbar-btns">
-      <button class="hbtn g" onclick="api('start_all',{})" title="Start every stream">▶ All</button>
-      <button class="hbtn r" onclick="api('stop_all',{})" title="Stop every stream">■ All</button>
-    </div>
-  </div>
-</header>
-
-<!-- ══ STREAMS TAB ══ -->
-<div id="tab-streams" class="tab-panel active">
-  <div class="section-hdr">
-    <h2>Live Streams</h2>
-    <span class="sep"></span>
-    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer" title="Automatically refresh stream status every 2.5 seconds">
-      <input type="checkbox" id="auto-ref" checked onchange="toggleAuto(this.checked)" style="width:auto">
-      Auto-refresh
-    </label>
-    <button class="btn b" onclick="loadStreams()" title="Refresh stream list now">↻ Refresh</button>
-    <button class="btn" onclick="downloadUrlsCsv()" title="Download all stream URLs as a CSV file">⬇ URLs CSV</button>
-    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:5px;cursor:pointer" title="Include playlist filenames in the exported CSV">
-      <input type="checkbox" id="csv-files" style="width:auto;accent-color:var(--accent)"> + filenames
-    </label>
-  </div>
-  <div class="card">
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Stream</th>
-            <th>Port</th>
-            <th>Status</th>
-            <th style="min-width:140px">Progress</th>
-            <th>Position</th>
-            <th>FPS</th>
-            <th>Loop</th>
-            <th>Stream URLs</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="stbl">
-          <tr><td colspan="10" class="empty"><div class="empty"><div class="empty-icon">📡</div>Loading streams…</div></td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ══ VIEWER TAB ══ -->
-<div id="tab-viewer" class="tab-panel">
-  <div class="section-hdr">
-    <h2>Stream Viewer</h2>
-    <span class="sep"></span>
-    <button class="btn b" onclick="loadViewer()" title="Reload stream viewer cards">↻ Refresh</button>
-  </div>
-  <div id="viewer-grid" class="viewer-grid">
-    <div class="empty"><div class="empty-icon">📺</div>Switch to this tab to load viewers…</div>
-  </div>
-</div>
-
-<!-- ══ LOGS TAB ══ -->
-<div id="tab-logs" class="tab-panel">
-  <div class="section-hdr">
-    <h2>Event Log</h2>
-    <span class="sep"></span>
-    <select id="log-stream" style="width:160px" onchange="loadLogs()" title="Filter logs by a specific stream">
-      <option value="">All streams</option>
-    </select>
-    <select id="log-level" style="width:110px" onchange="loadLogs()" title="Filter logs by severity level">
-      <option value="ALL">ALL</option>
-      <option value="INFO">INFO</option>
-      <option value="WARN">WARN</option>
-      <option value="ERROR">ERROR</option>
-    </select>
-    <button class="btn b" onclick="loadLogs()" title="Refresh log entries now">↻</button>
-    <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px;cursor:pointer" title="Automatically scroll to the newest log entry">
-      <input type="checkbox" id="log-auto" checked style="width:auto"> Auto-scroll
-    </label>
-  </div>
-  <div id="logbox"></div>
-</div>
-
-<!-- ══ UPLOAD TAB ══ -->
-<!-- ══ MEDIA TAB (Upload + File Manager merged) ══ -->
-<div id="tab-media" class="tab-panel">
-
-  <!-- Top bar: upload strip -->
-  <div class="section-hdr">
-    <h2>Media Library</h2><span class="sep"></span>
-    <button class="btn b" onclick="loadFiles(_fmCurrentPath)" title="Refresh the current folder listing">↻ Refresh</button>
-    <button class="btn g" onclick="fmNewFolder()" title="Create a new folder in the current directory">＋ New Folder</button>
-  </div>
-
-  <!-- Upload drop zone (collapsed bar at top) -->
-  <div class="card" style="padding:0;overflow:visible">
-    <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--bg3);border-radius:var(--radius-lg) var(--radius-lg) 0 0">
-      <div style="font-size:13px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:8px">
-        <span style="font-size:16px">⬆</span> Upload to:
-      </div>
-      <div class="fg" style="min-width:180px;max-width:240px;margin:0">
-        <select id="upload-subdir" style="margin:0"></select>
-      </div>
-      <button class="btn" onclick="mkSubdir()" title="Create a new subfolder inside the selected upload directory">＋ Subfolder</button>
-      <button class="btn g" onclick="document.getElementById('fpick').click()" style="margin-left:auto" title="Browse your device and upload media files">
-        Browse &amp; Upload…
-      </button>
-      <div id="dropzone-mini"
-           style="display:flex;align-items:center;gap:8px;padding:7px 14px;border:2px dashed var(--border);border-radius:var(--radius);cursor:pointer;color:var(--text3);font-size:12px;transition:all 0.2s"
-           title="Click or drag-and-drop files here to upload them to the selected folder"
-           onclick="document.getElementById('fpick').click()"
-           ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
-           ondragleave="this.style.borderColor='var(--border)'"
-           ondrop="event.preventDefault();this.style.borderColor='var(--border)';doUpload(event.dataTransfer.files)">
-        Drop files here
-      </div>
-      <input type="file" id="fpick" multiple accept="video/*,audio/*" style="display:none" onchange="doUpload(this.files)">
-    </div>
-    <!-- Upload progress list -->
-    <div id="uplist-wrap" style="display:none;padding:10px 16px;border-bottom:1px solid var(--border)">
-      <ul id="uplist" style="list-style:none;display:flex;flex-direction:column;gap:6px;margin:0;padding:0"></ul>
-    </div>
-
-    <!-- File Manager layout -->
-    <div style="display:grid;grid-template-columns:210px 1fr;min-height:520px">
-
-      <!-- Sidebar -->
-      <div style="border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
-        <div style="padding:10px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border);font-family:var(--font-display)">Folders</div>
-        <div class="fm-dir-list" id="fm-dir-list" style="flex:1;overflow-y:auto">
-          <div class="fm-dir-item active" onclick="loadFiles('')">
-            <span class="fm-dir-icon">📁</span> <span id="fm-root-label">Files</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Main file list -->
-      <div style="display:flex;flex-direction:column;overflow:hidden">
-        <!-- Breadcrumb + toolbar -->
-        <div style="padding:9px 14px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <div class="fm-breadcrumb" id="fm-breadcrumb" style="flex:1;min-width:0">
-            <span onclick="loadFiles('')" id="fm-breadcrumb-root">Files</span>
-          </div>
-        </div>
-        <!-- File rows -->
-        <div class="fm-body" id="fm-body" style="flex:1;overflow-y:auto">
-          <div class="fm-empty">
-            <div class="empty-icon">📂</div>
-            <div>Open the Media tab to browse files.</div>
-          </div>
-        </div>
-        <!-- Status bar -->
-        <div class="fm-status-bar" id="fm-status">Ready</div>
-      </div>
-
-    </div>
-  </div>
-
-</div>
-
-<!-- FM dialogs (shared, outside tab panel) -->
-<div class="fm-dialog-overlay" id="fm-rename-overlay">
-  <div class="fm-dialog">
-    <h4>✏ Rename</h4>
-    <div class="fg">
-      <label>New name</label>
-      <input type="text" id="fm-rename-input" placeholder="new name"
-             onkeydown="if(event.key==='Enter')fmDoRename()">
-    </div>
-    <div class="fm-dialog-footer">
-      <button class="btn" onclick="fmCloseDialogs()" title="Close without renaming">Cancel</button>
-      <button class="btn g" onclick="fmDoRename()" title="Apply the new name">Rename</button>
-    </div>
-  </div>
-</div>
-
-<div class="fm-dialog-overlay" id="fm-move-overlay">
-  <div class="fm-dialog">
-    <h4>↗ Move to folder</h4>
-    <div class="fg" style="margin-bottom:10px">
-      <label>Destination folder</label>
-      <select id="fm-move-dest" style="width:100%"><option value="">Media (top)</option></select>
-    </div>
-    <div class="fm-dialog-footer">
-      <button class="btn" onclick="fmCloseDialogs()" title="Close without moving">Cancel</button>
-      <button class="btn y" onclick="fmDoMove()" title="Move the file or folder to the selected destination">Move</button>
-    </div>
-  </div>
-</div>
-
-<div class="fm-dialog-overlay" id="fm-copy-overlay">
-  <div class="fm-dialog">
-    <h4>⎘ Copy to folder</h4>
-    <div class="fg" style="margin-bottom:10px">
-      <label>Destination folder</label>
-      <select id="fm-copy-dest" style="width:100%"><option value="">Media (top)</option></select>
-    </div>
-    <div class="fg">
-      <label>New filename <span style="color:var(--text3);font-weight:400">(optional)</span></label>
-      <input type="text" id="fm-copy-name" placeholder="leave blank to keep same name">
-    </div>
-    <div class="fm-dialog-footer">
-      <button class="btn" onclick="fmCloseDialogs()" title="Close without copying">Cancel</button>
-      <button class="btn b" onclick="fmDoCopy()" title="Copy the file to the selected destination">Copy</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ EVENTS TAB ══ -->
-<div id="tab-events" class="tab-panel">
-  <div id="events-calendar-root"></div>
-</div>
-
-<!-- ══ CONFIGURE TAB ══ -->
-<div id="tab-config" class="tab-panel">
-  <div class="section-hdr">
-    <h2>Stream Configuration</h2>
-    <span class="sep"></span>
-    <button class="btn b" onclick="_guardNav(loadConfig)" title="Reload stream configuration from disk">&#x21BB; Reload</button>
-  </div>
-  <div class="config-layout">
-    <div class="config-sidebar">
-      <div class="config-sidebar-hdr" style="display:flex;align-items:center;justify-content:space-between">
-        <span>Streams</span>
-        <button class="btn g" style="padding:2px 8px;font-size:10px;border-radius:5px" onclick="_guardNav(showNewStreamForm)" title="Add a new stream configuration">&#xFF0B; New</button>
-      </div>
-      <div id="config-stream-list"></div>
-    </div>
-    <div class="config-main">
-      <div class="config-main-hdr" id="config-main-hdr">
-        <h2 style="color:var(--text3);font-size:14px">Select a stream</h2>
-      </div>
-      <div class="config-main-body" id="config-main-body">
-        <div class="empty"><div class="empty-icon">⚙</div>Select a stream from the sidebar to configure it.</div>
-      </div>
-      <div class="config-main-footer" id="config-main-footer" style="display:none">
-        <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
-        <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══ SETTINGS TAB ══ -->
-<div id="tab-settings" class="tab-panel">
-  <div class="section-hdr"><h2>Application Settings</h2><span class="sep"></span></div>
-  <div class="settings-grid">
-    <!-- UI Preferences -->
-    <div class="setting-card">
-      <h3>UI Preferences</h3>
-      <div class="setting-row">
-        <div><div class="setting-label">Auto-refresh streams</div><div class="setting-desc">Poll for stream status updates</div></div>
-        <div class="toggle on" id="st-autoref" onclick="toggleSetting('autoref',this)" title="Automatically poll stream status at the configured interval"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Auto-scroll logs</div><div class="setting-desc">Jump to newest log entry</div></div>
-        <div class="toggle on" id="st-autoscroll" onclick="toggleSetting('autoscroll',this)" title="Automatically scroll the log view to the newest entry"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Compact stream table</div><div class="setting-desc">Reduce row padding</div></div>
-        <div class="toggle" id="st-compact" onclick="toggleSetting('compact',this)" title="Use smaller row padding to fit more streams on screen"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Show RTSP chip</div><div class="setting-desc">Display URL in stream table</div></div>
-        <div class="toggle on" id="st-showrtsp" onclick="toggleSetting('showrtsp',this)" title="Show the RTSP URL column in the Streams table"></div>
-      </div>
-    </div>
-
-    <!-- Notifications -->
-    <div class="setting-card">
-      <h3>Notifications</h3>
-      <div class="setting-row">
-        <div><div class="setting-label">Toast on stream start</div><div class="setting-desc">Show notification when stream goes LIVE</div></div>
-        <div class="toggle on" id="st-notif-start" onclick="toggleSetting('notifStart',this)" title="Show a toast notification when a stream goes LIVE"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Toast on stream error</div><div class="setting-desc">Alert when ERROR status detected</div></div>
-        <div class="toggle on" id="st-notif-err" onclick="toggleSetting('notifErr',this)" title="Show a toast notification when a stream enters an ERROR state"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Event countdown alerts</div><div class="setting-desc">Warn 1 min before scheduled event</div></div>
-        <div class="toggle" id="st-notif-event" onclick="toggleSetting('notifEvent',this)" title="Show a warning notification 1 minute before a scheduled event fires"></div>
-      </div>
-    </div>
-
-    <!-- Refresh Intervals -->
-    <div class="setting-card">
-      <h3>Refresh Intervals</h3>
-      <div class="setting-row">
-        <div class="setting-label">Stream poll interval</div>
-        <select id="st-poll-interval" onchange="applyPollInterval()" style="width:100px" title="How often to poll the server for stream status updates">
-          <option value="1500">1.5 s</option>
-          <option value="2500" selected>2.5 s</option>
-          <option value="5000">5 s</option>
-          <option value="10000">10 s</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">System stats interval</div>
-        <select id="st-stats-interval" onchange="applyStatsInterval()" style="width:100px" title="How often to refresh CPU and RAM stats in the header">
-          <option value="5000">5 s</option>
-          <option value="8000" selected>8 s</option>
-          <option value="15000">15 s</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">Log auto-refresh</div>
-        <select id="st-log-interval" onchange="applyLogInterval()" style="width:100px" title="How often to reload the log view when it is open">
-          <option value="2000">2 s</option>
-          <option value="4000" selected>4 s</option>
-          <option value="8000">8 s</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- System Info -->
-    <div class="setting-card">
-      <h3>System Info</h3>
-      <div class="setting-row">
-        <div class="setting-label">Version</div>
-        <code id="sys-ver" style="font-size:11px;color:var(--accent-light)">—</code>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">CPU Usage</div>
-        <b id="sys-cpu" style="color:var(--text)">—</b>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">RAM Usage</div>
-        <b id="sys-ram" style="color:var(--text)">—</b>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">Active Streams</div>
-        <b id="sys-live" style="color:var(--green)">—</b>
-      </div>
-      <div class="setting-row" style="border:none;padding-top:12px">
-        <button class="btn b" onclick="updateSysInfo()" style="width:100%;justify-content:center" title="Refresh CPU, RAM and active stream count">↻ Refresh Info</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Holiday Country -->
-  <div style="margin-top:4px">
-    <div class="section-hdr"><h2>Holiday Country</h2><span class="sep"></span>
-      <button class="btn b" onclick="loadHolidaySettings()" title="Reload holiday settings from server">↻ Load</button>
-    </div>
-    <div class="card card-body" style="padding:16px">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
-        Sets the country used to show public holidays in the Events calendar.
-        Use the two-letter ISO country code (e.g. <code style="color:var(--accent-light)">US</code>, <code style="color:var(--accent-light)">BD</code>, <code style="color:var(--accent-light)">GB</code>, <code style="color:var(--accent-light)">AU</code>).
-        Requires the <code style="color:var(--accent-light)">holidays</code> Python package.
-      </div>
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-bottom:12px">
-        <div class="fg">
-          <label>Country</label>
-          <select id="hol-country" title="Select the country for public holiday display in the Events calendar">
-            <option value="AE">AE — UAE</option>
-            <option value="AR">AR — Argentina</option>
-            <option value="AT">AT — Austria</option>
-            <option value="AU">AU — Australia</option>
-            <option value="BD">BD — Bangladesh</option>
-            <option value="BE">BE — Belgium</option>
-            <option value="BR">BR — Brazil</option>
-            <option value="CA">CA — Canada</option>
-            <option value="CH">CH — Switzerland</option>
-            <option value="CN">CN — China</option>
-            <option value="CO">CO — Colombia</option>
-            <option value="CZ">CZ — Czech Republic</option>
-            <option value="DE">DE — Germany</option>
-            <option value="DK">DK — Denmark</option>
-            <option value="EG">EG — Egypt</option>
-            <option value="ES">ES — Spain</option>
-            <option value="FI">FI — Finland</option>
-            <option value="FR">FR — France</option>
-            <option value="GB">GB — United Kingdom</option>
-            <option value="GH">GH — Ghana</option>
-            <option value="GR">GR — Greece</option>
-            <option value="HU">HU — Hungary</option>
-            <option value="ID">ID — Indonesia</option>
-            <option value="IE">IE — Ireland</option>
-            <option value="IL">IL — Israel</option>
-            <option value="IN">IN — India</option>
-            <option value="IQ">IQ — Iraq</option>
-            <option value="IR">IR — Iran</option>
-            <option value="IT">IT — Italy</option>
-            <option value="JP">JP — Japan</option>
-            <option value="KE">KE — Kenya</option>
-            <option value="KR">KR — South Korea</option>
-            <option value="KW">KW — Kuwait</option>
-            <option value="LK">LK — Sri Lanka</option>
-            <option value="MA">MA — Morocco</option>
-            <option value="MX">MX — Mexico</option>
-            <option value="MY">MY — Malaysia</option>
-            <option value="NG">NG — Nigeria</option>
-            <option value="NL">NL — Netherlands</option>
-            <option value="NO">NO — Norway</option>
-            <option value="NP">NP — Nepal</option>
-            <option value="NZ">NZ — New Zealand</option>
-            <option value="OM">OM — Oman</option>
-            <option value="PH">PH — Philippines</option>
-            <option value="PK">PK — Pakistan</option>
-            <option value="PL">PL — Poland</option>
-            <option value="PT">PT — Portugal</option>
-            <option value="QA">QA — Qatar</option>
-            <option value="RO">RO — Romania</option>
-            <option value="RU">RU — Russia</option>
-            <option value="SA">SA — Saudi Arabia</option>
-            <option value="SE">SE — Sweden</option>
-            <option value="SG">SG — Singapore</option>
-            <option value="TH">TH — Thailand</option>
-            <option value="TN">TN — Tunisia</option>
-            <option value="TR">TR — Turkey</option>
-            <option value="TZ">TZ — Tanzania</option>
-            <option value="UA">UA — Ukraine</option>
-            <option value="UG">UG — Uganda</option>
-            <option value="US" selected>US — United States</option>
-            <option value="VN">VN — Vietnam</option>
-            <option value="ZA">ZA — South Africa</option>
-            <option value="ZW">ZW — Zimbabwe</option>
-          </select>
-        </div>
-        <div class="fg">
-          <label>State / Province <span style="font-weight:400;color:var(--text3)">optional</span></label>
-          <input id="hol-subdiv" placeholder="e.g. CA, NSW, ON…"
-            title="Optional subdivision code for regional holidays. Leave blank for national-only.">
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <button class="btn g" onclick="saveHolidaySettings()" title="Save holiday country to disk">📁 Save</button>
-        <div id="hol-status" style="font-size:11px;color:var(--text3)"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Custom Holidays -->
-  <div style="margin-top:4px">
-    <div class="section-hdr"><h2>Custom Holidays</h2><span class="sep"></span>
-      <button class="btn b" onclick="loadCustomHolidays()" title="Reload custom holidays from disk">↻ Load</button>
-    </div>
-    <div class="card card-body" style="padding:16px">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
-        Add your own holidays to overlay on the Events calendar alongside public holidays.
-        Custom holidays are stored locally and are never overwritten by library updates.
-      </div>
-      <!-- Table of existing custom holidays -->
-      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:14px">
-        <table style="width:100%;border-collapse:collapse">
-          <thead>
-            <tr style="background:var(--bg3);font-size:11px;color:var(--text3);text-align:left">
-              <th style="padding:6px 8px;font-weight:500">Date</th>
-              <th style="padding:6px 8px;font-weight:500">Name</th>
-              <th style="padding:6px 8px;font-weight:500">Country</th>
-              <th style="padding:6px 8px;font-weight:500;text-align:right"></th>
-            </tr>
-          </thead>
-          <tbody id="custom-hol-tbody">
-            <tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text3);font-size:12px">Click ↻ Load to fetch saved holidays.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <!-- Add form -->
-      <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:500">Add new custom holiday</div>
-      <div class="form-grid" style="grid-template-columns:150px 1fr 100px;margin-bottom:10px;align-items:end">
-        <div class="fg">
-          <label>Date</label>
-          <input id="chol-date" type="date" title="Date of the custom holiday">
-        </div>
-        <div class="fg">
-          <label>Name</label>
-          <input id="chol-name" placeholder="e.g. Company Founding Day" title="Display name for this holiday">
-        </div>
-        <div class="fg">
-          <label>Country <span style="font-weight:400;color:var(--text3)">opt.</span></label>
-          <input id="chol-country" placeholder="e.g. BD, US" maxlength="10" title="ISO country code (optional, defaults to CUSTOM)">
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn g" onclick="addCustomHoliday()" title="Save this custom holiday to disk">＋ Add Holiday</button>
-        <div id="chol-status" style="font-size:11px;color:var(--text3)"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Mail Alerts -->
-  <div style="margin-top:4px">
-    <div class="section-hdr"><h2>Mail Alerts</h2><span class="sep"></span>
-      <button class="btn b" onclick="loadMailConfig()" title="Load saved mail alert settings from disk">↻ Load</button>
-    </div>
-    <div class="card card-body" style="padding:16px">
-
-      <!-- Mode tabs -->
-      <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border)">
-        <button id="ml-tab-gmail" class="nav-tab active" onclick="switchMailMode('gmail_oauth2')"
-          style="padding:8px 18px;font-size:12px" title="Use Gmail via OAuth2 — no password stored">
-          <span class="tab-dot"></span>Gmail (OAuth2)
-        </button>
-        <button id="ml-tab-ms" class="nav-tab" onclick="switchMailMode('microsoft_oauth2')"
-          style="padding:8px 18px;font-size:12px" title="Use Outlook / Office 365 via Microsoft OAuth2">
-          <span class="tab-dot"></span>Microsoft (OAuth2)
-        </button>
-        <button id="ml-tab-smtp" class="nav-tab" onclick="switchMailMode('smtp')"
-          style="padding:8px 18px;font-size:12px" title="Use Yahoo Mail, Gmail App Password, or a custom SMTP server">
-          <span class="tab-dot"></span>SMTP (Yahoo / Custom)
-        </button>
-      </div>
-      <input type="hidden" id="ml-mode" value="gmail_oauth2">
-
-      <!-- ── Gmail OAuth2 panel ── -->
-      <div id="ml-panel-gmail">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.8">
-          Sign in with Google — no passwords stored. Requires
-          <code style="color:var(--accent-light)">gmail_client_secret.json</code> in the HydraCast base directory.<br>
-          Libraries needed: <code style="color:var(--accent-light)">pip install google-auth google-auth-oauthlib google-api-python-client</code>
-        </div>
-        <div id="ml-gmail-status-box" style="padding:10px 14px;border-radius:8px;background:var(--bg3);
-            border:1px solid var(--border);font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
-          <span id="ml-gmail-dot" style="width:9px;height:9px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
-          <span id="ml-gmail-label">Not connected</span>
-          <button class="btn b" style="margin-left:auto" onclick="connectGmail()" title="Open Google sign-in to authorise HydraCast to send email">🔗 Connect Gmail</button>
-          <button class="btn r" id="ml-gmail-revoke" style="display:none" onclick="revokeGmail()" title="Remove stored Gmail OAuth2 credentials">✕ Disconnect</button>
-        </div>
-        <div id="ml-gmail-poll-msg" style="font-size:11px;color:var(--yellow);margin-bottom:12px;display:none">
-          ⏳ Waiting for Google sign-in in browser… <button class="btn" style="margin-left:8px" onclick="checkOAuthStatus()" title="Check whether Google sign-in has completed">Check Status</button>
-        </div>
-      </div>
-
-      <!-- ── Microsoft OAuth2 panel ── -->
-      <div id="ml-panel-ms" style="display:none">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.8">
-          <b style="color:var(--yellow)">⚡ Recommended for Outlook.com / Office 365</b> — fixes the<br>
-          <code style="color:var(--red)">"5.7.139 basic authentication is disabled"</code> SMTP error.<br>
-          Requires <code style="color:var(--accent-light)">pip install msal</code> and a free Azure App Registration.<br>
-          <a href="https://portal.azure.com" target="_blank" style="color:var(--blue)">portal.azure.com</a>
-          → App registrations → New → API permissions → Microsoft Graph → Delegated → Mail.Send
-        </div>
-        <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
-          <div class="fg">
-            <label>Application (Client) ID</label>
-            <input id="ml-ms-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-          </div>
-          <div class="fg">
-            <label>Your Mailbox Address</label>
-            <input id="ml-ms-username" placeholder="you@outlook.com">
-          </div>
-        </div>
-        <div id="ml-ms-status-box" style="padding:10px 14px;border-radius:8px;background:var(--bg3);
-            border:1px solid var(--border);font-size:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
-          <span id="ml-ms-dot" style="width:9px;height:9px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
-          <span id="ml-ms-label">Not connected</span>
-          <button class="btn b" style="margin-left:auto" onclick="connectMicrosoft()" title="Start Microsoft device sign-in to authorise HydraCast to send email">🔗 Connect Microsoft</button>
-          <button class="btn r" id="ml-ms-revoke" style="display:none" onclick="revokeMicrosoft()" title="Remove stored Microsoft OAuth2 credentials">✕ Disconnect</button>
-        </div>
-        <div id="ml-ms-device-box" style="display:none;background:var(--bg3);border:1px solid rgba(251,191,36,0.5);
-            border-radius:8px;padding:14px;margin-bottom:14px;font-size:12px">
-          <div style="color:var(--yellow);font-weight:600;margin-bottom:8px">🔐 Device Sign-in Required</div>
-          <div>1. Open <a id="ml-ms-uri" href="https://microsoft.com/devicelogin" target="_blank" style="color:var(--blue)">https://microsoft.com/devicelogin</a></div>
-          <div style="margin:6px 0">2. Enter code: <code id="ml-ms-code" style="color:var(--accent-light);font-size:15px;font-weight:700;letter-spacing:3px">——————</code></div>
-          <div style="color:var(--text3)">3. Sign in, then click Check Status below.</div>
-          <button class="btn" style="margin-top:10px" onclick="checkMsOAuthStatus()" title="Check whether Microsoft device sign-in has completed">↻ Check Status</button>
-        </div>
-      </div>
-
-      <!-- ── SMTP panel ── -->
-      <div id="ml-panel-smtp" style="display:none">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.8">
-          Works with Yahoo, custom SMTP servers, or Gmail App Password.<br>
-          <b style="color:var(--red)">⚠ Outlook.com / Office 365</b> — use the <b>Microsoft (OAuth2)</b> tab instead; basic SMTP auth is permanently disabled.
-        </div>
-        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;
-            font-size:11px;color:var(--text3);margin-bottom:14px">
-          <b style="color:var(--text2)">Quick presets:</b>&nbsp;
-          <button class="btn" onclick="smtpPreset('yahoo')" style="font-size:10px" title="Fill in Yahoo Mail SMTP settings">Yahoo</button>
-          <button class="btn" onclick="smtpPreset('gmail')" style="font-size:10px" title="Fill in Gmail App Password SMTP settings">Gmail SMTP</button>
-        </div>
-        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:12px">
-          <div class="fg">
-            <label>SMTP Host</label>
-            <input id="ml-host" placeholder="smtp.mail.yahoo.com">
-          </div>
-          <div class="fg">
-            <label>SMTP Port</label>
-            <input id="ml-port" type="number" placeholder="587" value="587">
-          </div>
-          <div class="fg">
-            <label>Username</label>
-            <input id="ml-user" placeholder="you@yahoo.com" autocomplete="username">
-          </div>
-          <div class="fg">
-            <label>Password / App Password</label>
-            <input id="ml-pass" type="password" placeholder="••••••••" autocomplete="current-password">
-          </div>
-          <div class="fg">
-            <label>From Address</label>
-            <input id="ml-from" placeholder="you@yahoo.com">
-          </div>
-        </div>
-        <div style="display:flex;gap:16px;margin-bottom:12px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
-            <input type="checkbox" id="ml-tls" checked style="width:auto;accent-color:var(--accent)"> Use STARTTLS
-          </label>
-        </div>
-      </div>
-
-            <!-- ── Shared settings (both modes) ── -->
-      <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
-        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-bottom:12px">
-          <div class="fg">
-            <label>To Addresses (comma-separated)</label>
-            <input id="ml-to" placeholder="ops@example.com, backup@example.com">
-          </div>
-          <div class="fg">
-            <label>Cooldown (seconds)</label>
-            <input id="ml-cooldown" type="number" placeholder="300" value="300">
-          </div>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
-            <input type="checkbox" id="ml-enabled" style="width:auto;accent-color:var(--accent)"> Enabled
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
-            <input type="checkbox" id="ml-on-error" checked style="width:auto;accent-color:var(--accent)"> Alert on ERROR
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0">
-            <input type="checkbox" id="ml-on-stop" checked style="width:auto;accent-color:var(--accent)"> Alert on unexpected stop
-          </label>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          <button class="btn g" onclick="saveMailConfig()" title="Save mail alert configuration to disk">📁 Save Config</button>
-          <div class="fg" style="flex-direction:row;gap:6px;align-items:center;flex:1;min-width:200px">
-            <input id="ml-test-to" placeholder="Test recipient (optional)" style="flex:1" title="Optional: override the To address just for this test email">
-            <button class="btn b" onclick="testMailAlert()" title="Send a test email to verify your mail settings">✉ Send Test</button>
-          </div>
-        </div>
-        <div id="ml-status" style="font-size:11px;color:var(--text3);margin-top:10px"></div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- Media Root Directories -->
-  <div style="margin-top:4px" id="media-roots-section">
-    <div class="section-hdr">
-      <h2>Media Root Directories</h2><span class="sep"></span>
-      <button class="btn b" onclick="loadMediaRoots()" title="Reload root directories from server">↻ Load</button>
-    </div>
-    <div class="card card-body" style="padding:16px">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">
-        HydraCast scans these directories for media files shown in the
-        <b>Library</b> and available to streams.
-        The <b>default root</b> (<code id="mr-default-path" style="color:var(--accent-light)">media/</code>) is always active and cannot be removed.
-        Extra roots must be absolute paths on the server.
-      </div>
-
-      <!-- Root list -->
-      <div id="mr-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px"></div>
-
-      <!-- Add new root row -->
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input id="mr-new-path" type="text"
-          placeholder="/absolute/path/to/extra/media"
-          style="flex:1;min-width:220px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 11px;border-radius:var(--radius);font-size:12px;font-family:var(--font-mono);outline:none;transition:border-color 0.2s"
-          onfocus="this.style.borderColor='var(--accent)'"
-          onblur="this.style.borderColor='var(--border)'"
-          onkeydown="if(event.key==='Enter')addMediaRoot()"
-          title="Absolute server-side path to add as a media root">
-        <button class="btn g" onclick="addMediaRoot()" title="Add this directory as an extra media root">+ Add Root</button>
-      </div>
-      <div id="mr-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
-    </div>
-  </div>
-
-  <!-- Backup & Restore -->
-  <div style="margin-top:4px">
-    <div class="section-hdr"><h2>Backup &amp; Restore</h2><span class="sep"></span></div>
-    <div class="card card-body" style="padding:16px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
-
-        <!-- Backup -->
-        <div>
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Create Backup</div>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
-            Downloads a single <code style="color:var(--accent-light)">.hc</code> file containing all your configuration:
-            <ul style="margin:6px 0 0 16px;color:var(--text3);font-size:11px;line-height:1.9">
-              <li>Stream definitions (streams.hcf)</li>
-              <li>Scheduled events (events.hcf)</li>
-              <li>Mail alert config (mail_config.hcf)</li>
-              <li>Resume positions (resume_positions.hcf)</li>
-              <li>App settings (holiday country, etc.)</li>
-              <li>Media root directory list (media_roots.hcf)</li>
-            </ul>
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-streams" checked style="width:auto;accent-color:var(--accent)" title="Include stream definitions in the backup"> Streams
-            </label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-events" checked style="width:auto;accent-color:var(--accent)" title="Include scheduled events in the backup"> Events
-            </label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-mail" checked style="width:auto;accent-color:var(--accent)" title="Include mail alert configuration in the backup (password is excluded)"> Mail config
-            </label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-resume" checked style="width:auto;accent-color:var(--accent)" title="Include per-file resume positions in the backup"> Resume positions
-            </label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-app-settings" checked style="width:auto;accent-color:var(--accent)" title="Include app settings (holiday country, etc.) in the backup"> App settings
-            </label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-media-roots" checked style="width:auto;accent-color:var(--accent)" title="Include extra media root directory paths in the backup"> Media roots
-            </label>
-          </div>
-          <button class="btn g" onclick="downloadBackup()" title="Download a .hc backup file containing the selected configuration">⬇ Download Backup</button>
-          <div id="bk-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
-        </div>
-
-        <!-- Restore -->
-        <div>
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--yellow);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Restore from Backup</div>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
-            Upload a <code style="color:var(--accent-light)">.hc</code> backup file to restore configuration.
-            <span style="color:var(--red);font-weight:600">All streams will be restarted after restore.</span>
-          </div>
-          <div id="restore-drop" style="border:2px dashed var(--border);border-radius:var(--radius);padding:24px 16px;text-align:center;cursor:pointer;color:var(--text3);transition:all 0.22s;background:var(--bg3)"
-            title="Click or drag-and-drop a .hc backup file to restore your configuration"
-            onclick="document.getElementById('restore-file').click()"
-            ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
-            ondragleave="this.style.borderColor='var(--border)'"
-            ondrop="event.preventDefault();this.style.borderColor='var(--border)';doRestore(event.dataTransfer.files[0])">
-            <div style="font-size:24px;margin-bottom:6px;opacity:0.4">⬆</div>
-            <div style="font-size:13px;font-weight:600;color:var(--text2)">Drop .hc file or click to browse</div>
-          </div>
-          <input type="file" id="restore-file" accept=".hc" style="display:none" onchange="doRestore(this.files[0])">
-          <div id="restore-preview" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:11px;color:var(--text2);line-height:1.8"></div>
-          <div id="restore-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
-  <!-- Service Restart -->
-  <div style="margin-top:4px">
-    <div class="section-hdr"><h2>⚡ Service Control</h2><span class="sep"></span></div>
-    <div class="card card-body" style="padding:16px">
-      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
-        <div style="flex:1;min-width:220px">
-          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">↺ Restart Everything</div>
-          <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5">Stops all streams, then relaunches the entire application process (<code style="font-size:11px">os.execv</code>). The page will reconnect automatically in ~5 s.</div>
-          <button class="btn r" style="font-weight:600" onclick="svcRestartAll()"
-                  title="Stop all streams then restart the web server process (os.execv)">&#x26A1; Restart All Services</button>
-        </div>
-        <div style="flex:1;min-width:220px">
-          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">↺ Streams only</div>
-          <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5">Restarts every stream without touching the web UI process. Faster — no page reload needed.</div>
-          <button class="btn b" onclick="if(confirm('Restart ALL streams?')) api('restart_all',{})"
-                  title="Stop and restart every stream">↺ Restart Streams</button>
-        </div>
-      </div>
-      <div id="svc-restart-status" style="font-size:11px;color:var(--text3);margin-top:10px"></div>
-    </div>
-  </div>
-
-  <!-- Danger Zone -->
-  <div style="margin-top:4px">
-    <div class="section-hdr"><h2 style="color:var(--red)">Danger Zone</h2><span class="sep"></span></div>
-    <div class="card card-body" style="border-color:rgba(248,113,113,0.2);padding:16px">
-      <div style="display:flex;flex-wrap:wrap;gap:10px">
-        <button class="btn r" onclick="if(confirm('Stop ALL streams?')) api('stop_all',{})" title="Immediately stop every running stream">■ Stop All Streams</button>
-        <button class="btn r" onclick="clearPlayedEvents()" title="Delete all events that have already been played from the schedule" style="background:rgba(194,120,120,0.1);border-color:var(--red)">🗑 Clear Played Events</button>
-      </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:10px">These actions affect all streams or event history immediately.</div>
-      <div id="danger-status" style="font-size:11px;color:var(--text3);margin-top:6px"></div>
-    </div>
-  </div>
-</div>
-
-</div><!-- /app -->
-
-<!-- ══ FOOTER ══ -->
-<footer class="app-footer">
-  <span id="ft-app-name" style="display:inline-flex;align-items:center;gap:6px;">
-    <img src="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg"
-         alt="HydraCast logo"
-         style="width:16px;height:16px;flex-shrink:0;opacity:0.85;"
-         onerror="this.style.display='none'">
-    HydraCast
-  </span>
-  <span class="footer-sep">·</span>
-  <span id="ft-ver">—</span>
-  <span class="footer-sep">·</span>
-  <a href="https://github.com/rhshourav"
-     target="_blank" rel="noopener"
-     class="author-badge">
-    <img class="author-ico"
-         src="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/shourav.ico"
-         alt="rhshourav"
-         onerror="this.style.display='none'">
-    <span class="author-name">rhshourav</span>
-  </a>
-  <span class="footer-sep">·</span>
-  <a href="https://github.com/rhshourav/HydraCast" target="_blank" rel="noopener"
-     style="font-size:11px;color:var(--text3)">GitHub ↗</a>
-</footer>
-
-<!-- ══ SEEK MODAL ══ -->
-<div class="modal-bg" id="seek-modal">
-  <div class="modal">
-    <h3>Seek Stream</h3>
-    <div id="seek-info" style="font-size:11px;color:var(--text3);margin-bottom:12px"></div>
-    <div class="fg" style="margin-bottom:10px">
-      <label>Seek position (seconds or HH:MM:SS)</label>
-      <input type="text" id="seek-val" placeholder="e.g. 120 or 00:02:00">
-    </div>
-    <div class="fg">
-      <input type="range" id="seek-slider" min="0" max="100" value="0" style="accent-color:var(--accent)">
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeSeek()" title="Close without seeking">Cancel</button>
-      <button class="btn g" onclick="doSeek()" title="Jump the stream to the specified position">⏩ Seek</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ UNSAVED CHANGES MODAL ══ -->
-<!-- ══ MEDIA BROWSER MODAL ══ -->
-<div class="modal-bg" id="mb-modal" onclick="if(event.target===this)mbClose()">
-  <div class="modal" style="width:min(760px,96vw);max-width:none;padding:0;display:flex;flex-direction:column;max-height:88vh">
-
-    <!-- Header -->
-    <div style="padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0">
-      <span id="mb-mode-icon" style="font-size:20px">📁</span>
-      <div style="flex:1;min-width:0">
-        <h3 style="font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:2px" id="mb-title">Browse Media</h3>
-        <div id="mb-subtitle" style="font-size:11px;color:var(--text3)">Select a folder or file</div>
-      </div>
-      <button class="btn" onclick="mbClose()" title="Close browser" style="padding:5px 11px">✕</button>
-    </div>
-
-    <!-- Breadcrumb -->
-    <div style="padding:8px 16px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0">
-      <div id="mb-breadcrumb" style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;flex:1;min-width:0;font-size:12px"></div>
-      <button class="btn" onclick="mbRefresh()" title="Reload this folder" style="padding:3px 9px;font-size:11px;flex-shrink:0">↻</button>
-    </div>
-
-    <!-- Body: sidebar + file list -->
-    <div style="display:grid;grid-template-columns:180px 1fr;flex:1;overflow:hidden;min-height:0">
-
-      <!-- Sidebar: top-level folders -->
-      <div style="border-right:1px solid var(--border);overflow-y:auto;background:var(--bg2)">
-        <div style="padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border)">Folders</div>
-        <div id="mb-sidebar"></div>
-      </div>
-
-      <!-- Main listing -->
-      <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--bg2)">
-        <!-- Listing -->
-        <div id="mb-listing" style="flex:1;overflow-y:auto"></div>
-        <!-- Status bar -->
-        <div id="mb-status-bar" style="padding:6px 14px;font-size:11px;color:var(--text3);border-top:1px solid var(--border);background:var(--bg3);flex-shrink:0"></div>
-      </div>
-    </div>
-
-    <!-- Footer: current selection + action -->
-    <div style="padding:12px 18px;border-top:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:10px;flex-shrink:0">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px">Selection</div>
-        <div id="mb-selection-display" style="font-size:12px;font-family:var(--font-mono);color:var(--accent-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-             title="">Nothing selected</div>
-      </div>
-      <button class="btn" onclick="mbClose()" style="white-space:nowrap">Cancel</button>
-      <button class="btn g" id="mb-confirm-btn" onclick="mbConfirm()" style="white-space:nowrap" disabled>✓ Use Selection</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-bg" id="unsaved-modal">
-  <div class="modal">
-    <h3>&#x26A0;&#xFE0F; Unsaved Changes</h3>
-    <div class="unsaved-modal-body">
-      You have <strong>unsaved changes</strong> in the current configuration.<br>
-      What would you like to do?
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="handleUnsaved('cancel')" title="Go back and keep editing">Stay Here</button>
-      <button class="btn r" onclick="handleUnsaved('discard')" title="Throw away unsaved edits and continue">Discard Changes</button>
-      <button class="btn g" onclick="handleUnsaved('save')" title="Save your changes, then continue">Save &amp; Continue</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ PORT NOTIFICATION PANEL ══ -->
-<div id="port-notif-panel" class="port-notif-panel">
-  <div class="port-notif-hdr">
-    <i class="ti ti-router" style="font-size:13px;color:var(--accent)"></i>
-    <span class="port-notif-hdr-title">Port Analysis</span>
-    <button class="port-notif-close" onclick="closePortNotif()" title="Dismiss">&#x2715;</button>
-  </div>
-  <div class="port-notif-body" id="port-notif-body"></div>
-</div>
-
-<!-- ══ TOAST ══ -->
-<div id="toast"></div>
-
-<script>
-// ═══════════════════════════════════
-// UTILS
-// ═══════════════════════════════════
-function esc(s){
-  return String(s??'')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function fmtSecs(s){
-  s=Math.max(0,Math.floor(+s||0));
-  return[Math.floor(s/3600),Math.floor((s%3600)/60),s%60]
-    .map(n=>String(n).padStart(2,'0')).join(':');
-}
-function fmtRemaining(secs){
-  /* Convert raw seconds to compact human string: 1h 02m  /  45m 30s  /  58s */
-  const s=Math.max(0,Math.round(+secs||0));
-  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=s%60;
-  if(h>0) return h+'h '+String(m).padStart(2,'0')+'m';
-  if(m>0) return m+'m '+String(ss).padStart(2,'0')+'s';
-  return ss+'s';
-}
-function fmtBytes(n){
-  if(n<1024)return n+' B';
-  if(n<1048576)return(n/1024).toFixed(1)+' KB';
-  if(n<1073741824)return(n/1048576).toFixed(1)+' MB';
-  return(n/1073741824).toFixed(2)+' GB';
-}
-
-let _nt;
-function toast(msg,type='ok'){
-  const el=document.getElementById('toast');
-  const icons={ok:'✓',err:'✕',info:'ℹ'};
-  el.innerHTML=`<span>${icons[type]||'•'}</span><span>${msg}</span>`;
-  el.className='show '+type;
-  clearTimeout(_nt);
-  _nt=setTimeout(()=>el.className='',type==='err'?5000:2800);
-}
-
-// ═══════════════════════════════════
-// TABS
-// ═══════════════════════════════════
-function switchTab(name,btn){
-  if(name!=='config'&&_configDirty){
-    _guardNav(()=>_doSwitchTab(name,btn));
-    return;
-  }
-  _doSwitchTab(name,btn);
-}
-function _doSwitchTab(name,btn){
-  document.querySelectorAll('.tab-panel').forEach(el=>el.classList.remove('active'));
-  document.querySelectorAll('.nav-tab').forEach(el=>el.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  btn.classList.add('active');
-  if(name==='streams'){loadStreams();}
-  else if(name==='logs'){fillLogStreamSel();loadLogs();}
-  else if(name==='media'){loadSubdirs();loadFiles(_fmCurrentPath);}
-  else if(name==='events'){if(!_hdLoaded)loadHolidays();}
-  else if(name==='viewer'){loadViewer();}
-  else if(name==='config'){loadConfig();}
-  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolidaySettings();loadCustomHolidays();loadMediaRoots();}
-}
-
-// ═══════════════════════════════════
-// API
-// ═══════════════════════════════════
-async function api(action,data){
-  try{
-    const r=await fetch('/api/'+action,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(data)
-    });
-    const j=await r.json();
-    toast(j.msg||(j.ok?'Done':'Error'),j.ok?'ok':'err');
-    // For stop/start actions give the backend time to settle before refreshing,
-    // and pause auto-refresh for that window so the poller doesn't race.
-    const settleMs = (action==='stop'||action==='stop_all') ? 1500
-                   : (action==='start'||action==='start_all'||action==='restart'||action==='restart_all') ? 800
-                   : 0;
-    if(settleMs>0){
-      const wasAuto=document.getElementById('auto-ref')?.checked;
-      if(wasAuto) clearInterval(_autoTimer);
-      await new Promise(res=>setTimeout(res,settleMs));
-      loadStreams();
-      if(_configSelected) loadConfig();
-      if(wasAuto) _autoTimer=setInterval(loadStreams,parseInt(document.getElementById('st-poll-interval')?.value)||2500);
-    } else {
-      loadStreams();
-      if(_configSelected) loadConfig();
-    }
-    return j;
-  }catch(e){toast('Request failed','err');}
-}
-
-// ═══════════════════════════════════
-// DOWNLOAD URLS CSV
-// ═══════════════════════════════════
-function downloadUrlsCsv(){
-  const incFiles=document.getElementById('csv-files')?.checked?'1':'0';
-  const a=document.createElement('a');
-  a.href='/api/urls_csv?include_files='+incFiles;
-  a.download='';           // filename comes from Content-Disposition
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  toast('Downloading URLs CSV\u2026','info');
-}
-
-// ═══════════════════════════════════
-// HEADER STATS
-// ═══════════════════════════════════
-async function updateStats(){
-  try{
-    const s=await fetch('/api/system_stats').then(r=>r.json());
-    document.getElementById('h-cpu').textContent=s.cpu+'%';
-    document.getElementById('h-ram').textContent=s.mem_percent+'%';
-  }catch(_){}
-}
-async function updateSysInfo(){
-  try{
-    const s=await fetch('/api/system_stats').then(r=>r.json());
-    const cpu=document.getElementById('sys-cpu');
-    const ram=document.getElementById('sys-ram');
-    if(cpu) cpu.textContent=s.cpu+'%';
-    if(ram) ram.textContent=s.mem_percent+'%';
-    const live=document.getElementById('sys-live');
-    const streams=await fetch('/api/streams').then(r=>r.json());
-    if(live) live.textContent=streams.filter(s=>s.status==='LIVE').length+' / '+streams.length;
-    const sv=document.getElementById('sys-ver');
-    if(sv&&streams[0]) sv.textContent='v'+streams[0].app_ver;
-  }catch(_){}
-}
-
-// ═══════════════════════════════════
-// STREAMS
-// ═══════════════════════════════════
-let _autoTimer=null;
-let _statsTimer=null;
-let _logTimer=null;
-
-function toggleAuto(on){
-  clearInterval(_autoTimer);
-  if(on){
-    const v=parseInt(document.getElementById('st-poll-interval')?.value)||2500;
-    _autoTimer=setInterval(loadStreams,v);
-  }
-}
-
-function applyStatsInterval(){
-  const v=parseInt(document.getElementById('st-stats-interval')?.value)||8000;
-  clearInterval(_statsTimer);
-  _statsTimer=setInterval(updateStats,v);
-  try{localStorage.setItem('hc-stats-interval',v);}catch(_){}
-}
-
-function applyLogInterval(){
-  const v=parseInt(document.getElementById('st-log-interval')?.value)||4000;
-  clearInterval(_logTimer);
-  _logTimer=setInterval(()=>{
-    if(document.getElementById('tab-logs')?.classList.contains('active')) loadLogs();
-  },v);
-  try{localStorage.setItem('hc-log-interval',v);}catch(_){}
-}
-
-async function loadStreams(){
-  try{
-    const data=await fetch('/api/streams').then(r=>r.json());
-    data.sort((a,b)=>a.name.localeCompare(b.name));
-    const live=data.filter(s=>s.status==='LIVE').length;
-    document.getElementById('h-live').textContent=live;
-    if(data[0]) {
-      const ver='v'+data[0].app_ver;
-      document.getElementById('ver-badge').textContent=ver;
-      const sv=document.getElementById('sys-ver');
-      if(sv) sv.textContent=ver;
-      const fv=document.getElementById('ft-ver');
-      if(fv) fv.textContent=ver;
-    }
-    renderStreams(data);
-      _updateComplianceAlerts(data);
-  }catch(_){}
-}
-
-// ═══════════════════════════════════
-// STREAMS — flicker-free DOM diff
-// ═══════════════════════════════════
-let _streamSigs={};
-
-function _sigOf(s){
-  // A fingerprint of every visible field; if unchanged the row is untouched
-  return[s.status||'',
-         (+s.progress||0).toFixed(1),
-         s.time_remaining||'',
-         s.position||'',
-         s.fps>0?Math.round(s.fps):'',
-         s.loop_count||'',
-         s.error_msg||'',
-         s.playlist_count||0,
-         s.enabled?1:0,
-         s.shuffle?1:0,
-         s.active_event||'',
-         s.current_file||'',
-         s.oneshot_active?1:0].join('|');
-}
-
-function _rowCells(s,i,showRtsp){
-  const pct=Math.max(0,Math.min(100,+s.progress)).toFixed(1);
-  const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
-  const status=s.status||'STOPPED';
-  const isEvent = status==='ONESHOT' || !!s.oneshot_active;
-  const nowPlayingFile = s.current_file || (isEvent ? s.active_event : null);
-  return `
-    <td class="td-muted">${i+1}</td>
-    <td>
-      <span class="td-name">${esc(s.name)}</span>
-      ${s.shuffle?`<span class="tag-shuf">SHUF</span>`:''}
-      ${!s.enabled?`<span class="tag-dis">OFF</span>`:''}
-      ${isEvent?`<span style="font-size:10px;font-weight:700;color:var(--purple);background:var(--purple-dim);border:1px solid rgba(154,138,176,0.4);border-radius:4px;padding:2px 7px;margin-left:4px">🎬 EVENT</span>`:''}
-      ${s.playlist_count>1?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(${s.playlist_count} files)</span>`:''}
-      ${nowPlayingFile?`
-      <div style="margin-top:4px;display:flex;align-items:center;gap:5px;max-width:260px;overflow:hidden">
-        <span style="font-size:9px;font-weight:700;flex-shrink:0;letter-spacing:0.04em;text-transform:uppercase;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'EVENT':'PLAYLIST'}</span>
-        <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 7px"
-              title="${esc(nowPlayingFile)}">${esc(nowPlayingFile)}</span>
-      </div>`:''}
-      ${s.next_in_queue&&s.next_in_queue.length?`
-  <div style="margin-top:3px;display:flex;flex-direction:column;gap:1px">
-    ${s.next_in_queue.map((name,qi)=>`
-      <div style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">
-        <span style="color:var(--accent-light);font-family:var(--font-mono);font-weight:600;flex-shrink:0">+${qi+1}</span>
-        <span style="overflow:hidden;text-overflow:ellipsis">${esc(name)}</span>
-      </div>`).join('')}
-  </div>`:''}
-    </td>
-    <td style="color:var(--accent-light)">:${s.port}</td>
-    <td><span class="badge ${esc(status)}">${esc(status)}</span></td>
-    <td style="min-width:140px">
-      ${isEvent?`
-        <div class="prog"><div class="prog-fill" style="width:${pct}%;background:var(--purple)"></div></div>
-        <div class="prog-label" style="color:var(--purple)">🎬 ${pct}%${s.time_remaining?' · '+fmtRemaining(s.time_remaining)+' left':''}</div>
-      `:`
-        <div class="prog"><div class="prog-fill" style="width:${pct}%;background:${fc}"></div></div>
-        <div class="prog-label">${pct}%${s.time_remaining?' · '+fmtRemaining(s.time_remaining)+' left':''}</div>
-      `}
-    </td>
-    <td class="td-muted" style="white-space:nowrap">${esc(s.position||'--')}</td>
-    <td class="td-muted">${s.fps>0?Math.round(s.fps)+'fps':'--'}</td>
-    <td class="td-muted">${s.loop_count!=null&&s.loop_count!==undefined?'×'+s.loop_count:'--'}</td>
-    <td>
-      <div style="display:flex;flex-direction:column;gap:5px;min-width:220px">
-        ${s.rtsp_url?`
-          <div style="display:flex;align-items:center;gap:5px">
-            <span style="font-size:10px;font-weight:700;color:var(--accent-light);font-family:var(--font-mono);white-space:nowrap">RTSP</span>
-            <span style="flex:1;font-size:11px;font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:3px 8px" title="${esc(s.rtsp_url)}">${esc(s.rtsp_url)}</span>
-            <button class="btn" style="padding:3px 8px;font-size:11px;flex-shrink:0" onclick="copyText('${esc(s.rtsp_url)}')" title="Copy RTSP URL to clipboard">📋</button>
-          </div>`:'<span class="td-muted">—</span>'}
-        ${s.hls_url?`
-          <div style="display:flex;align-items:center;gap:5px">
-            <span style="font-size:10px;font-weight:700;color:var(--cyan);font-family:var(--font-mono);white-space:nowrap">HLS</span>
-            <span style="flex:1;font-size:11px;font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:3px 8px" title="${esc(s.hls_url)}">${esc(s.hls_url)}</span>
-            <button class="btn" style="padding:3px 8px;font-size:11px;flex-shrink:0;color:var(--cyan)" onclick="copyText('${esc(s.hls_url)}')" title="Copy HLS URL to clipboard">📋</button>
-          </div>`:``}
-      </div>
-    </td>
-    <td>
-      <div class="btn-group">
-        <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})" title="Start this stream">▶</button>
-        <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})" title="Stop this stream">■</button>
-        <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})" title="Restart this stream">↺</button>
-        ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭</button>`:''}
-        ${s.status==='LIVE'?`<button class="btn b" onclick="openSeek('${esc(s.name)}',${s.duration||0},${s.current_secs||0})" title="Jump to a specific position in the current file">⏩</button>`:''}
-        ${isEvent?`<button class="btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.5);font-size:11px" onclick="cancelEvent('${esc(s.name)}')" title="Stop the running event and resume compliance/playlist immediately">✕ Cancel Event</button>`:''}
-      </div>
-      ${s.error_msg?`<div style="font-size:10px;color:var(--red);margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.error_msg)}">⚠ ${esc(s.error_msg)}</div>`:''}
-    </td>`;
-}
-
-function renderStreams(data){
-  const tb=document.getElementById('stbl');
-  const showRtsp=document.getElementById('st-showrtsp')?.classList.contains('on')!==false;
-
-  if(!data.length){
-    tb.innerHTML=`<tr><td colspan="10"><div class="empty"><div class="empty-icon">📡</div>No streams configured.</div></td></tr>`;
-    _streamSigs={};
-    return;
-  }
-
-  // Build lookup of existing keyed rows
-  const existing={};
-  tb.querySelectorAll('tr[data-sname]').forEach(r=>existing[r.dataset.sname]=r);
-
-  // If transitioning from placeholder state, wipe it cleanly
-  if(tb.querySelector('td[colspan]')){
-    tb.innerHTML='';
-    _streamSigs={};
-    Object.keys(existing).forEach(k=>delete existing[k]);
-  }
-
-  const newNames=new Set(data.map(s=>s.name));
-
-  // Remove rows for streams that disappeared
-  Object.entries(existing).forEach(([name,row])=>{
-    if(!newNames.has(name)){row.remove();delete _streamSigs[name];}
-  });
-
-  // Update / insert rows in data order
-  data.forEach((s,i)=>{
-    const sig=_sigOf(s);
-    let row=existing[s.name];
-    if(!row){
-      // Brand-new stream → create row without animation flash
-      row=document.createElement('tr');
-      row.dataset.sname=s.name;
-      row.innerHTML=_rowCells(s,i,showRtsp);
-      tb.appendChild(row);
-    } else if(_streamSigs[s.name]!==sig){
-      // Something changed → update cells in-place (no remove/re-add)
-      row.innerHTML=_rowCells(s,i,showRtsp);
-    }
-    // Unchanged → leave DOM completely untouched → zero flicker
-    _streamSigs[s.name]=sig;
-  });
-
-  // Re-order rows if stream list order changed (rare)
-  const rows=Array.from(tb.querySelectorAll('tr[data-sname]'));
-  data.forEach((s,i)=>{
-    if(rows[i]&&rows[i].dataset.sname!==s.name){
-      const t=tb.querySelector(`tr[data-sname="${CSS.escape(s.name)}"]`);
-      if(t)tb.insertBefore(t,rows[i]);
-    }
-  });
-}
-
-function copyText(url){
-  if(navigator.clipboard&&window.isSecureContext){
-    navigator.clipboard.writeText(url)
-      .then(()=>toast('Copied!','ok'))
-      .catch(()=>_copyFallback(url));
-  } else {
-    _copyFallback(url);
-  }
-}
-function _copyFallback(url){
-  /* Works on HTTP (non-secure) pages where clipboard API is blocked */
-  const ta=document.createElement('textarea');
-  ta.value=url;
-  ta.style.cssText='position:fixed;top:-9999px;left:-9999px;opacity:0';
-  document.body.appendChild(ta);
-  ta.focus();ta.select();
-  try{
-    document.execCommand('copy');
-    toast('Copied!','ok');
-  }catch(_){
-    toast('Copy failed — select manually','err');
-  }
-  document.body.removeChild(ta);
-}
-
-// ═══════════════════════════════════
-// SEEK MODAL
-// ═══════════════════════════════════
-let _seekName='';
-function cancelEvent(name){
-  if(!confirm('Cancel the running event on "'+name+'" and resume compliance/playlist immediately?'))return;
-  api('cancel_event',{name});
-}
-
-function openSeek(name,dur,cur){
-  _seekName=name;
-  document.getElementById('seek-info').innerHTML=
-    `Stream: <b style="color:var(--text)">${esc(name)}</b> &nbsp;·&nbsp; Duration: <b>${fmtSecs(dur)}</b> &nbsp;·&nbsp; Current: <b>${fmtSecs(cur)}</b>`;
-  document.getElementById('seek-val').value=fmtSecs(cur);
-  const slider=document.getElementById('seek-slider');
-  slider.max=dur||100;slider.value=cur||0;
-  slider.oninput=()=>{document.getElementById('seek-val').value=fmtSecs(+slider.value);};
-  document.getElementById('seek-modal').classList.add('open');
-  document.getElementById('seek-val').focus();
-}
-function closeSeek(){document.getElementById('seek-modal').classList.remove('open');}
-function doSeek(){
-  const raw=document.getElementById('seek-val').value.trim();
-  let s;
-  const p=raw.split(':').map(Number);
-  if(p.length===3)s=p[0]*3600+p[1]*60+p[2];
-  else if(p.length===2)s=p[0]*60+p[1];
-  else s=+p[0];
-  if(isNaN(s)||s<0){toast('Invalid time','err');return;}
-  api('seek',{name:_seekName,seconds:s});
-  closeSeek();
-}
-
-// ═══════════════════════════════════
-// VIEWER TAB
-// ═══════════════════════════════════
-async function loadViewer(){
-  const grid=document.getElementById('viewer-grid');
-  let data;
-  try{
-    data=await fetch('/api/streams').then(r=>r.json());
-    data.sort((a,b)=>a.name.localeCompare(b.name));
-  }catch(_){
-    if(!grid.querySelector('.stream-card'))
-      grid.innerHTML=`<div class="empty"><div class="empty-icon">⚠</div>Failed to load streams.</div>`;
-    return;
-  }
-  if(!data.length){
-    grid.innerHTML=`<div class="empty"><div class="empty-icon">📺</div>No streams available.</div>`;
-    return;
-  }
-
-  // Build map of existing cards so we don't rebuild playing video elements
-  const existing={};
-  grid.querySelectorAll('.stream-card[data-vname]').forEach(c=>existing[c.dataset.vname]=c);
-
-  // Clear any placeholder/empty message if cards are about to be added
-  if(!Object.keys(existing).length) grid.innerHTML='';
-
-  // Remove cards for streams that no longer exist
-  const names=new Set(data.map(s=>s.name));
-  Object.keys(existing).forEach(n=>{ if(!names.has(n)){existing[n].remove();delete existing[n];} });
-
-  data.forEach((s,idx)=>{
-    const status=s.status||'STOPPED';
-    const isLive=status==='LIVE';
-    const isEvent=status==='ONESHOT' || !!s.oneshot_active;
-    const pct=(+s.progress||0).toFixed(1);
-    const nowFile = s.current_file || (isEvent ? s.active_event : null);
-    // safeName must be computed ONCE here and used in BOTH the first-render
-    // innerHTML template and the update-path querySelector calls.
-    // Previously the first render used esc(s.name) (HTML-encode only) while
-    // the update path used s.name.replace(/[^a-zA-Z0-9_-]/g,'') (strip).
-    // Those two transforms produce different strings for any name containing
-    // special chars (spaces, dots, ampersands, etc.), so every querySelector
-    // returned null and the progress bar / position never updated after the
-    // card was first created.
-    const safeName=s.name.replace(/[^a-zA-Z0-9_-]/g,'');
-
-    if(!existing[s.name]){
-      // ── First render: create the full card ──
-      const div=document.createElement('div');
-      div.className='stream-card'+(isLive||isEvent?' is-live':'');
-      div.dataset.vname=s.name;
-      div.innerHTML=`
-        <div class="stream-card-header">
-          <span class="badge vc-badge-${safeName}">${esc(status)}</span>
-          <span class="stream-card-title">${esc(s.name)}</span>
-          <span style="font-size:11px;color:var(--accent-light)">:${s.port}</span>
-        </div>
-        ${nowFile?`<div class="vc-nowplaying-${safeName}" style="padding:5px 14px 0;display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden">
-          <span style="font-size:9px;font-weight:700;flex-shrink:0;letter-spacing:0.04em;text-transform:uppercase;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'EVENT':'PLAYLIST'}</span>
-          <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
-                title="${esc(nowFile)}">${esc(nowFile)}</span>
-        </div>`:`<div class="vc-nowplaying-${safeName}" style="padding:5px 14px 0;height:22px"></div>`}
-        <div class="stream-preview" id="vp-${esc(s.name)}">
-          <div class="stream-overlay" id="vo-${esc(s.name)}">
-            ${isLive||isEvent?`
-              <div class="stream-play-btn" onclick="loadHLSStream('${esc(s.name)}','${esc(s.hls_url||'')}','${esc(s.rtsp_url||'')}')" title="Click to load stream">▶</div>
-              <div style="font-size:10px;color:var(--text3)">Click to preview</div>
-            `:`<div style="font-size:12px;color:var(--text3)">Stream offline</div>`}
-          </div>
-        </div>
-        <div class="stream-card-footer">
-          <div class="stream-stats">
-            <div class="stat-item">FPS <b class="vc-fps-${safeName}">${s.fps>0?Math.round(s.fps)+'fps':'—'}</b></div>
-            <div class="stat-item">Pos <b class="vc-pos-${safeName}">${esc(s.position||'—')}</b></div>
-            <div class="stat-item"><b class="vc-pct-${safeName}">${pct}%</b></div>
-          </div>
-          <div class="btn-group">
-            <button class="btn b vc-copy-${safeName}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.hls||this.dataset.rtsp)" title="Copy stream URL to clipboard">📋</button>
-            ${isEvent?`<button class="btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.5);font-size:10px;padding:3px 8px" onclick="cancelEvent('${esc(s.name)}')" title="Stop running event, resume compliance/playlist">✕ Event</button>`:''}
-          </div>
-        </div>
-        <div style="padding:0 14px 10px">
-          <div class="prog vc-prog-${safeName}" style="height:5px;border-radius:3px">
-            <div class="prog-fill vc-progfill-${safeName}" style="width:${pct}%;background:${isEvent?'var(--purple)':+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)'}"></div>
-          </div>
-        </div>`;
-      // Insert in correct order
-      const all=[...grid.querySelectorAll('.stream-card[data-vname]')];
-      if(idx>=all.length) grid.appendChild(div);
-      else grid.insertBefore(div,all[idx]);
-      existing[s.name]=div;
-    } else {
-      // ── Subsequent renders: only update text/status, leave preview untouched ──
-      const card=existing[s.name];
-      card.className='stream-card'+(isLive||isEvent?' is-live':'');
-      // safeName already computed above — same value used for first-render classes.
-      const badge=card.querySelector('.vc-badge-'+safeName);
-      if(badge){badge.className='badge '+esc(status);badge.textContent=status;}
-      const pctEl=card.querySelector('.vc-pct-'+safeName);
-      if(pctEl)pctEl.textContent=pct+'%';
-      const fpsEl=card.querySelector('.vc-fps-'+safeName);
-      if(fpsEl)fpsEl.textContent=s.fps>0?Math.round(s.fps)+'fps':'—';
-      const posEl=card.querySelector('.vc-pos-'+safeName);
-      if(posEl)posEl.textContent=s.position||'—';
-      const pfill=card.querySelector('.vc-progfill-'+safeName);
-      if(pfill){pfill.style.width=pct+'%';pfill.style.background=isEvent?'var(--purple)':+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)';}
-      const copyBtn=card.querySelector('.vc-copy-'+safeName);
-      if(copyBtn){if(s.hls_url)copyBtn.dataset.hls=s.hls_url;if(s.rtsp_url)copyBtn.dataset.rtsp=s.rtsp_url;}
-      // Update now-playing chip
-      const npEl=card.querySelector('.vc-nowplaying-'+safeName);
-      if(npEl){
-        if(nowFile){
-          npEl.style.cssText='padding:5px 14px 0;display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden';
-          npEl.innerHTML=`<span style="font-size:9px;font-weight:700;flex-shrink:0;letter-spacing:0.04em;text-transform:uppercase;${isEvent?'color:var(--purple)':'color:var(--accent-light)'}">${isEvent?'EVENT':'PLAYLIST'}</span>
-            <span style="font-size:10px;font-family:var(--font-mono);color:${isEvent?'var(--purple)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;background:${isEvent?'var(--purple-dim)':'var(--bg3)'};border:1px solid ${isEvent?'rgba(154,138,176,0.3)':'var(--border)'};border-radius:4px;padding:2px 8px"
-                  title="${esc(nowFile)}">${esc(nowFile)}</span>`;
-        } else {
-          npEl.innerHTML='';
+"""hc/web_handler.py  —  WebHandler and supporting helpers for HydraCast Web UI."""
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import re
+import threading
+import time
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import parse_qs, urlparse
+
+import psutil
+
+from hc.constants import (
+    APP_VER, BASE_DIR, MEDIA_DIR, SUPPORTED_EXTS, UPLOAD_MAX_BYTES,
+    get_web_port, get_media_roots, add_media_root, remove_media_root, set_media_roots,
+    get_web_port,
+)
+from hc.json_manager import JSONManager
+from hc.models import OneShotEvent, PlaylistItem, StreamConfig, StreamStatus
+from hc.utils import _fmt_duration, _fmt_size, _local_ip, _safe_path
+from hc.web_html import _HTML
+from hc.web_csvmanager import CSVManager
+from hc import APP_NAME as _APP_NAME, APP_VER as _APP_VER_INIT
+from hc.web_access_log import log_access as _log_access
+
+# Pre-render the HTML template with APP_NAME from hc/__init__.py
+_HTML_RENDERED = _HTML.replace("__APP_NAME__", _APP_NAME).replace("__APP_VER__", _APP_VER_INIT)
+
+log = logging.getLogger(__name__)
+
+# Module-level manager reference (set by hydracast.py)
+_WEB_MANAGER = None
+
+
+# =============================================================================
+# MULTI-ROOT PATH HELPERS
+# =============================================================================
+
+def _safe_in_root(target: Path, root: Path) -> Optional[Path]:
+    """
+    Return resolved *target* if it sits inside *root*; None otherwise.
+    Works for any root directory, not just MEDIA_DIR().
+    """
+    try:
+        resolved_target = target.resolve()
+        resolved_root   = root.resolve()
+        resolved_target.relative_to(resolved_root)
+        return resolved_target
+    except (ValueError, OSError):
+        return None
+
+
+def _safe_in_any_root(target: Path) -> Optional[Path]:
+    """
+    Return resolved *target* if it sits inside ANY configured media root.
+    Use instead of _safe_path(p, MEDIA_DIR()) for multi-root support.
+    """
+    try:
+        resolved = target.resolve()
+    except OSError:
+        return None
+    for root in get_media_roots():
+        try:
+            resolved.relative_to(root.resolve())
+            return resolved
+        except ValueError:
+            continue
+    return None
+
+
+def _decode_upload_subdir(subdir: str) -> Optional[Path]:
+    """
+    Resolve an upload subdir value to an absolute directory path.
+
+    Accepts two formats:
+      "@N/rel/path"  — multi-root encoded (root N, relative sub-path)
+      "@N"           — root N itself
+      "rel/path"     — legacy: relative to MEDIA_DIR() root 0
+      ""             — MEDIA_DIR() (default root)
+
+    Returns the absolute directory Path, or None if invalid/outside roots.
+    """
+    from hc.web_filemanager import _decode_root
+    roots = get_media_roots()
+    if not roots:
+        return None
+
+    subdir = subdir.strip()
+    if not subdir:
+        return roots[0].resolve()
+
+    if subdir.startswith("@"):
+        decoded = _decode_root(subdir)
+        if decoded is None:
+            return None
+        _, root_dir, rel_within = decoded
+        resolved_root = root_dir.resolve()
+        if rel_within:
+            target = resolved_root / rel_within
+            return _safe_in_root(target, resolved_root)
+        return resolved_root
+    else:
+        # Legacy bare relative path → root 0 (MEDIA_DIR)
+        root = roots[0].resolve()
+        target = root / subdir
+        return _safe_in_root(target, root)
+
+def _decode_fm_path_to_absolute(raw: str) -> Optional[Path]:
+    """
+    Convert any path string the frontend may send into a real absolute Path.
+
+    Accepts:
+      "@N/rel/path"  — multi-root encoded (from _get_files / file-manager)
+      "@N"           — a root directory itself
+      "/abs/path"    — already absolute (legacy or direct entry)
+      "rel/path"     — relative, resolved against root-0 (MEDIA_DIR)
+
+    Returns the resolved absolute Path (confirmed inside a valid media root),
+    or None if the path is invalid, escapes a root, or cannot be resolved.
+
+    This is the single conversion point that fixes the
+    "Folder/file not found: '@2/21.211'" class of errors where the frontend
+    sends @N/rel encoded paths and the backend was calling Path() on them
+    directly.
+    """
+    if not raw:
+        return None
+    raw = raw.strip()
+
+    # Strip any @start_position or #priority suffixes that _plToStr appends
+    # (e.g. "@2/21.211/file.mp4@00:01:00#2") before doing path decode.
+    # Strategy: walk from the end, stripping a trailing #priority first, then
+    # a trailing @HH:MM:SS start-position, being careful NOT to strip the
+    # root-index @N prefix which always appears at the start.
+    import re as _re
+    # Strip trailing #priority
+    raw = _re.sub(r'#\d+$', '', raw).strip()
+    # Strip trailing @HH:MM:SS start-position  (NOT the @N prefix at start)
+    raw = _re.sub(r'@\d{1,2}:\d{2}:\d{2}$', '', raw).strip()
+
+    # ── @N / @N/rel encoded path (from file-manager) ─────────────────────────
+    if raw.startswith("@"):
+        from hc.web_filemanager import _decode_root, _safe_in_root as _fm_sir
+        decoded = _decode_root(raw)
+        if decoded is None:
+            return None
+        _, root_dir, rel_within = decoded
+        try:
+            resolved_root = root_dir.resolve()
+        except Exception:
+            resolved_root = root_dir
+        if rel_within:
+            target = resolved_root / rel_within
+            return _fm_sir(target, resolved_root)
+        return resolved_root if resolved_root.exists() else None
+
+    # ── Absolute path ─────────────────────────────────────────────────────────
+    p = Path(raw)
+    if p.is_absolute():
+        return _safe_in_any_root(p)
+
+    # ── Relative path → root-0 fallback ──────────────────────────────────────
+    roots = get_media_roots()
+    if roots:
+        candidate = roots[0].resolve() / raw
+        return _safe_in_any_root(candidate)
+    return None
+
+
+# =============================================================================
+# SECURITY HEADERS
+# =============================================================================
+_SEC_HEADERS: Dict[str, str] = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options":        "SAMEORIGIN",
+    "Cache-Control":          "no-store",
+}
+
+
+# =============================================================================
+# LIBRARY CACHE
+# =============================================================================
+_LIB_CACHE:    Optional[List[Dict[str, Any]]] = None
+_LIB_CACHE_TS: float = 0.0
+_LIB_LOCK = threading.Lock()
+
+def _get_library_cached() -> List[Dict[str, Any]]:
+    from hc.worker import probe_metadata
+    global _LIB_CACHE, _LIB_CACHE_TS
+    with _LIB_LOCK:
+        if _LIB_CACHE is not None and (time.time() - _LIB_CACHE_TS) < 60.0:
+            return _LIB_CACHE
+    result: List[Dict[str, Any]] = []
+    roots = get_media_roots()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for ext in SUPPORTED_EXTS:
+            for f in root.rglob(f"*{ext}"):
+                try:
+                    meta = probe_metadata(f)
+                    try:
+                        rel = str(f.relative_to(root))
+                    except ValueError:
+                        rel = str(f)
+                    result.append({
+                        "path":          rel,
+                        "full_path":     str(f),
+                        "root":          str(root),
+                        "size":          _fmt_size(meta["size"]),
+                        "size_bytes":    meta["size"],
+                        "duration":      _fmt_duration(meta["duration"]) if meta["duration"] else "—",
+                        "duration_secs": meta["duration"],
+                        "video_codec":   meta["video_codec"],
+                        "audio_codec":   meta["audio_codec"],
+                        "width":         meta["width"],
+                        "height":        meta["height"],
+                        "fps":           meta["fps"],
+                        "bitrate":       meta["bitrate"],
+                    })
+                except Exception:
+                    pass
+    # Deduplicate by full_path (overlapping/symlinked roots)
+    seen: set = set()
+    deduped: List[Dict[str, Any]] = []
+    for item in result:
+        if item["full_path"] not in seen:
+            seen.add(item["full_path"])
+            deduped.append(item)
+    deduped.sort(key=lambda x: x["path"])
+    with _LIB_LOCK:
+        _LIB_CACHE    = deduped
+        _LIB_CACHE_TS = time.time()
+    return deduped
+
+def _invalidate_lib_cache() -> None:
+    global _LIB_CACHE, _LIB_CACHE_TS
+    with _LIB_LOCK:
+        _LIB_CACHE = None; _LIB_CACHE_TS = 0.0
+
+
+
+
+def _notify_folder_upload(upload_dir: Path) -> None:
+    """
+    After a successful upload into *upload_dir*, walk all active streams that
+    have a folder_source.  If the stream's folder_source is *upload_dir* or
+    any parent of *upload_dir*, invalidate its in-memory playlist so that the
+    next start/restart picks up the new files automatically.
+
+    This does NOT restart the stream — it only marks the playlist as stale so
+    the worker's folder-rescan logic runs on the very next _do_start().
+    """
+    mgr = _WEB_MANAGER
+    if mgr is None:
+        return
+    try:
+        upload_resolved = upload_dir.resolve()
+        for st in mgr.states:
+            cfg = st.config
+            if cfg.folder_source is None:
+                continue
+            try:
+                folder_resolved = cfg.folder_source.resolve()
+            except Exception:
+                continue
+            # Match if upload landed in the folder or a subfolder of it.
+            try:
+                upload_resolved.relative_to(folder_resolved)
+                is_related = True
+            except ValueError:
+                is_related = (folder_resolved == upload_resolved)
+            if not is_related:
+                continue
+            # Trigger a rescan immediately (non-blocking)
+            import threading as _thr
+            from hc.folder_scanner import scan_folder
+            def _rescan(cfg=cfg, folder=folder_resolved):
+                try:
+                    items, warnings = scan_folder(folder)
+                    if items:
+                        cfg.playlist = items
+                        log.info(
+                            "web upload: refreshed playlist for '%s' "
+                            "(%d files from %s)",
+                            cfg.name, len(items), folder.name,
+                        )
+                    for w in warnings:
+                        log.warning("web upload folder scan: %s", w)
+                except Exception as exc:
+                    log.warning(
+                        "web upload: folder rescan for '%s' failed: %s",
+                        cfg.name, exc,
+                    )
+            _thr.Thread(target=_rescan, daemon=True,
+                        name=f"upload-rescan-{cfg.name}").start()
+    except Exception as exc:
+        log.debug("_notify_folder_upload error: %s", exc)
+
+def _get_next_in_queue(st, cfg, n=2):
+    """Return the next *n* playlist file names after the currently playing item."""
+    playlist = cfg.playlist
+    if not playlist:
+        return []
+    order = getattr(st, "playlist_order", None) or list(range(len(playlist)))
+    idx   = getattr(st, "playlist_index", 0) or 0
+    result = []
+    for offset in range(1, n + 1):
+        next_ord_idx = (idx + offset) % len(order)
+        pl_idx = order[next_ord_idx]
+        try:
+            result.append(playlist[pl_idx].file_path.name)
+        except (IndexError, AttributeError):
+            pass
+    return result
+
+
+# =============================================================================
+# REQUEST HANDLER
+# =============================================================================
+from hc.web_filemanager import _FileManagerMixin   # provides _get_files, _handle_file_op
+from hc.web_handlers_calendar import _CalendarHandlersMixin
+
+class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandler):
+
+    def log_message(self, *args: Any) -> None:
+        pass  # access logging is done in _send() via hc.web_access_log
+
+    def _send(self, code: int, body: Union[str, bytes], ct: str = "application/json") -> None:
+        if isinstance(body, str):
+            body = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", ct)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        for k, v in _SEC_HEADERS.items():
+            self.send_header(k, v)
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        # ── Structured access log (IP · method · path · status · bytes) ──────
+        try:
+            _log_access(self, code, len(body))
+        except Exception:
+            pass
+
+    def _json(self, data: Any, code: int = 200) -> None:
+        self._send(code, json.dumps(data, default=str), "application/json")
+
+    def _serve_static(self, url_path: str) -> None:
+        """
+        Serve a static file from <BASE_DIR>/static/ or <BASE_DIR>/resources/.
+        Supports: .png .jpg .jpeg .gif .webp .svg .ico .css .js
+        Place logo at <BASE_DIR>/resources/logo.png — it will be served as /resources/logo.png.
+        Any file under <BASE_DIR>/static/ is served as /static/<filename>.
+        """
+        _MIME = {
+            ".png":  "image/png",
+            ".jpg":  "image/jpeg", ".jpeg": "image/jpeg",
+            ".gif":  "image/gif",
+            ".webp": "image/webp",
+            ".svg":  "image/svg+xml",
+            ".ico":  "image/x-icon",
+            ".css":  "text/css",
+            ".js":   "application/javascript",
         }
-      }
-      // Update offline overlay only if preview has no video playing
-      const preview=document.getElementById('vp-'+s.name);
-      const overlay=document.getElementById('vo-'+s.name);
-      if(overlay&&!preview?.querySelector('video')){
-        overlay.innerHTML=isLive||isEvent?`
-          <div class="stream-play-btn" onclick="loadHLSStream('${esc(s.name)}','${esc(s.hls_url||'')}','${esc(s.rtsp_url||'')}')" title="Click to load stream">▶</div>
-          <div style="font-size:10px;color:var(--text3)">Click to preview</div>
-        `:`<div style="font-size:12px;color:var(--text3)">Stream offline</div>`;
-      }
-    }
-  });
-}
-
-function loadHLSStream(name,hlsUrl,rtspUrl){
-  const overlay=document.getElementById('vo-'+name);
-  const preview=document.getElementById('vp-'+name);
-  if(!hlsUrl&&!rtspUrl){
-    toast('No HLS or RTSP URL available','err');return;
-  }
-  if(hlsUrl){
-    // Try HLS.js if available, else native video
-    preview.innerHTML=`
-      <video id="vid-${esc(name)}" controls autoplay muted style="width:100%;height:100%;object-fit:contain;background:#000"
-        onerror="this.outerHTML='<div class=\\'stream-overlay\\'><div style=\\'color:var(--red);font-size:11px\\'>HLS load failed</div></div>'">
-        <source src="${esc(hlsUrl)}" type="application/x-mpegURL">
-        Your browser doesn't support HLS.
-      </video>`;
-  } else {
-    overlay.innerHTML=`
-      <div style="font-size:11px;color:var(--text3);text-align:center;padding:20px">
-        <div style="margin-bottom:8px;font-size:20px">📺</div>
-        <div>RTSP streams require a native player.</div>
-        <div style="margin-top:6px"><span class="chip" onclick="copyText('${esc(rtspUrl)}')" style="max-width:none">📋 ${esc(rtspUrl)}</span></div>
-      </div>`;
-  }
-}
-
-// ═══════════════════════════════════
-// LOGS
-// ═══════════════════════════════════
-async function fillLogStreamSel(){
-  try{
-    const data=await fetch('/api/streams').then(r=>r.json());
-    data.sort((a,b)=>a.name.localeCompare(b.name));
-    const sel=document.getElementById('log-stream');
-    const cur=sel.value;
-    sel.innerHTML='<option value="">All streams</option>'+
-      data.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
-    if(cur)sel.value=cur;
-  }catch(_){}
-}
-
-async function loadLogs(){
-  try{
-    const stream=document.getElementById('log-stream').value;
-    const level=document.getElementById('log-level').value;
-    const url=`/api/logs?level=${level}&stream=${encodeURIComponent(stream)}&n=600`;
-    const data=await fetch(url).then(r=>r.json());
-    const entries=data.entries||[];
-    const box=document.getElementById('logbox');
-    box.innerHTML=entries.slice().reverse().map(([m,lv])=>{
-      const cls=lv==='ERROR'?'le':lv==='WARN'?'lw':'li';
-      const badge=lv==='ERROR'?`<span style="color:var(--red);font-size:9px;font-weight:700;margin-right:4px">[ERR]</span>`
-                 :lv==='WARN'?`<span style="color:var(--yellow);font-size:9px;font-weight:700;margin-right:4px">[WRN]</span>`
-                 :`<span style="color:var(--text3);font-size:9px;margin-right:4px">[INF]</span>`;
-      return `<div class="${cls}" style="padding:1px 0;border-bottom:1px solid rgba(33,41,58,0.3)">${badge}${esc(m)}</div>`;
-    }).join('')||'<div style="color:var(--text3);padding:12px">No log entries.</div>';
-    if(document.getElementById('log-auto').checked) box.scrollTop=0;
-  }catch(_){}
-}
-
-// ═══════════════════════════════════
-// UPLOAD
-// ═══════════════════════════════════
-async function loadSubdirs(){
-  try{
-    const data=await fetch('/api/subdirs').then(r=>r.json());
-    const sel=document.getElementById('upload-subdir');
-    const dirs=data.dirs||[];
-    // API now returns [{path:"@N/rel", label:"..."}] objects;
-    // fall back to plain strings for backwards compatibility.
-    sel.innerHTML='<option value="">/ (root)</option>'+
-      dirs.filter(Boolean).map(d=>{
-        const p=typeof d==='object'?d.path:d;
-        const l=typeof d==='object'?d.label:d;
-        return `<option value="${esc(p)}">${esc(l)}</option>`;
-      }).join('');
-  }catch(_){}
-}
-async function mkSubdir(){
-  const n=prompt('New folder name:');
-  if(!n||!n.trim())return;
-  // Send the @N/rel encoded current path + the new folder name.
-  // The server will decode the root and create the subfolder inside it.
-  const parentEncoded = _fmCurrentPath || '';
-  const newFolderName = n.trim().replace(/[/\\<>"|?*\x00]/g,'_');
-  const fullEncoded = parentEncoded ? parentEncoded + '/' + newFolderName : newFolderName;
-  const r=await api('create_subdir',{name:fullEncoded});
-  if(r&&r.ok){loadSubdirs();loadFiles(_fmCurrentPath);}
-}
-
-const dz=document.getElementById('dropzone-mini');
-if(dz){
-  dz.addEventListener('dragover',e=>{e.preventDefault();dz.style.borderColor='var(--accent)'});
-  dz.addEventListener('dragleave',()=>dz.style.borderColor='var(--border)');
-  dz.addEventListener('drop',e=>{e.preventDefault();dz.style.borderColor='var(--border)';doUpload(e.dataTransfer.files)});
-}
-
-function doUpload(files){
-  const wrap=document.getElementById('uplist-wrap');
-  if(wrap)wrap.style.display='';
-  Array.from(files).forEach(upOne);
-}
-
-// Number of simultaneous chunk fetches per file
-const UP_PARALLEL = 4;
-
-async function upOne(file){
-  if(file.size>10*1024*1024*1024){toast(file.name+': exceeds 10 GB','err');return;}
-
-  // ── Progress row ──────────────────────────────────────────────────────────
-  const id='u'+Math.random().toString(36).slice(2,7);
-  const li=document.createElement('li');
-  li.id='li-'+id;
-  li.style.cssText='display:flex;align-items:center;gap:10px;font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px';
-  li.innerHTML=`
-    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;color:var(--text2)">${esc(file.name)}</span>
-    <span class="td-muted">${fmtBytes(file.size)}</span>
-    <div class="ubar"><div class="ufill" id="uf-${id}" style="width:0"></div></div>
-    <span id="up-${id}" style="min-width:36px;text-align:right;color:var(--text3);font-size:11px">0%</span>`;
-  document.getElementById('uplist').appendChild(li);
-
-  function setPct(pct,color){
-    const b=document.getElementById('uf-'+id),t=document.getElementById('up-'+id);
-    if(b){b.style.width=pct+'%';if(color)b.style.background=color;}
-    if(t)t.textContent=pct+'%';
-  }
-  function setLabel(text,color){
-    const t=document.getElementById('up-'+id);
-    if(t){t.textContent=text;if(color)t.style.color=color;}
-  }
-  function markErr(msg){
-    const b=document.getElementById('uf-'+id);
-    if(b)b.style.background='var(--red)';
-    setLabel('✕','var(--red)');
-    toast('Failed: '+msg,'err');
-  }
-
-  const subdir=document.getElementById('upload-subdir').value;
-
-  // ── 1. Init ───────────────────────────────────────────────────────────────
-  let session_id, chunkSize, totalChunks;
-  try{
-    const CLIENT_CHUNK=4*1024*1024;
-    const estChunks=Math.max(1,Math.ceil(file.size/CLIENT_CHUNK));
-    const r=await fetch('/api/upload/init',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({filename:file.name,size:file.size,total_chunks:estChunks,subdir})
-    });
-    const j=await r.json();
-    if(!j.ok){markErr(j.msg||'Init failed');return;}
-    session_id=j.session_id;
-    chunkSize=j.chunk_size||CLIENT_CHUNK;
-    totalChunks=Math.max(1,Math.ceil(file.size/chunkSize));
-  }catch(e){markErr('Network error (init)');return;}
-
-  // ── 2. Upload chunks in parallel batches ──────────────────────────────────
-  let done=0;
-
-  async function uploadChunk(idx){
-    const start=idx*chunkSize;
-    const blob=file.slice(start,Math.min(start+chunkSize,file.size));
-    const fd=new FormData();
-    fd.append('session_id',session_id);
-    fd.append('chunk_index',String(idx));
-    fd.append('chunk',blob,file.name);
-    const r=await fetch('/api/upload/chunk',{method:'POST',body:fd});
-    const j=await r.json();
-    if(!r.ok||!j.ok)throw new Error(j.msg||`Chunk ${idx} failed`);
-    done++;
-    setPct(Math.round(done/totalChunks*100),done===totalChunks?'var(--green)':'var(--accent)');
-  }
-
-  try{
-    const indices=Array.from({length:totalChunks},(_,i)=>i);
-    for(let i=0;i<indices.length;i+=UP_PARALLEL){
-      await Promise.all(indices.slice(i,i+UP_PARALLEL).map(uploadChunk));
-    }
-  }catch(e){
-    fetch('/api/upload/abort',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id})}).catch(()=>{});
-    markErr(e.message||'Upload failed');
-    return;
-  }
-
-  // ── 3. Finalize ───────────────────────────────────────────────────────────
-  try{
-    const r=await fetch('/api/upload/finalize',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({session_id})
-    });
-    const j=await r.json();
-    if(j.ok){
-      setLabel('✓','var(--green)');
-      toast(file.name+' uploaded','ok');
-      loadFiles(_fmCurrentPath);
-    }else{
-      markErr(j.msg||'Finalize failed');
-    }
-  }catch(e){markErr('Network error (finalize)');}
-}
-
-// ═══════════════════════════════════
-// HOLIDAYS
-// ═══════════════════════════════════
-let _hdData = [];
-let _hdLoaded = false;
-
-function toggleHolidays(e){
-  if(e) e.stopPropagation();
-  const popup = document.getElementById('hd-popup');
-  const isOpen = popup.style.display !== 'none';
-  popup.style.display = isOpen ? 'none' : 'block';
-  if(!isOpen && !_hdLoaded) loadHolidays();
-}
-document.addEventListener('click', e=>{
-  const wrap = document.getElementById('hd-wrap');
-  if(wrap && !wrap.contains(e.target)){
-    const p = document.getElementById('hd-popup');
-    if(p) p.style.display = 'none';
-  }
-});
-
-// Country code → flag emoji
-function _countryFlag(cc){
-  if(!cc||cc.length!==2) return '🗓';
-  return String.fromCodePoint(...cc.toUpperCase().split('').map(c=>c.charCodeAt(0)+127397));
-}
-
-// Country names lookup (mirrors COUNTRIES in the React block)
-const _COUNTRY_NAMES={
-  AE:"UAE",AR:"Argentina",AT:"Austria",AU:"Australia",BD:"Bangladesh",
-  BE:"Belgium",BR:"Brazil",CA:"Canada",CH:"Switzerland",CN:"China",
-  CO:"Colombia",CZ:"Czech Republic",DE:"Germany",DK:"Denmark",EG:"Egypt",
-  ES:"Spain",FI:"Finland",FR:"France",GB:"United Kingdom",GH:"Ghana",
-  GR:"Greece",HU:"Hungary",ID:"Indonesia",IE:"Ireland",IL:"Israel",
-  IN:"India",IQ:"Iraq",IR:"Iran",IT:"Italy",JP:"Japan",KE:"Kenya",
-  KR:"South Korea",KW:"Kuwait",LK:"Sri Lanka",MA:"Morocco",MX:"Mexico",
-  MY:"Malaysia",NG:"Nigeria",NL:"Netherlands",NO:"Norway",NP:"Nepal",
-  NZ:"New Zealand",OM:"Oman",PH:"Philippines",PK:"Pakistan",PL:"Poland",
-  PT:"Portugal",QA:"Qatar",RO:"Romania",RU:"Russia",SA:"Saudi Arabia",
-  SE:"Sweden",SG:"Singapore",TH:"Thailand",TN:"Tunisia",TR:"Turkey",
-  TZ:"Tanzania",UA:"Ukraine",UG:"Uganda",US:"United States",VN:"Vietnam",
-  ZA:"South Africa",ZW:"Zimbabwe",
-};
-
-async function loadHolidays(){
-  try{
-    // Fetch current country from settings first
-    const settings = await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
-    const country  = (settings.holiday_country||'US').toUpperCase();
-    const subdiv   = settings.holiday_subdiv||null;
-    const countryName = _COUNTRY_NAMES[country]||country;
-    const flag     = _countryFlag(country);
-    const yr       = new Date().getFullYear();
-
-    // Update pill title and popup header
-    const btn = document.getElementById('hd-btn');
-    if(btn) btn.title = `${countryName} Public Holidays`;
-    const hdr = document.getElementById('hd-popup-hdr');
-    if(hdr) hdr.innerHTML = `${flag} ${countryName} Holidays &nbsp;<span id="hd-year" style="color:var(--accent-light)">${yr}</span>`;
-
-    // Build query
-    let url = `/api/holidays?year=${yr}&country=${country}`;
-    if(subdiv) url += `&subdiv=${encodeURIComponent(subdiv)}`;
-
-    const data = await fetch(url).then(r=>r.json());
-    if(!Array.isArray(data)){ throw new Error(data.error||'bad response'); }
-    _hdData   = data;
-    _hdLoaded = true;
-    const today = new Date().toISOString().slice(0,10);
-
-    // Set next upcoming holiday label in pill
-    const upcoming = _hdData.filter(h=>h.date >= today);
-    if(upcoming.length){
-      const next  = upcoming[0];
-      const d     = new Date(next.date + 'T00:00:00');
-      const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-      document.getElementById('hd-next-label').textContent = label;
-    } else {
-      document.getElementById('hd-next-label').textContent = countryName;
-    }
-
-    // Render list
-    const list = document.getElementById('hd-list');
-    if(!_hdData.length){
-      list.innerHTML='<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">No holiday data for '+esc(countryName)+'</div>';
-      return;
-    }
-    list.innerHTML = _hdData.map(h=>{
-      const isPast   = h.date < today;
-      const isToday  = h.date === today;
-      const isCustom = (h.source === 'custom');
-      const badge    = isCustom
-        ? `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--purple-dim);color:var(--purple);margin-left:4px;vertical-align:middle">custom</span>`
-        : '';
-      const delBtn   = isCustom
-        ? `<button onclick="hdDeleteCustom(${JSON.stringify(h.date)},${JSON.stringify(h.name)},this)" title="Delete this custom holiday" style="margin-left:auto;background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:3px;flex-shrink:0" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--text3)'">✕</button>`
-        : '';
-      return `<div class="hd-row${isPast?' past':''}${isToday?' today':''}" style="display:flex;align-items:center;gap:0">
-        <div class="hd-date" style="flex-shrink:0">${esc(h.date)}</div>
-        <div class="hd-name" style="flex:1;min-width:0">${esc(h.name)}${badge}</div>
-        ${isToday?'<div class="hd-today-tag">TODAY</div>':''}
-        ${delBtn}
-      </div>`;
-    }).join('');
-  }catch(e){
-    document.getElementById('hd-list').innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px">⚠ '+esc(e.message||'Failed to load holidays')+'. Ensure the <code>holidays</code> Python package is installed.</div>';
-  }
-}
-
-// ── Custom holiday helpers ──────────────────────────────────────────────────
-function hdAddCustomOpen(){
-  const f=document.getElementById('hd-add-form');
-  if(!f) return;
-  const isOpen=f.style.display!=='none';
-  f.style.display=isOpen?'none':'block';
-  if(!isOpen){
-    const di=document.getElementById('hd-add-date');
-    if(di && !di.value) di.value=new Date().toISOString().slice(0,10);
-    document.getElementById('hd-add-name')?.focus();
-    document.getElementById('hd-add-err').style.display='none';
-  }
-}
-
-async function hdAddCustomSave(){
-  const date=(document.getElementById('hd-add-date')?.value||'').trim();
-  const name=(document.getElementById('hd-add-name')?.value||'').trim();
-  const errEl=document.getElementById('hd-add-err');
-  if(!date||!name){errEl.textContent='Date and name are required.';errEl.style.display='block';return;}
-  try{
-    const r=await fetch('/api/holidays/custom',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({date,name,country:'CUSTOM'})});
-    const j=await r.json();
-    if(j.error) throw new Error(j.error);
-    document.getElementById('hd-add-form').style.display='none';
-    document.getElementById('hd-add-name').value='';
-    toast('Custom holiday added','ok');
-    _hdLoaded=false; _hdData=[];
-    if(typeof window.calendarRefreshHolidays==='function') window.calendarRefreshHolidays();
-    loadHolidays();
-    loadCustomHolidays();
-  }catch(e){errEl.textContent='✕ '+e.message;errEl.style.display='block';}
-}
-
-async function hdDeleteCustom(date,name,btn){
-  if(!confirm(`Remove custom holiday "${name}" on ${date}?`)) return;
-  try{
-    const r=await fetch('/api/holidays/custom',{method:'DELETE',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({date,name})});
-    const j=await r.json();
-    if(j.error) throw new Error(j.error);
-    toast('Holiday removed','ok');
-    _hdLoaded=false; _hdData=[];
-    if(typeof window.calendarRefreshHolidays==='function') window.calendarRefreshHolidays();
-    loadHolidays();
-    loadCustomHolidays();
-  }catch(e){toast('Delete failed: '+e.message,'err');}
-}
-
-async function hdRefresh(){
-  _hdLoaded=false; _hdData=[];
-  document.getElementById('hd-list').innerHTML='<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">Refreshing…</div>';
-  // Determine current country so we can bust the server cache
-  try{
-    const settings=await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
-    const country=(settings.holiday_country||'US').toUpperCase();
-    const subdiv=settings.holiday_subdiv||null;
-    const yr=new Date().getFullYear();
-    let url=`/api/holidays?year=${yr}&country=${country}&refresh=1`;
-    if(subdiv) url+=`&subdiv=${encodeURIComponent(subdiv)}`;
-    await fetch(url);
-  }catch(e){}
-  loadHolidays();
-}
-
-// ── Custom holiday manager (Settings tab section) ───────────────────────────
-let _customHolidays=[];
-
-async function loadCustomHolidays(){
-  const tbody=document.getElementById('custom-hol-tbody');
-  if(!tbody) return;
-  tbody.innerHTML='<tr><td colspan="4" style="padding:10px;text-align:center;color:var(--text3);font-size:12px">Loading…</td></tr>';
-  try{
-    const data=await fetch('/api/holidays/custom').then(r=>r.json());
-    _customHolidays=Array.isArray(data)?data:[];
-    renderCustomHolidays();
-  }catch(e){
-    tbody.innerHTML='<tr><td colspan="4" style="padding:10px;color:var(--red);font-size:12px">✕ '+esc(e.message)+'</td></tr>';
-  }
-}
-
-function renderCustomHolidays(){
-  const tbody=document.getElementById('custom-hol-tbody');
-  if(!tbody) return;
-  if(!_customHolidays.length){
-    tbody.innerHTML='<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text3);font-size:12px">No custom holidays yet. Add one below.</td></tr>';
-    return;
-  }
-  tbody.innerHTML=_customHolidays.map((h,i)=>`
-    <tr id="chol-row-${i}" style="border-bottom:1px solid var(--border)">
-      <td style="padding:7px 8px;font-size:12px;font-family:var(--font-mono)">${esc(h.date)}</td>
-      <td style="padding:7px 8px;font-size:12px">${esc(h.name)}</td>
-      <td style="padding:7px 8px;font-size:11px;color:var(--text3)">${esc(h.country||'CUSTOM')}</td>
-      <td style="padding:7px 8px;text-align:right">
-        <button onclick="deleteCustomHoliday(${i})" title="Delete this holiday"
-          style="background:none;border:1px solid var(--border2);color:var(--red);cursor:pointer;border-radius:4px;padding:2px 8px;font-size:11px">✕</button>
-      </td>
-    </tr>`).join('');
-}
-
-async function addCustomHoliday(){
-  const date=(document.getElementById('chol-date')?.value||'').trim();
-  const name=(document.getElementById('chol-name')?.value||'').trim();
-  const country=(document.getElementById('chol-country')?.value||'CUSTOM').trim()||'CUSTOM';
-  const st=document.getElementById('chol-status');
-  if(!date||!name){st.textContent='Date and name are required.';st.style.color='var(--red)';return;}
-  st.textContent='Saving…';st.style.color='var(--yellow)';
-  try{
-    const r=await fetch('/api/holidays/custom',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({date,name,country})});
-    const j=await r.json();
-    if(j.error) throw new Error(j.error);
-    st.textContent='✓ Added';st.style.color='var(--green)';
-    document.getElementById('chol-date').value='';
-    document.getElementById('chol-name').value='';
-    toast('Custom holiday added','ok');
-    _hdLoaded=false; _hdData=[];
-    if(typeof window.calendarRefreshHolidays==='function') window.calendarRefreshHolidays();
-    loadCustomHolidays();
-    loadHolidays();
-  }catch(e){st.textContent='✕ '+e.message;st.style.color='var(--red)';}
-}
-
-async function deleteCustomHoliday(idx){
-  const h=_customHolidays[idx];
-  if(!h||!confirm(`Remove "${h.name}" on ${h.date}?`)) return;
-  try{
-    const r=await fetch('/api/holidays/custom',{method:'DELETE',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({date:h.date,name:h.name})});
-    const j=await r.json();
-    if(j.error) throw new Error(j.error);
-    toast('Holiday removed','ok');
-    _hdLoaded=false; _hdData=[];
-    if(typeof window.calendarRefreshHolidays==='function') window.calendarRefreshHolidays();
-    loadCustomHolidays();
-    loadHolidays();
-  }catch(e){toast('Delete failed: '+e.message,'err');}
-}
-
-// ═══════════════════════════════════
-// CONFIGURE TAB
-// ═══════════════════════════════════
-let _configStreams=[];
-let _configSelected=null;
-
-async function loadConfig(){
-  try{
-    const data=await fetch('/api/streams_config').then(r=>r.json());
-    const statusData=await fetch('/api/streams').then(r=>r.json());
-    _configStreams=data.map(c=>{
-      const st=statusData.find(s=>s.name===c.name)||{};
-      return{...c,_status:st.status||'STOPPED'};
-    }).sort((a,b)=>a.name.localeCompare(b.name));
-    renderConfigSidebar();
-    if(_configSelected){
-      const s=_configStreams.find(s=>s.name===_configSelected);
-      if(s)renderConfigEditor(s);
-    }
-  }catch(_){toast('Failed to load config','err');}
-}
-
-function renderConfigSidebar(){
-  const list=document.getElementById('config-stream-list');
-  list.innerHTML=_configStreams.map(s=>`
-    <div class="config-stream-item ${s.name===_configSelected?'active':''}" onclick="selectConfigStream('${esc(s.name)}')">
-      <div class="dot ${s._status==='LIVE'?'live':s._status==='ERROR'?'error':''}"></div>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}</span>
-      <span style="font-size:10px;color:var(--text3);margin-right:4px">:${s.port}</span>
-      <button class="btn r" style="padding:1px 6px;font-size:10px;flex-shrink:0"
-        title="Delete stream"
-        onclick="event.stopPropagation();deleteStream('${esc(s.name)}')">&#x2715;</button>
-    </div>`).join('')||`<div class="empty" style="padding:20px"><div class="empty-icon">&#x2699;</div>No streams.</div>`;
-}
-
-function selectConfigStream(name){
-  _guardNav(()=>{
-    _configSelected=name;
-    renderConfigSidebar();
-    const s=_configStreams.find(s=>s.name===name);
-    if(s)renderConfigEditor(s);
-  });
-}
-
-function renderConfigEditor(s){
-  document.getElementById('config-main-hdr').innerHTML=`
-    <span class="badge ${esc(s._status)}">${esc(s._status)}</span>
-    <h2>${esc(s.name)}</h2>
-    <span style="font-size:11px;color:var(--text3)">Port :${s.port}</span>`;
-
-  document.getElementById('config-main-body').innerHTML=`
-    <div class="config-section">
-      <div class="config-section-title">Basic</div>
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg">
-          <label>Stream Name</label>
-          <input id="cfg-name" value="${esc(s.name)}" readonly style="opacity:0.6">
-        </div>
-        <div class="fg">
-          <label style="display:flex;align-items:center;gap:6px">
-            Port (odd)
-            <i class="info-btn" title="">i
-              <span class="ibt">Must be an <b>odd</b> number.<br>
-                HLS = port+1 &nbsp;·&nbsp; RTP = port+2 (even) &nbsp;·&nbsp; RTCP = RTP+1<br><br>
-                Click <b>Check</b> to verify availability &amp; firewall status.<br>
-                Click <b>Suggest</b> to auto-find the next free odd port.
-              </span>
-            </i>
-          </label>
-          <div class="port-field-row">
-            <input id="cfg-port" type="number" value="${s.port}" min="1025" max="65533" step="2"
-              oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
-              title="Must be an ODD number. HLS will use this port + 1.">
-            <button type="button" id="suggest-btn-cfg-port"
-              class="port-icon-btn"
-              onclick="suggestNextPort('cfg-port','cfg-port-check-result')"
-              title="Auto-find next free odd port">
-              ✦
-            </button>
-            <button type="button" class="port-icon-btn"
-              onclick="checkPort('cfg-port','cfg-port-check-result')"
-              title="Check if this port is free and firewall is open">
-              <i class="ti ti-radar"></i>
-            </button>
-          </div>
-          <div id="cfg-port-check-result" style="display:none"></div>
-        </div>
-        <div class="fg"><label>Stream Path</label><input id="cfg-path" value="${esc(s.stream_path||'')}"></div>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Encoding</div>
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate||'')}"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate||'')}"></div>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Playback</div>
-      <div style="display:flex;flex-wrap:wrap;gap:16px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-shuffle" ${s.shuffle?'checked':''} style="width:auto;accent-color:var(--accent)" title="Play files in a random order instead of sequentially">
-          Shuffle playlist
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-enabled" ${s.enabled!==false?'checked':''} style="width:auto;accent-color:var(--accent)" title="Enable or disable this stream — disabled streams will not start automatically">
-          Stream enabled
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-hls" ${s.hls_enabled?'checked':''} style="width:auto;accent-color:var(--accent)" title="Also serve this stream over HLS (HTTP Live Streaming) in addition to RTSP">
-          HLS enabled
-        </label>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Schedule (Weekdays)</div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
-        ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=>{
-          const checked=s.weekdays&&s.weekdays.includes(d.toLowerCase().slice(0,3))||s.weekdays==='All days'||s.weekdays==='ALL';
-          return `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-            <input type="checkbox" class="cfg-wd" value="${i}" ${(s.weekdays==='ALL'||s.weekdays==='All days'||(s.weekdays&&s.weekdays.toLowerCase().includes(d.toLowerCase())))?'checked':''} style="width:auto;accent-color:var(--accent)">${d}
-          </label>`;
-        }).join('')}
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Compliance (Broadcast Sync)</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-comp-en" ${s.compliance_enabled?'checked':''} style="width:auto;accent-color:var(--accent)"
-            title="Sync playback position to real-world clock so viewers see what a linear broadcast would show right now">
-          Enable compliance mode (broadcast-sync seek on start)
-        </label>
-        <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-          <div class="fg">
-            <label>Broadcast start time (HH:MM:SS)</label>
-            <input id="cfg-comp-start" value="${esc(s.compliance_start||'06:00:00')}" placeholder="06:00:00" pattern="\\d{1,2}:\\d{2}:\\d{2}">
-          </div>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="cfg-comp-loop" ${s.compliance_loop?'checked':''} style="width:auto;accent-color:var(--accent)"
-            title="When the video is shorter than 24 h, calculate the seek position within the current loop iteration">
-          Loop calculation (seek within loops for videos shorter than 24 h)
-        </label>
-        <div style="font-size:10px;color:var(--text3)">
-          When enabled, HydraCast calculates the correct playback seek offset so the stream matches a continuous linear broadcast that started at the configured time today.
-        </div>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Playlist Source</div>
-      <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)">
-        <button id="cfg-src-tab-files" class="nav-tab ${!s.folder_source?'active':''}"
-                onclick="switchCfgSrcTab('files')" style="padding:7px 16px;font-size:12px"
-                title="Build the playlist by adding individual files">
-          <span class="tab-dot"></span>File List
-        </button>
-        <button id="cfg-src-tab-folder" class="nav-tab ${s.folder_source?'active':''}"
-                onclick="switchCfgSrcTab('folder')" style="padding:7px 16px;font-size:12px"
-                title="Use an entire folder as the playlist source — all media files inside will play in order">
-          <span class="tab-dot"></span>Folder Source
-        </button>
-      </div>
-      <div id="cfg-src-files" style="display:${!s.folder_source?'':'none'}">
-        <div id="cfg-pl-wrap"></div>
-      </div>
-      <div id="cfg-src-folder" style="display:${s.folder_source?'':'none'}">
-        <div class="fg">
-          <label>Folder Path</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input id="cfg-folder" value="${esc(s.folder_source||'')}"
-                   placeholder="/media/shows  or  media/news" style="flex:1;min-width:0"
-                   oninput="_markDirty()">
-            <button class="btn b" style="white-space:nowrap;flex-shrink:0"
-                    title="Browse the media library to pick a folder"
-                    onclick="mbOpen('folder','cfg-folder')">
-              <i class="fa fa-folder-open" style="margin-right:5px"></i>Browse
-            </button>
-          </div>
-        </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:6px">
-          HydraCast will scan the folder and auto-rebuild the playlist when files change.
-          Day-tags (_mon_, _tue_, …) are detected automatically.
-        </div>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Stream Actions</div>
-      <div class="btn-group">
-        <button class="btn g" onclick="api('start',{name:'${esc(s.name)}'})" title="Start this stream">▶ Start</button>
-        <button class="btn r" onclick="api('stop',{name:'${esc(s.name)}'})" title="Stop this stream">■ Stop</button>
-        <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})" title="Restart this stream">↺ Restart</button>
-        ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭ Skip</button>`:''}
-      </div>
-    </div>`;
-
-  document.getElementById('config-main-footer').style.display='flex';
-  _clearDirty();
-  renderPlaylistEditor('cfg-pl-wrap', s.files||'');
-  setTimeout(_attachDirtyListeners, 0);
-}
-
-function _restoreFooter(){
-  document.getElementById('config-main-footer').innerHTML=`
-    <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
-    <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>`;
-}
-
-function cancelConfig(){
-  _clearDirty();
-  _configSelected=null;
-  _configMode='edit';
-  renderConfigSidebar();
-  document.getElementById('config-main-hdr').innerHTML=`<h2 style="color:var(--text3);font-size:14px">Select a stream</h2>`;
-  document.getElementById('config-main-body').innerHTML=`<div class="empty"><div class="empty-icon">&#x2699;</div>Select a stream from the sidebar to configure it.</div>`;
-  _restoreFooter();
-  document.getElementById('config-main-footer').style.display='none';
-}
-
-async function saveConfig(){
-  if(!_configSelected){toast('No stream selected','err');return;}
-  // Collect weekday checkboxes
-  const wdChecked=Array.from(document.querySelectorAll('.cfg-wd:checked')).map(el=>+el.value);
-  const wdMap=['mon','tue','wed','thu','fri','sat','sun'];
-  const weekdaysStr=wdChecked.length===7?'all':wdChecked.map(i=>wdMap[i]).join('|')||'all';
-  // Detect source mode
-  const isFolderMode=document.getElementById('cfg-src-folder')?.style.display!=='none';
-  const folderPath=isFolderMode?(document.getElementById('cfg-folder')?.value||'').trim():'';
-  const files=isFolderMode?'':_plGetStr('cfg-pl-wrap');
-  if(isFolderMode&&!folderPath){toast('Folder path is required for folder source','err');return;}
-  if(!isFolderMode&&!files){toast('At least one file path is required','err');return;}
-  const payload={
-    name:_configSelected,
-    port:parseInt(document.getElementById('cfg-port')?.value||0),
-    stream_path:document.getElementById('cfg-path')?.value||'',
-    video_bitrate:document.getElementById('cfg-vbr')?.value||'',
-    audio_bitrate:document.getElementById('cfg-abr')?.value||'',
-    shuffle:document.getElementById('cfg-shuffle')?.checked||false,
-    enabled:document.getElementById('cfg-enabled')?.checked!==false,
-    hls_enabled:document.getElementById('cfg-hls')?.checked||false,
-    files,
-    folder_source:folderPath||null,
-    weekdays:weekdaysStr,
-    compliance_enabled:document.getElementById('cfg-comp-en')?.checked||false,
-    compliance_start:document.getElementById('cfg-comp-start')?.value||'06:00:00',
-    compliance_loop:document.getElementById('cfg-comp-loop')?.checked||false,
-    compliance_alert_enabled:document.getElementById('cfg-comp-alert')?.checked!==false,
-  };
-  const r=await api('update_config',payload);
-  if(r?.ok){_clearDirty();loadConfig();}
-}
-
-function switchCfgSrcTab(mode){
-  document.getElementById('cfg-src-files').style.display=mode==='files'?'':'none';
-  document.getElementById('cfg-src-folder').style.display=mode==='folder'?'':'none';
-  document.getElementById('cfg-src-tab-files').classList.toggle('active',mode==='files');
-  document.getElementById('cfg-src-tab-folder').classList.toggle('active',mode==='folder');
-  _markDirty();
-}
-
-// ═══════════════════════════════════
-// NEW STREAM / DELETE STREAM
-// ═══════════════════════════════════
-let _configMode='edit'; // 'edit' | 'create'
-
-// ── Dirty / Unsaved state ────────────────────────────────────────────────────
-let _configDirty=false;
-let _pendingNav=null;
-let _playlistItems=[];
-
-function _markDirty(){
-  if(_configDirty)return;
-  _configDirty=true;
-  const ftr=document.getElementById('config-main-footer');
-  if(ftr&&!document.getElementById('_dirty-badge')){
-    const b=document.createElement('span');
-    b.id='_dirty-badge';b.className='dirty-badge';b.textContent='● Unsaved';
-    ftr.insertBefore(b,ftr.firstChild);
-  }
-}
-function _clearDirty(){
-  _configDirty=false;
-  const b=document.getElementById('_dirty-badge');if(b)b.remove();
-}
-function _guardNav(cb){
-  if(!_configDirty){cb();return;}
-  _pendingNav=cb;
-  document.getElementById('unsaved-modal').classList.add('open');
-}
-function handleUnsaved(action){
-  document.getElementById('unsaved-modal').classList.remove('open');
-  if(action==='cancel'){_pendingNav=null;return;}
-  const cb=_pendingNav;_pendingNav=null;
-  if(action==='discard'){_clearDirty();if(cb)cb();}
-  else if(action==='save'){
-    const fn=_configMode==='create'?submitNewStream:saveConfig;
-    fn().then(()=>{if(cb)cb();});
-  }
-}
-function _attachDirtyListeners(){
-  const body=document.getElementById('config-main-body');if(!body)return;
-  body.querySelectorAll('input,select,textarea').forEach(el=>{
-    el.addEventListener('change',_markDirty);
-    if(el.type==='text'||el.type==='number')el.addEventListener('input',_markDirty);
-  });
-}
-
-// ── Playlist editor helpers ──────────────────────────────────────────────────
-function _parsePL(raw){
-  const items=[];
-  for(let part of (raw||'').split(/[;\n]+/)){
-    part=part.trim();if(!part)continue;
-    let priority=0,start='00:00:00';
-    if(part.includes('#')){const idx=part.lastIndexOf('#');const n=parseInt(part.slice(idx+1));if(!isNaN(n))priority=n;part=part.slice(0,idx).trim();}
-    if(part.includes('@')){const idx=part.lastIndexOf('@');const s=part.slice(idx+1).trim();if(/^\d{1,2}:\d{2}:\d{2}$/.test(s))start=s;part=part.slice(0,idx).trim();}
-    if(part)items.push({path:part,start,priority});
-  }
-  return items;
-}
-function _plToStr(items){
-  return items.map(item=>{
-    let s=item.path;
-    if(item.start&&item.start!=='00:00:00')s+='@'+item.start;
-    if(item.priority!==0)s+='#'+item.priority;
-    return s;
-  }).join('\n');
-}
-function _plChannel(path){
-  const p=(path||'').replace(/\\/g,'/').split('/').filter(Boolean);
-  return p.length>=2?p[p.length-2]:'';
-}
-function _plPriBadge(n){
-  const cls=n>=10?'high':n>0?'mid':'low';
-  return '<span class="pl-priority-badge '+cls+'">'+n+'</span>';
-}
-function _plGetStr(cid){
-  const ta=document.querySelector('#'+cid+' textarea');
-  if(ta)return ta.value;
-  document.querySelectorAll('#'+cid+' .pl-table tbody tr').forEach((tr,i)=>{
-    const pi=tr.querySelector('input[type=number]'),si=tr.querySelector('input[type=text]');
-    if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
-    if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
-  });
-  return _plToStr(_playlistItems);
-}
-function renderPlaylistEditor(cid,raw){
-  _playlistItems=_parsePL(raw);
-  _playlistItems.sort((a,b)=>a.priority-b.priority);
-  _renderPLTable(cid);
-}
-function _renderPLTable(cid){
-  const wrap=document.getElementById(cid);if(!wrap)return;
-  const rows=_playlistItems.map((item,i)=>{
-    const ch=_plChannel(item.path);
-    const fname=(item.path||'').replace(/\\/g,'/').split('/').pop()||item.path;
-    return '<tr>'
-      +'<td style="width:82px;text-align:center;vertical-align:top;padding-top:8px">'
-        +_plPriBadge(item.priority)
-        +'<div style="margin-top:4px"><input type="number" value="'+item.priority+'" min="0" max="999"'
-        +' oninput="_plUpd('+i+',&apos;p&apos;,this.value)" style="width:54px;text-align:center"></div>'
-      +'</td>'
-      +'<td style="width:100px">'+(ch?'<span class="pl-channel-tag">'+esc(ch)+'</span>':'<span style="color:var(--text3);font-size:10px">—</span>')+'</td>'
-      +'<td><div class="pl-path" title="'+esc(item.path)+'" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">'+esc(fname)+'</div>'
-        +'<div style="font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">'+esc(item.path)+'</div></td>'
-      +'<td style="width:106px"><input type="text" value="'+esc(item.start)+'" placeholder="00:00:00"'
-        +' oninput="_plUpd('+i+',&apos;s&apos;,this.value)" style="width:94px;font-family:var(--font-mono);font-size:11px"></td>'
-      +'<td style="width:40px;text-align:right"><button class="btn r" style="padding:2px 7px;font-size:10px"'
-        +' title="Remove this file from the playlist" onclick="_plRemove('+i+',&apos;'+cid+'&apos;)">&#x2715;</button></td>'
-      +'</tr>';
-  }).join('');
-
-  wrap.innerHTML=
-    '<div class="pl-editor">'
-      +'<div class="pl-toolbar">'
-        +'<span class="pl-toolbar-label"><i class="fa fa-list-ol" style="margin-right:5px;opacity:0.65"></i>'
-        +_playlistItems.length+' file'+(_playlistItems.length!==1?'s':'')+'</span>'
-        +'<button class="btn b" style="padding:3px 10px;font-size:10px" title="Sort files by priority (highest first)" onclick="_plSort(&apos;'+cid+'&apos;)">'
-          +'<i class="fa fa-sort-numeric-up" style="margin-right:4px"></i>Sort by Priority</button>'
-        +'<button class="btn" style="padding:3px 10px;font-size:10px" title="View or edit the raw playlist text" onclick="_plRawView(&apos;'+cid+'&apos;)">'
-          +'<i class="fa fa-code" style="margin-right:4px"></i>Raw</button>'
-      +'</div>'
-      +(_playlistItems.length>0
-        ?'<div style="overflow-x:auto"><table class="pl-table">'
-          +'<thead><tr>'
-            +'<th style="width:82px;text-align:center">Priority</th>'
-            +'<th style="width:100px">Channel</th>'
-            +'<th>File</th>'
-            +'<th style="width:106px">Start At</th>'
-            +'<th style="width:40px"></th>'
-          +'</tr></thead>'
-          +'<tbody>'+rows+'</tbody>'
-          +'</table></div>'
-        :'<div class="pl-empty"><i class="fa fa-film" style="font-size:22px;opacity:0.25;margin-bottom:6px;display:block"></i>'
-          +'No files yet — add one below</div>')
-      +'<div class="pl-add-row">'
-        +'<input type="text" id="'+cid+'-new" placeholder="/path/to/video.mp4  (optional: path@HH:MM:SS#priority)"'
-          +' onkeydown="if(event.key===&apos;Enter&apos;)_plAdd(&apos;'+cid+'&apos;)">'
-        +'<button class="btn b" style="padding:5px 10px;font-size:11px;white-space:nowrap;flex-shrink:0"'
-          +' title="Browse the media library to pick a file" onclick="mbOpen(&apos;files&apos;,&apos;'+cid+'&apos;)">'
-          +'<i class="fa fa-folder-open" style="margin-right:4px"></i>Browse</button>'
-        +'<button class="btn g" style="padding:5px 12px;font-size:11px;white-space:nowrap"'
-          +' title="Add this file path to the playlist" onclick="_plAdd(&apos;'+cid+'&apos;)"><i class="fa fa-plus"></i> Add</button>'
-      +'</div>'
-    +'</div>';
-}
-function _plUpd(i,field,v){
-  if(!_playlistItems[i])return;
-  if(field==='p')_playlistItems[i].priority=parseInt(v)||0;
-  else _playlistItems[i].start=v||'00:00:00';
-  _markDirty();
-}
-function _plRemove(i,cid){
-  _playlistItems.splice(i,1);
-  _markDirty();
-  _renderPLTable(cid);
-}
-function _plSort(cid){
-  document.querySelectorAll('#'+cid+' .pl-table tbody tr').forEach((tr,i)=>{
-    const pi=tr.querySelector('input[type=number]'),si=tr.querySelector('input[type=text]');
-    if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
-    if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
-  });
-  _playlistItems.sort((a,b)=>a.priority-b.priority);
-  _renderPLTable(cid);
-}
-function _plAdd(cid){
-  const inp=document.getElementById(cid+'-new');if(!inp)return;
-  const raw=inp.value.trim();if(!raw){toast('Enter a file path','err');return;}
-  const parsed=_parsePL(raw);if(!parsed.length){toast('Invalid path','err');return;}
-  _playlistItems.push(...parsed);
-  _playlistItems.sort((a,b)=>a.priority-b.priority);
-  inp.value='';_markDirty();_renderPLTable(cid);
-}
-function _plRawView(cid){
-  document.querySelectorAll('#'+cid+' .pl-table tbody tr').forEach((tr,i)=>{
-    const pi=tr.querySelector('input[type=number]'),si=tr.querySelector('input[type=text]');
-    if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
-    if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
-  });
-  const raw=_plToStr(_playlistItems);
-  const wrap=document.getElementById(cid);if(!wrap)return;
-  wrap.innerHTML=
-    '<div class="pl-editor">'
-      +'<div class="pl-toolbar">'
-        +'<span class="pl-toolbar-label"><i class="fa fa-code" style="margin-right:5px;opacity:0.65"></i>Raw edit</span>'
-        +'<button class="btn" style="padding:3px 10px;font-size:10px" title="Switch back to the visual playlist table editor" onclick="_plTableView(&apos;'+cid+'&apos;)">'
-          +'<i class="fa fa-table" style="margin-right:4px"></i>Back to Table</button>'
-      +'</div>'
-      +'<div style="padding:12px">'
-        +'<textarea rows="8" style="width:100%;font-size:11px;font-family:var(--font-mono);background:var(--bg);border:1px solid var(--border);'
-          +'border-radius:var(--radius);padding:10px;color:var(--text);resize:vertical;box-sizing:border-box"'
-          +' oninput="_markDirty()">'+esc(raw)+'</textarea>'
-        +'<div style="font-size:10px;color:var(--text3);margin-top:5px">Format: '
-          +'<code style="color:var(--accent-light)">/path/to/file.mp4@00:00:00#10</code>'
-          +' — one per line or semicolon-separated</div>'
-      +'</div>'
-    +'</div>';
-}
-function _plTableView(cid){
-  const ta=document.querySelector('#'+cid+' textarea');
-  if(ta){_playlistItems=_parsePL(ta.value);_playlistItems.sort((a,b)=>a.priority-b.priority);_markDirty();}
-  _renderPLTable(cid);
-}
-
-function showNewStreamForm(){
-  _configSelected=null;
-  _configMode='create';
-  renderConfigSidebar();
-  document.getElementById('config-main-hdr').innerHTML=`
-    <h2 style="font-family:var(--font-display);font-size:16px;font-weight:700">New Stream</h2>`;
-  document.getElementById('config-main-body').innerHTML=`
-    <div class="config-section">
-      <div class="config-section-title">Identity</div>
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Stream Name *</label><input id="new-name" placeholder="My_Stream" autocomplete="off"></div>
-        <div class="fg">
-          <label style="display:flex;align-items:center;gap:6px">
-            Port * (odd)
-            <i class="info-btn" title="">i
-              <span class="ibt">Must be an <b>odd</b> number, ≥10 apart from other streams.<br>
-                HLS = port+1 &nbsp;·&nbsp; RTP = port+2 (even) &nbsp;·&nbsp; RTCP = RTP+1<br><br>
-                Click <b>Suggest</b> to auto-find the next free odd port.
-              </span>
-            </i>
-          </label>
-          <div class="port-field-row">
-            <input id="new-port" type="number" value="8555" min="1025" max="65533" step="2"
-              oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
-              title="Must be an ODD number. HLS will use this port + 1 (even).">
-            <button type="button" id="suggest-btn-new-port"
-              class="port-icon-btn"
-              onclick="suggestNextPort('new-port','new-port-check-result')"
-              title="Auto-find next free odd port">
-              ✦
-            </button>
-            <button type="button" class="port-icon-btn"
-              onclick="checkPort('new-port','new-port-check-result')"
-              title="Check if this port is free and firewall is open">
-              <i class="ti ti-radar"></i>
-            </button>
-          </div>
-          <div id="new-port-check-result" style="display:none"></div>
-        </div>
-        <div class="fg">
-          <label>Stream Path <span style="font-size:10px;color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(blank = IP:Port/ root)</span></label>
-          <input id="new-spath" value="" placeholder="e.g. live  (optional)">
-        </div>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Playlist Source</div>
-      <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)">
-        <button id="new-src-tab-files" class="nav-tab active" onclick="switchNewSrcTab('files')" style="padding:7px 16px;font-size:12px" title="Build the playlist by adding individual files"><span class="tab-dot"></span>File List</button>
-        <button id="new-src-tab-folder" class="nav-tab" onclick="switchNewSrcTab('folder')" style="padding:7px 16px;font-size:12px" title="Use an entire folder as the playlist source — all media files inside will play in order"><span class="tab-dot"></span>Folder Source</button>
-      </div>
-      <div id="new-src-files">
-        <div id="new-pl-wrap"></div>
-      </div>
-      <div id="new-src-folder" style="display:none">
-        <div class="fg">
-          <label>Folder Path</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input id="new-folder" placeholder="/media/shows  or  media/news" style="flex:1;min-width:0">
-            <button class="btn b" style="white-space:nowrap;flex-shrink:0"
-                    title="Browse the media library to pick a folder"
-                    onclick="mbOpen('folder','new-folder')">
-              <i class="fa fa-folder-open" style="margin-right:5px"></i>Browse
-            </button>
-          </div>
-        </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:6px">HydraCast will scan the folder and auto-rebuild the playlist when files change. Day-tags (_mon_, _tue_, …) are detected automatically.</div>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Encoding</div>
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="2500k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="128k"></div>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Schedule (Weekdays)</div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
-        ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=>`
-          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-            <input type="checkbox" class="new-wd" value="${i}" checked style="width:auto;accent-color:var(--accent)">${d}
-          </label>`).join('')}
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Options</div>
-      <div style="display:flex;flex-wrap:wrap;gap:16px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="new-shuffle" style="width:auto;accent-color:var(--accent)" title="Play files in a random order instead of sequentially">Shuffle playlist
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="new-enabled" checked style="width:auto;accent-color:var(--accent)" title="Enable this stream — uncheck to create it without starting it">Enabled
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="new-hls" style="width:auto;accent-color:var(--accent)" title="Also serve this stream over HLS (HTTP Live Streaming) in addition to RTSP">HLS enabled
-        </label>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Compliance — Broadcast Sync</div>
-      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);font-weight:500;margin-bottom:12px">
-          <input type="checkbox" id="new-comp-en" style="width:auto;accent-color:var(--accent)"
-            title="Sync playback position to real-world clock so viewers see what a linear broadcast would show right now"
-            onchange="document.getElementById('new-comp-fields').style.display=this.checked?'':'none'">
-          Enable compliance mode
-        </label>
-        <div id="new-comp-fields" style="display:none">
-          <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:12px">
-            <div class="fg">
-              <label>Broadcast Start Time (HH:MM:SS)</label>
-              <input id="new-comp-start" value="06:00:00" placeholder="06:00:00">
-            </div>
-            <div class="fg">
-              <label>Timezone offset</label>
-              <input id="new-comp-tz" value="" placeholder="System time (default)" style="opacity:0.7" disabled title="Uses system local time — configure server timezone via OS">
-            </div>
-          </div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2);margin-bottom:8px">
-            <input type="checkbox" id="new-comp-loop" style="width:auto;accent-color:var(--accent)"
-              title="When the video is shorter than 24 h, calculate the seek position within the current loop iteration">
-            Loop calculation — seek within loops for videos shorter than 24 h
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
-            <input type="checkbox" id="new-comp-strict" style="width:auto;accent-color:var(--accent)"
-              title="Stop the stream entirely if the calculated seek offset exceeds the video duration (prevents silent looping)">
-            Strict mode — stop stream if seek offset exceeds video duration
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2);margin-top:6px">
-            <input type="checkbox" id="new-comp-alert" checked style="width:auto;accent-color:var(--accent)"
-              title="Show a pulsing error banner on the dashboard when a compliance error occurs">
-            Show compliance error banner on dashboard
-          </label>
-          <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.7;border-top:1px solid var(--border);padding-top:10px">
-            <b style="color:var(--accent-light)">What is compliance mode?</b><br>
-            Calculates the exact seek offset so viewers see what a continuous linear broadcast would be showing right now.
-            Example: 24 h video, broadcast starts 06:00, current time 14:30 → seeks to 08:30:00.
-            Useful for simulating scheduled broadcast channels.
-          </div>
-        </div>
-      </div>
-    </div>`;
-  // Swap footer buttons for Create mode
-  document.getElementById('config-main-footer').innerHTML=`
-    <button class="btn" onclick="cancelConfig()" title="Discard and go back without creating a stream">Cancel</button>
-    <button class="btn g" onclick="submitNewStream()" title="Create this new stream and save it to configuration">&#x2713; Create Stream</button>`;
-  document.getElementById('config-main-footer').style.display='flex';
-  _clearDirty();
-  renderPlaylistEditor('new-pl-wrap', '');
-  setTimeout(_attachDirtyListeners, 0);
-  // Auto-suggest a free port on load
-  setTimeout(()=>suggestNextPort('new-port','new-port-check-result'), 120);
-}
-
-function switchNewSrcTab(mode){
-  document.getElementById('new-src-files').style.display=mode==='files'?'':'none';
-  document.getElementById('new-src-folder').style.display=mode==='folder'?'':'none';
-  document.getElementById('new-src-tab-files').classList.toggle('active',mode==='files');
-  document.getElementById('new-src-tab-folder').classList.toggle('active',mode==='folder');
-}
-
-// ── Port checker ─────────────────────────────────────────────────────────────
-
-/** Suggest and auto-apply the next free odd port, then run checkPort. */
-async function suggestNextPort(inputId, resultId){
-  const inp = document.getElementById(inputId);
-  if(!inp) return;
-  // Always start 2 above the current value so the button advances to a
-  // genuinely *next* free port instead of returning the same port when
-  // the current one happens to be free already.
-  const cur = parseInt(inp.value||0)||8553;
-  const from = cur + 2;
-  const suggestBtn = document.getElementById('suggest-btn-'+inputId);
-  if(suggestBtn){
-    suggestBtn._origHTML = suggestBtn.innerHTML;
-    suggestBtn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 0.8s linear infinite"></i>';
-    suggestBtn.disabled=true;
-  }
-  _showPortNotif(_portSpinner('Scanning for a free port…'));
-  try{
-    const d = await fetch('/api/suggest_port?from='+from).then(r=>r.json());
-    if(d.port){
-      inp.value = d.port;
-      inp.dispatchEvent(new Event('input'));
-      await checkPort(inputId, resultId);
-    } else {
-      _showPortNotif(_portBanner('err','No free port found in the scanned range. Try a different starting port.'));
-    }
-  }catch(e){
-    _showPortNotif(_portBanner('err','Suggest failed: '+esc(e.message||String(e))));
-  }finally{
-    if(suggestBtn){ suggestBtn.innerHTML=suggestBtn._origHTML||'✦'; suggestBtn.disabled=false; }
-  }
-}
-
-async function checkPort(inputId, resultId){
-  const inp = document.getElementById(inputId);
-  if(!inp) return;
-  const port = parseInt(inp.value||0);
-  if(!port||port<1024||port>65534){
-    _showPortNotif(_portBanner('warn','Enter a valid port first (1024–65534).'));
-    return;
-  }
-  _showPortNotif(_portSpinner('Checking port '+port+'…'));
-  try{
-    const d = await fetch('/api/check_port?port='+port).then(r=>r.json());
-
-    // ── Verdict banner ────────────────────────────────────────────────────
-    let html = d.ok
-      ? _portBanner('ok', `Port <b>${port}</b> is free and ready to use.`)
-      : _portBanner('err', `Port <b>${port}</b> has conflicts.`);
-
-    // ── Odd-port nudge ────────────────────────────────────────────────────
-    if(!d.odd_ok){
-      const next = port%2===0 ? port+1 : port;
-      html += `<div class="pnb warn" style="flex-wrap:wrap;gap:8px">
-        <i class="ti ti-alert-triangle" style="flex-shrink:0"></i>
-        <span style="flex:1">Odd port required — HLS uses the next even port.</span>
-        <button type="button" onclick="document.getElementById('${inputId}').value=${next};
-          document.getElementById('${inputId}').dispatchEvent(new Event('input'));
-          checkPort('${inputId}','${resultId}')"
-          style="background:var(--yellow);color:#1c1c1e;border:none;border-radius:5px;
-          padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">
-          Use ${next} ↵
-        </button>
-      </div>`;
-    }
-
-    // ── Port map chips ────────────────────────────────────────────────────
-    html += `<div>
-      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
-        color:var(--text3);margin-bottom:6px">Port Map</div>
-      <div class="pmgrid">${_portMapChips(d.ports)}</div>`;
-
-    // ── Conflict process details ───────────────────────────────────────────
-    const conflicts = Object.entries(d.ports||{}).filter(([,i])=>!i.free);
-    if(conflicts.length){
-      html += `<div style="margin-top:6px;font-size:10px;color:var(--text3);line-height:2;display:flex;flex-wrap:wrap;gap:6px">`;
-      conflicts.forEach(([p,info])=>{
-        html += `<span style="display:inline-flex;align-items:center;gap:4px;
-          background:var(--red-dim);border:1px solid rgba(194,120,120,0.3);
-          border-radius:5px;padding:2px 8px">
-          <i class="ti ti-lock" style="color:var(--red);font-size:9px"></i>
-          <b style="color:var(--text2);font-family:var(--font-mono)">${p}</b>
-          <span style="color:var(--red)">${esc(info.process||'in use')}</span>
-        </span>`;
-      });
-      html += `</div>`;
-    }
-    html += `</div>`;
-
-    // ── Firewall row with open button ─────────────────────────────────────
-    if(d.firewall&&d.firewall.checked){
-      const fwOk=!d.firewall.blocked;
-      html += `<div class="fw-row">
-        <i class="ti ti-shield${fwOk?'-check':'-x'}" style="color:${fwOk?'var(--green)':'var(--red)'};font-size:13px;flex-shrink:0"></i>
-        <span style="font-size:11px;flex:1;color:${fwOk?'var(--green)':'var(--red)'}">${esc(d.firewall.detail)}</span>
-      </div>`;
-      if(!fwOk){
-        const allPorts=Object.keys(d.ports||{}).map(Number).filter(Boolean);
-        html += `<button id="fw-open-action-btn" class="fw-open-btn"
-          onclick="openFirewall([${allPorts.join(',')}], '${inputId}')"
-          title="Attempt to automatically open these ports in your system firewall">
-          <i class="ti ti-shield-plus"></i> Open Ports in Firewall
-        </button>`;
-      }
-    } else if(d.firewall&&d.firewall.detail){
-      html += `<div class="fw-row">
-        <i class="ti ti-info-circle" style="font-size:13px;flex-shrink:0"></i>
-        <span style="font-size:11px;flex:1">${esc(d.firewall.detail)}</span>
-      </div>`;
-      // Always show open button even for informational firewall status
-      const allPorts=Object.keys(d.ports||{}).map(Number).filter(Boolean);
-      if(allPorts.length){
-        html += `<button id="fw-open-action-btn" class="fw-open-btn"
-          onclick="openFirewall([${allPorts.join(',')}], '${inputId}')"
-          title="Attempt to automatically open these ports in your system firewall">
-          <i class="ti ti-shield-plus"></i> Open Ports in Firewall
-        </button>`;
-      }
-    }
-
-    // ── Warnings ──────────────────────────────────────────────────────────
-    (d.warnings||[]).forEach(w=>{
-      html += _portBanner('warn', esc(w));
-    });
-
-    // ── Suggest next if conflicts ──────────────────────────────────────────
-    if(!d.ok){
-      html += `<button type="button"
-        class="port-action-btn suggest" style="width:100%;justify-content:center"
-        onclick="suggestNextPort('${inputId}','${resultId}')">
-        ✦ Find next free port
-      </button>`;
-    }
-
-    _showPortNotif(html);
-  }catch(e){
-    _showPortNotif(_portBanner('err','Check failed: '+esc(e.message||String(e))));
-  }
-}
-
-/** Open ports in system firewall via the backend API */
-async function openFirewall(ports, inputId){
-  const btn = document.getElementById('fw-open-action-btn');
-  if(btn){ btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2" style="animation:spin 0.8s linear infinite"></i> Opening…'; }
-  try{
-    const res = await fetch('/api/open_firewall',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ports}),
-    });
-    const d = await res.json();
-    const body = document.getElementById('port-notif-body');
-    if(!body) return;
-
-    if(d.ok){
-      // Replace the fw-open-btn with success banner
-      const fwBtn = document.getElementById('fw-open-action-btn');
-      if(fwBtn){
-        fwBtn.className='fw-open-btn done';
-        fwBtn.disabled=true;
-        fwBtn.innerHTML=`<i class="ti ti-shield-check"></i> Opened ${d.opened.length} port(s) — ${esc(d.msg)}`;
-      }
-      // Re-run the port check to confirm
-      setTimeout(()=>checkPort(inputId,'_'), 800);
-    } else {
-      // Show error in the panel below existing content
-      const existing = body.querySelector('.fw-err-row');
-      if(existing) existing.remove();
-      const errDiv = document.createElement('div');
-      errDiv.className='fw-err-row';
-      errDiv.innerHTML = _portBanner('err', esc(d.msg||'Firewall open failed.'))
-        + (d.hint ? `<div style="margin-top:5px;font-size:10px;color:var(--text3);font-family:var(--font-mono);background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:6px 10px;white-space:pre-wrap">${esc(d.hint)}</div>` : '');
-      body.appendChild(errDiv);
-      if(btn){ btn.disabled=false; btn.innerHTML='<i class="ti ti-shield-plus"></i> Open Ports in Firewall'; }
-    }
-  }catch(e){
-    if(btn){ btn.disabled=false; btn.innerHTML='<i class="ti ti-shield-plus"></i> Open Ports in Firewall'; }
-    _showPortNotif(_portBanner('err','Firewall request failed: '+esc(e.message||String(e))));
-  }
-}
-
-async function submitNewStream(){
-  const name=(document.getElementById('new-name')?.value||'').trim();
-  const port=parseInt(document.getElementById('new-port')?.value||0);
-  // Detect source mode
-  const isFolderMode=document.getElementById('new-src-folder')?.style.display!=='none';
-  const files=isFolderMode?'':_plGetStr('new-pl-wrap');
-  const folderPath=isFolderMode?(document.getElementById('new-folder')?.value||'').trim():'';
-  if(!name){toast('Stream name is required','err');return;}
-  if(!/^[\w\-. ]+$/.test(name)){toast('Name: letters, numbers, spaces, hyphens, dots, underscores only','err');return;}
-  if(!port||port<1024||port>65535){toast('Port must be 1024-65535','err');return;}
-  if(!isFolderMode&&!files){toast('At least one file path is required','err');return;}
-  if(isFolderMode&&!folderPath){toast('Folder path is required for folder source','err');return;}
-  const wdChecked=Array.from(document.querySelectorAll('.new-wd:checked')).map(el=>+el.value);
-  const wdMap=['mon','tue','wed','thu','fri','sat','sun'];
-  const weekdays=wdChecked.length===7?'all':(wdChecked.map(i=>wdMap[i]).join('|')||'all');
-  const r=await api('create_stream',{
-    name,port,files,weekdays,
-    folder_source: folderPath||null,
-    stream_path:(document.getElementById('new-spath')?.value||'').trim(),
-    video_bitrate:(document.getElementById('new-vbr')?.value||'2500k').trim()||'2500k',
-    audio_bitrate:(document.getElementById('new-abr')?.value||'128k').trim()||'128k',
-    shuffle:document.getElementById('new-shuffle')?.checked||false,
-    enabled:document.getElementById('new-enabled')?.checked!==false,
-    hls_enabled:document.getElementById('new-hls')?.checked||false,
-    compliance_enabled:document.getElementById('new-comp-en')?.checked||false,
-    compliance_start:(document.getElementById('new-comp-start')?.value||'06:00:00').trim()||'06:00:00',
-    compliance_loop:document.getElementById('new-comp-loop')?.checked||false,
-    compliance_strict:document.getElementById('new-comp-strict')?.checked||false,
-    compliance_alert_enabled:document.getElementById('new-comp-alert')?.checked!==false,
-  });
-  if(r?.ok){
-    cancelConfig();
-    await loadConfig();
-    // Auto-select the newly created stream
-    selectConfigStream(name);
-    toast(r.msg||'Stream created','ok');
-  }
-}
-
-async function deleteStream(name){
-  if(!confirm(`Delete stream "${name}"?\n\nThis will remove it from streams.hcf immediately. The stream will be stopped if it is currently running.`))return;
-  const r=await api('delete_stream',{name});
-  if(r?.ok){
-    if(_configSelected===name) cancelConfig();
-    loadConfig();
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MEDIA BROWSER MODAL
-// ═══════════════════════════════════════════════════════════════
-/*
-  mbOpen(mode, target)
-    mode   : 'files'  → user picks a file; path is inserted into target input or playlist
-           : 'folder' → user picks a folder; path is written into target input
-    target : element id of the <input> to write into (folder mode),
-             or playlist container id (files mode, triggers _plAddPath)
-
-  The browser fetches /api/files?path=<relative> and /api/files?path=
-  to build the sidebar of top-level dirs. Clicking a folder navigates into it.
-  In files mode, clicking a file row selects it; double-click confirms.
-  In folder mode, clicking any folder row selects it; double-click navigates.
-*/
-
-let _mb = {
-  mode:     'files',   // 'files' | 'folder'
-  target:   '',        // input id or playlist cid
-  path:     '',        // current browse path (relative to media root)
-  selected: null,      // {path, isDir, fullServerPath}
-  loading:  false,
-  rootDirs: [],        // top-level dirs for sidebar
-  _fmRootMeta: [],     // [{path, label}] for dir-select dropdowns
-  // ── path cache: avoids re-fetching a folder already visited this session ──
-  _cache:   {},        // path → {data, ts}
-  _rootCache: null,    // cached root listing (never changes in a session)
-};
-const _MB_CACHE_TTL = 30000; // ms — stale after 30 s
-
-function _mbCacheGet(path) {
-  const e = _mb._cache[path];
-  if (!e) return null;
-  if (Date.now() - e.ts > _MB_CACHE_TTL) { delete _mb._cache[path]; return null; }
-  return e.data;
-}
-function _mbCacheSet(path, data) {
-  _mb._cache[path] = { data, ts: Date.now() };
-}
-
-function mbOpen(mode, target) {
-  _mb.mode    = mode;
-  _mb.target  = target;
-  _mb.path    = '';
-  _mb.selected = null;
-  _mb.loading  = false;
-  // Clear per-path cache on each open so fresh content is shown.
-  // Root cache is kept — root dirs never change during a session.
-  _mb._cache = {};
-
-  // Update modal chrome
-  document.getElementById('mb-mode-icon').textContent = mode === 'folder' ? '📁' : '🎬';
-  document.getElementById('mb-title').textContent     = mode === 'folder' ? 'Browse for Folder' : 'Browse for File';
-  document.getElementById('mb-subtitle').textContent  = mode === 'folder'
-    ? 'Navigate and click a folder to select it, then confirm.'
-    : 'Navigate and click a file to select it, then confirm. Double-click to confirm instantly.';
-
-  _mbSetSelection(null);
-  document.getElementById('mb-modal').classList.add('open');
-  _mbLoad('');
-}
-
-function mbClose() {
-  document.getElementById('mb-modal').classList.remove('open');
-  _mb.selected = null;
-}
-
-function mbRefresh() { _mbLoad(_mb.path); }
-
-function mbConfirm() {
-  if (!_mb.selected) { toast('Nothing selected', 'err'); return; }
-  const p = _mb.selected.path;
-
-  if (_mb.mode === 'folder') {
-    // Write into the target input
-    const el = document.getElementById(_mb.target);
-    if (el) { el.value = p; el.dispatchEvent(new Event('input')); }
-    _markDirty();
-    toast('Folder selected', 'ok');
-  } else {
-    // Files mode — insert into playlist
-    const cid = _mb.target;
-    _plAddPath(cid, p);
-    toast('File added to playlist', 'ok');
-  }
-  mbClose();
-}
-
-// Insert a path directly into the playlist by cid (bypasses the text input)
-function _plAddPath(cid, path) {
-  if (!path) return;
-  // Sync any inline edits first
-  document.querySelectorAll('#'+cid+' .pl-table tbody tr').forEach((tr,i)=>{
-    const pi=tr.querySelector('input[type=number]'),si=tr.querySelector('input[type=text]');
-    if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
-    if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
-  });
-  _playlistItems.push({path, start:'00:00:00', priority:0});
-  _playlistItems.sort((a,b)=>a.priority-b.priority);
-  _markDirty();
-  _renderPLTable(cid);
-}
-
-function _mbSetSelection(item) {
-  _mb.selected = item;
-  const disp = document.getElementById('mb-selection-display');
-  const btn  = document.getElementById('mb-confirm-btn');
-  if (!item) {
-    disp.textContent = 'Nothing selected';
-    disp.title = '';
-    btn.disabled = true;
-    return;
-  }
-  const label = item.fullServerPath || item.path || '(root)';
-  disp.textContent = label;
-  disp.title = label;
-  btn.disabled = false;
-}
-
-async function _mbLoad(path) {
-  if (_mb.loading) return;
-  _mb.loading = true;
-  _mb.path = path;
-
-  const listing   = document.getElementById('mb-listing');
-  const sidebar   = document.getElementById('mb-sidebar');
-  const statusBar = document.getElementById('mb-status-bar');
-
-  // ── Serve from cache instantly, then revalidate in background ────────────
-  const cached = _mbCacheGet(path);
-  if (cached) {
-    _mbRender(cached, path, listing, sidebar, statusBar);
-    _mb.loading = false;
-    // Silent background revalidation — update cache but don't re-render
-    // unless the content actually changed (avoids flicker).
-    fetch('/api/files?path=' + encodeURIComponent(path))
-      .then(r => r.json())
-      .then(fresh => { if (!fresh.error) _mbCacheSet(path, fresh); })
-      .catch(() => {});
-    return;
-  }
-
-  listing.innerHTML = '<div class="fm-empty"><div class="empty-icon" style="animation:spin 1s linear infinite;font-size:28px">⟳</div></div>';
-  statusBar.textContent = 'Loading…';
-
-  try {
-    // Root dirs are fetched once and reused — no need to re-fetch on every navigation
-    const needRoots = !path && !_mb._rootCache;
-    const data = await fetch('/api/files?path=' + encodeURIComponent(path)).then(r => r.json());
-
-    if (data.error) {
-      listing.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>${esc(data.error)}</div></div>`;
-      statusBar.textContent = 'Error loading folder';
-      _mb.loading = false;
-      return;
-    }
-
-    // Cache the result
-    _mbCacheSet(path, data);
-
-    // Cache root dirs on first successful load
-    if (!path && !data.error) {
-      _mb._rootCache = data.dirs || [];
-      _mb.rootDirs   = _mb._rootCache;
-    } else if (_mb._rootCache) {
-      _mb.rootDirs = _mb._rootCache;
-    }
-
-    _mbRender(data, path, listing, sidebar, statusBar);
-  } catch(e) {
-    listing.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>Failed to load: ${esc(e.message)}</div></div>`;
-    statusBar.textContent = 'Error';
-  }
-  _mb.loading = false;
-}
-
-function _mbRender(data, path, listing, sidebar, statusBar) {
-    // ── Breadcrumb ────────────────────────────────────────────
-    const bc = document.getElementById('mb-breadcrumb');
-    bc.innerHTML = (data.breadcrumb || [{name:'Files', path:''}]).map((crumb, i, arr) => {
-      const isLast = i === arr.length - 1;
-      const sep = i > 0 ? '<span style="opacity:0.4;font-size:10px;padding:0 2px">›</span>' : '';
-      return sep + `<span onclick="_mbLoad('${crumb.path}')"
-               style="cursor:pointer;padding:2px 6px;border-radius:5px;color:${isLast?'var(--text)':'var(--text3)'};
-                      font-weight:${isLast?'600':'400'}"
-               onmouseover="if(!${isLast})this.style.color='var(--accent)'"
-               onmouseout="this.style.color='${isLast?'var(--text)':'var(--text3)'}'"
-               >${esc(crumb.name)}</span>`;
-    }).join('');
-
-    // ── Sidebar (root dirs) ───────────────────────────────────
-    const rootDirs = _mb.rootDirs.length ? _mb.rootDirs : (data.dirs || []);
-    sidebar.innerHTML =
-      `<div onclick="_mbLoad('')"
-            style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;
-                   border-bottom:1px solid var(--border);transition:background 0.12s;
-                   ${!path ? 'background:rgba(184,115,51,0.09);border-left:2px solid var(--accent);padding-left:12px;color:var(--accent)' : 'color:var(--text2)'}"
-            onmouseover="this.style.background='var(--bg3)'"
-            onmouseout="this.style.background='${!path?'rgba(184,115,51,0.09)':''}'"
-            title="Root directory">
-         <span style="opacity:0.65">📁</span> ${(data.breadcrumb && data.breadcrumb[0]) ? esc(data.breadcrumb[0].name) : 'Files'}
-       </div>` +
-      rootDirs.map(d => {
-        const isActive = path === d.path || path.startsWith(d.path + '/');
-        return `<div onclick="_mbLoad('${d.path}')"
-                     style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;
-                            border-bottom:1px solid var(--border);transition:background 0.12s;
-                            ${isActive ? 'background:rgba(184,115,51,0.09);border-left:2px solid var(--accent);padding-left:12px;color:var(--accent)' : 'color:var(--text2)'}"
-                     onmouseover="this.style.background='var(--bg3)'"
-                     onmouseout="this.style.background='${isActive?'rgba(184,115,51,0.09)':''}'"
-                     title="${esc(d.path)}">
-               <span style="opacity:0.65">📂</span> ${esc(d.name)}
-             </div>`;
-      }).join('');
-
-    // ── Main listing ──────────────────────────────────────────
-    const rows = [];
-    const isFolderMode = _mb.mode === 'folder';
-
-    if (isFolderMode) {
-      rows.push(`
-        <div onclick="_mbSelectRow(this, {path:'${esc(path)}', isDir:true})"
-             ondblclick="_mbSelectRow(this,{path:'${esc(path)}',isDir:true});mbConfirm()"
-             style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);
-                    cursor:pointer;font-size:12px;background:rgba(184,115,51,0.06)"
-             title="Select current folder: ${esc(path||'Media root')}">
-          <span style="font-size:15px">📂</span>
-          <span style="flex:1;font-weight:600;color:var(--accent)">
-            <i class="fa fa-check-circle" style="margin-right:5px;opacity:0.7"></i>
-            Use this folder: <code style="font-size:11px;font-family:var(--font-mono)">${esc(path || '(root)')}</code>
-          </span>
-        </div>`);
-    }
-
-    (data.dirs || []).forEach(d => {
-      const isSelectable = isFolderMode;
-      rows.push(`
-        <div class="mb-row"
-             onclick="${isSelectable
-               ? `_mbSelectRow(this,{path:'${esc(d.path)}',isDir:true})`
-               : `_mbLoad('${esc(d.path)}')`}"
-             ondblclick="_mbLoad('${esc(d.path)}')"
-             style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);
-                    cursor:pointer;font-size:12px;transition:background 0.1s"
-             onmouseover="this.style.background='rgba(184,115,51,0.04)'"
-             onmouseout="this.style.background=''"
-             title="${isSelectable ? 'Click to select · Double-click to navigate into' : 'Double-click to navigate into'}: ${esc(d.path)}">
-          <span style="font-size:15px">📁</span>
-          <span style="flex:1;color:var(--text);font-weight:500">${esc(d.name)}</span>
-          <button onclick="event.stopPropagation();_mbLoad('${esc(d.path)}')"
-                  style="background:none;border:1px solid var(--border);color:var(--text3);cursor:pointer;
-                         font-size:10px;padding:2px 8px;border-radius:5px;transition:all 0.15s"
-                  onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
-                  onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border)'"
-                  title="Open this folder">Open →</button>
-        </div>`);
-    });
-
-    (data.files || []).forEach(f => {
-      const isMedia = f.supported;
-      const ico = (f.ext||'').match(/\.(mp3|aac|flac|wav|ogg|m4a)$/i) ? '🎵' : '🎬';
-      if (isFolderMode) {
-        rows.push(`
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);
-                      font-size:12px;opacity:0.35;cursor:default" title="${esc(f.full_path||f.path)}">
-            <span style="font-size:14px">${ico}</span>
-            <span style="flex:1;color:var(--text2)">${esc(f.name)}</span>
-            <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono)">${esc(f.size)}</span>
-          </div>`);
-      } else {
-        const opacity = isMedia ? '1' : '0.45';
-        rows.push(`
-          <div class="mb-row"
-               onclick="${isMedia ? `_mbSelectRow(this,{path:'${esc(f.path)}',isDir:false})` : ''}"
-               ondblclick="${isMedia ? `_mbSelectRow(this,{path:'${esc(f.path)}',isDir:false});mbConfirm()` : ''}"
-               style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);
-                      font-size:12px;opacity:${opacity};transition:background 0.1s;
-                      cursor:${isMedia?'pointer':'default'}"
-               ${isMedia ? `onmouseover="this.style.background='rgba(184,115,51,0.05)'" onmouseout="this.style.background=''"` : ''}
-               title="${isMedia ? 'Click to select · Double-click to add' : 'Unsupported format'}: ${esc(f.path)}">
-            <span style="font-size:14px">${ico}</span>
-            <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
-            ${f.duration ? `<span style="font-size:10px;color:var(--text3);font-family:var(--font-mono);flex-shrink:0">${esc(f.duration)}</span>` : ''}
-            <span style="font-size:11px;color:var(--text3);font-family:var(--font-mono);flex-shrink:0">${esc(f.size)}</span>
-            ${!isMedia ? '<span style="font-size:10px;color:var(--text3);flex-shrink:0">unsupported</span>' : ''}
-          </div>`);
-      }
-    });
-
-    if (!rows.length || (isFolderMode && rows.length === 1)) {
-      rows.push('<div class="fm-empty"><div class="empty-icon">📂</div><div>This folder is empty.</div></div>');
-    }
-
-    listing.innerHTML = rows.join('');
-
-    if (_mb.selected) {
-      listing.querySelectorAll('.mb-row').forEach(row => {
-        if (row.title && row.title.includes(_mb.selected.path)) {
-          row.style.background = 'rgba(184,115,51,0.10)';
-          row.style.outline = '1px solid var(--accent)';
-        }
-      });
-    }
-
-    const nDirs = (data.dirs||[]).length;
-    const nFiles = (data.files||[]).length;
-    const nMediaFiles = (data.files||[]).filter(f=>f.supported).length;
-    statusBar.innerHTML = isFolderMode
-      ? `<b>${nDirs}</b> subfolder${nDirs!==1?'s':''} &ensp;·&ensp; <b>${nFiles}</b> file${nFiles!==1?'s':''}`
-      : `<b>${nDirs}</b> subfolder${nDirs!==1?'s':''} &ensp;·&ensp; <b>${nMediaFiles}</b> supported media file${nMediaFiles!==1?'s':''} of ${nFiles}`;
-}
-
-function _mbSelectRow(rowEl, item) {
-  // Clear previous highlight
-  document.querySelectorAll('#mb-listing .mb-row').forEach(r => {
-    r.style.background = '';
-    r.style.outline = '';
-  });
-  // Highlight selected
-  rowEl.style.background = 'rgba(184,115,51,0.12)';
-  rowEl.style.outline = '1px solid var(--accent)';
-  _mbSetSelection(item);
-}
-
-// ═══════════════════════════════════
-// SETTINGS
-// ═══════════════════════════════════
-
-// ═══════════════════════════════════════════════════════
-// COMPLIANCE ALERT BANNER (v2)
-// ═══════════════════════════════════════════════════════
-
-let _compAlertsEnabled = localStorage.getItem('hc_comp_alerts') !== 'false';
-const _compAlertActive = {};
-
-function _updateComplianceAlerts(streams) {
-  if (!_compAlertsEnabled) {
-    document.querySelectorAll('.compliance-alert-banner').forEach(el => el.remove());
-    Object.keys(_compAlertActive).forEach(k => delete _compAlertActive[k]);
-    return;
-  }
-  const seenNames = new Set();
-  for (const s of streams) {
-    if (!s.compliance_enabled) continue;
-    if (!s.compliance_alert) continue;
-    if (s.compliance_alert_enabled === false) continue;
-    seenNames.add(s.name);
-    if (_compAlertActive[s.name]) {
-      const el = document.getElementById('cab-comp-' + s.name.replace(/[^a-z0-9]/gi,'_'));
-      if (el) el.querySelector('.cab-body').textContent = s.compliance_alert;
-      continue;
-    }
-    _compAlertActive[s.name] = true;
-    const safeId = 'cab-comp-' + s.name.replace(/[^a-z0-9]/gi,'_');
-    const div = document.createElement('div');
-    div.className = 'compliance-alert-banner';
-    div.id = safeId;
-    // Offset each banner vertically so multiple streams don't overlap
-    const offset = Object.keys(_compAlertActive).length - 1;
-    div.style.top = (72 + offset * 170) + 'px';
-    div.innerHTML =
-      '<div class="cab-hdr"><span class="cab-dot"></span>Compliance Error</div>' +
-      '<div class="cab-body">' + esc(s.compliance_alert) + '</div>' +
-      '<div class="cab-stream">Stream: ' + esc(s.name) + '</div>' +
-      '<button class="cab-dismiss" onclick="_dismissCompAlert(\'' +
-        s.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\')">Dismiss ×</button>';
-    document.body.appendChild(div);
-  }
-  for (const name of Object.keys(_compAlertActive)) {
-    if (!seenNames.has(name)) {
-      const safeId = 'cab-comp-' + name.replace(/[^a-z0-9]/gi,'_');
-      const el = document.getElementById(safeId);
-      if (el) { el.style.opacity='0'; setTimeout(()=>el.remove(),300); }
-      delete _compAlertActive[name];
-    }
-  }
-}
-
-function _dismissCompAlert(streamName) {
-  const safeId = 'cab-comp-' + streamName.replace(/[^a-z0-9]/gi,'_');
-  const el = document.getElementById(safeId);
-  if (el) { el.style.transition='opacity 0.3s'; el.style.opacity='0'; setTimeout(()=>el.remove(),300); }
-  delete _compAlertActive[streamName];
-  // Allow re-display after 60 s if still unresolved
-  setTimeout(() => { /* passive — next loadStreams tick re-evaluates */ }, 60000);
-}
-
-function toggleComplianceAlerts(checked) {
-  _compAlertsEnabled = checked;
-  localStorage.setItem('hc_comp_alerts', checked ? 'true' : 'false');
-  if (!checked) {
-    document.querySelectorAll('.compliance-alert-banner').forEach(b => b.remove());
-    Object.keys(_compAlertActive).forEach(k => delete _compAlertActive[k]);
-  }
-}
-
-const _settingsDefaults={autoref:true,autoscroll:true,compact:false,showrtsp:true,notifStart:true,notifErr:true,notifEvent:false};
-const _settings=Object.assign({},_settingsDefaults);
-// Restore persisted settings
-try{
-  const _stored=JSON.parse(localStorage.getItem('hc-settings')||'{}');
-  Object.assign(_settings,_stored);
-  // Sync toggle UI after defaults are applied
-  Object.entries(_settings).forEach(([k,v])=>{
-    const el=document.getElementById('st-'+k.toLowerCase().replace(/([A-Z])/g,'-$1').toLowerCase());
-    if(el&&el.classList.contains('toggle')) el.classList.toggle('on',!!v);
-  });
-}catch(_){}
-
-// ═══════════════════════════════════
-// STREAM SOURCE SELECTOR
-// ═══════════════════════════════════
-let _ssMode = 'folder';   // 'folder' | 'files'
-let _ssFiles = [];         // selected files in files-mode
-
-// Populate stream dropdown when Settings tab opens
-async function ssInit() {
-  const sel = document.getElementById('ss-stream');
-  if (!sel) return;
-  try {
-    const streams = await fetch('/api/streams').then(r => r.json());
-    sel.innerHTML = '<option value="">— select a stream —</option>' +
-      streams.map(s => `<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
-  } catch(e) {
-    sel.innerHTML = '<option value="">Failed to load streams</option>';
-  }
-  await ssRefreshFolders();
-  await ssRefreshFiles();
-}
-
-function ssSwitchMode(mode) {
-  _ssMode = mode;
-  document.getElementById('ss-panel-folder').style.display = mode === 'folder' ? '' : 'none';
-  document.getElementById('ss-panel-files').style.display  = mode === 'files'  ? '' : 'none';
-  document.getElementById('ss-tab-folder').classList.toggle('active', mode === 'folder');
-  document.getElementById('ss-tab-files').classList.toggle('active',  mode === 'files');
-}
-
-// Load current source for the selected stream into the UI
-async function ssLoadSource() {
-  const name = document.getElementById('ss-stream').value;
-  if (!name) return;
-  document.getElementById('ss-status').textContent = '';
-  try {
-    const cfgs = await fetch('/api/streams_config').then(r => r.json());
-    const cfg = cfgs.find(c => c.name === name);
-    if (!cfg) return;
-    if (cfg.folder_source) {
-      ssSwitchMode('folder');
-      // Try to select the matching folder option
-      const rel = cfg.folder_source.replace(/\\/g, '/');
-      const folderSel = document.getElementById('ss-folder-select');
-      // find option with value matching the tail of the path
-      const opt = Array.from(folderSel.options).find(o => rel.endsWith(o.value) || o.value === rel);
-      if (opt) folderSel.value = opt.value;
-      document.getElementById('ss-shuffle').checked = !!cfg.shuffle;
-    } else if (cfg.files) {
-      ssSwitchMode('files');
-      _ssFiles = cfg.files.split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
-      ssRenderFileList();
-      document.getElementById('ss-files-shuffle').checked = !!cfg.shuffle;
-    }
-  } catch(e) {}
-}
-
-// Populate folder dropdown from /api/files
-async function ssRefreshFolders() {
-  const sel = document.getElementById('ss-folder-select');
-  if (!sel) return;
-  try {
-    const root = await fetch('/api/files?path=').then(r => r.json());
-    const dirs = root.dirs || [];
-    const _rootName = (root.breadcrumb && root.breadcrumb[0]) ? root.breadcrumb[0].name : 'Root';
-    sel.innerHTML = `<option value="">— ${_rootName} (all files) —</option>` +
-      dirs.map(d => `<option value="${esc(d.path)}">${esc(d.name)}</option>`).join('');
-  } catch(e) {
-    sel.innerHTML = '<option value="">Failed to load folders</option>';
-  }
-}
-
-// Populate file browser from /api/library
-async function ssRefreshFiles() {
-  const sel = document.getElementById('ss-file-browser');
-  if (!sel) return;
-  try {
-    const lib = await fetch('/api/library').then(r => r.json());
-    sel.innerHTML = '<option value="">— choose a file —</option>' +
-      lib.map(f => `<option value="${esc(f.path)}" title="${esc(f.duration||'')} · ${esc(f.size||'')}">${esc(f.path)}</option>`).join('');
-  } catch(e) {
-    sel.innerHTML = '<option value="">Failed to load library</option>';
-  }
-}
-
-function ssAddFile() {
-  const sel = document.getElementById('ss-file-browser');
-  const val = sel.value;
-  if (!val) { toast('Pick a file first', 'err'); return; }
-  if (_ssFiles.includes(val)) { toast('Already added', 'info'); return; }
-  _ssFiles.push(val);
-  ssRenderFileList();
-}
-
-function ssRemoveFile(idx) {
-  _ssFiles.splice(idx, 1);
-  ssRenderFileList();
-}
-
-function ssRenderFileList() {
-  const wrap = document.getElementById('ss-file-list');
-  const empty = document.getElementById('ss-file-empty');
-  if (!_ssFiles.length) {
-    wrap.innerHTML = '';
-    wrap.appendChild(empty);
-    empty.style.display = '';
-    return;
-  }
-  empty.style.display = 'none';
-  wrap.innerHTML = _ssFiles.map((f, i) => `
-    <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px">
-      <span style="flex:1;font-family:var(--font-mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="${esc(f)}">${esc(f)}</span>
-      <button class="fm-action-btn del" onclick="ssRemoveFile(${i})" title="Remove from list">✕</button>
-    </div>`).join('') + `<div id="ss-file-empty" style="display:none;padding:20px;text-align:center;color:var(--text3);font-size:12px">No files selected yet.</div>`;
-}
-
-function ssClear() {
-  _ssFiles = [];
-  ssRenderFileList();
-  document.getElementById('ss-folder-select').value = '';
-  document.getElementById('ss-shuffle').checked = false;
-  document.getElementById('ss-files-shuffle').checked = false;
-  document.getElementById('ss-stream').value = '';
-  document.getElementById('ss-status').textContent = '';
-}
-
-async function ssApply() {
-  const name = document.getElementById('ss-stream').value;
-  if (!name) { toast('Select a stream first', 'err'); return; }
-  const st = document.getElementById('ss-status');
-
-  let payload;
-  if (_ssMode === 'folder') {
-    const folder = document.getElementById('ss-folder-select').value;
-    payload = {
-      name,
-      folder_source: folder || null,
-      files: '',
-      shuffle: document.getElementById('ss-shuffle').checked,
-    };
-  } else {
-    if (!_ssFiles.length) { toast('Add at least one file', 'err'); return; }
-    payload = {
-      name,
-      folder_source: null,
-      files: _ssFiles.join('\n'),
-      shuffle: document.getElementById('ss-files-shuffle').checked,
-    };
-  }
-
-  st.textContent = 'Saving…'; st.style.color = 'var(--yellow)';
-  try {
-    const r = await api('update_config', payload);
-    if (r?.ok) {
-      st.textContent = '✓ Saved — restarting stream…'; st.style.color = 'var(--green)';
-      toast('Stream source updated', 'ok');
-      // Restart stream so it picks up the new source
-      setTimeout(() => api('restart', {name}), 600);
-    } else {
-      st.textContent = '✕ ' + (r?.msg || 'Error'); st.style.color = 'var(--red)';
-      toast(r?.msg || 'Failed to save', 'err');
-    }
-  } catch(e) {
-    st.textContent = '✕ Request failed'; st.style.color = 'var(--red)';
-    toast('Save failed', 'err');
-  }
-}
-
-function toggleSetting(key,el){
-  _settings[key]=!_settings[key];
-  el.classList.toggle('on',_settings[key]);
-  try{localStorage.setItem('hc-settings',JSON.stringify(_settings));}catch(_){}
-  applySettings();
-}
-
-function applySettings(){
-  // Autoref toggle → restart/stop the poll timer
-  clearInterval(_autoTimer);
-  if(_settings.autoref){
-    const v=parseInt(document.getElementById('st-poll-interval')?.value)||2500;
-    _autoTimer=setInterval(loadStreams,v);
-  }
-  // sync compliance alerts toggle
-  const caEl=document.getElementById('st-comp-alerts');
-  if(caEl)caEl.checked=_compAlertsEnabled;
-  // compact mode
-  document.querySelectorAll('td').forEach(td=>{
-    td.style.paddingTop=_settings.compact?'4px':'8px';
-    td.style.paddingBottom=_settings.compact?'4px':'8px';
-  });
-  // sync checkboxes
-  const arEl=document.getElementById('auto-ref');
-  if(arEl)arEl.checked=_settings.autoref;
-  const asEl=document.getElementById('log-auto');
-  if(asEl)asEl.checked=_settings.autoscroll;
-}
-
-function applyPollInterval(){
-  const v=parseInt(document.getElementById('st-poll-interval').value)||2500;
-  try{localStorage.setItem('hc-poll-interval',v);}catch(_){}
-  clearInterval(_autoTimer);
-  if(_settings.autoref) _autoTimer=setInterval(loadStreams,v);
-}
-
-// ═══════════════════════════════════
-// MAIL CONFIG
-// ═══════════════════════════════════
-const _SMTP_PRESETS={
-  outlook: {host:'smtp-mail.outlook.com', port:587, tls:true},
-  office365:{host:'smtp.office365.com',   port:587, tls:true},
-  yahoo:   {host:'smtp.mail.yahoo.com',   port:587, tls:true},
-  gmail:   {host:'smtp.gmail.com',        port:587, tls:true},
-};
-
-function smtpPreset(key){
-  const p=_SMTP_PRESETS[key];if(!p)return;
-  document.getElementById('ml-host').value=p.host;
-  document.getElementById('ml-port').value=p.port;
-  document.getElementById('ml-tls').checked=p.tls;
-  toast('Preset applied — fill in username & password','info');
-}
-
-function switchMailMode(mode){
-  document.getElementById('ml-mode').value=mode;
-  const isGmail=(mode==='gmail_oauth2');
-  const isMs=(mode==='microsoft_oauth2');
-  const isSmtp=(mode==='smtp');
-  document.getElementById('ml-panel-gmail').style.display=isGmail?'':'none';
-  document.getElementById('ml-panel-ms').style.display=isMs?'':'none';
-  document.getElementById('ml-panel-smtp').style.display=isSmtp?'':'none';
-  document.getElementById('ml-tab-gmail').classList.toggle('active',isGmail);
-  document.getElementById('ml-tab-ms').classList.toggle('active',isMs);
-  document.getElementById('ml-tab-smtp').classList.toggle('active',isSmtp);
-}
-
-function _setGmailUI(tokenExists){
-  const dot=document.getElementById('ml-gmail-dot');
-  const lbl=document.getElementById('ml-gmail-label');
-  const rev=document.getElementById('ml-gmail-revoke');
-  if(tokenExists){
-    dot.style.background='var(--green)';
-    lbl.textContent='Connected — Gmail account authorised';
-    rev.style.display='';
-  } else {
-    dot.style.background='var(--text3)';
-    lbl.textContent='Not connected';
-    rev.style.display='none';
-  }
-}
-
-async function loadMailConfig(){
-  try{
-    const d=await fetch('/api/mail_config').then(r=>r.json());
-    if(d.error){document.getElementById('ml-status').textContent='⚠ '+d.error;return;}
-
-    const mode=d.mode||'smtp';
-    switchMailMode(mode);
-
-    // SMTP fields
-    document.getElementById('ml-host').value=d.smtp_host||'smtp.gmail.com';
-    document.getElementById('ml-port').value=d.smtp_port||587;
-    document.getElementById('ml-user').value=d.username||'';
-    document.getElementById('ml-pass').value=d.password||'';
-    document.getElementById('ml-from').value=d.from_addr||'';
-    document.getElementById('ml-tls').checked=d.use_tls!==false;
-
-    // Microsoft OAuth2 fields
-    document.getElementById('ml-ms-client-id').value=d.ms_client_id||'';
-    document.getElementById('ml-ms-username').value=d.ms_username||'';
-    _setMsUI(!!d.ms_token_exists);
-
-    // Shared fields
-    document.getElementById('ml-to').value=(d.to_addrs||[]).join(', ');
-    document.getElementById('ml-cooldown').value=d.cooldown_secs??300;
-    document.getElementById('ml-enabled').checked=!!d.enabled;
-    document.getElementById('ml-on-error').checked=d.on_error!==false;
-    document.getElementById('ml-on-stop').checked=d.on_stop!==false;
-
-    // Gmail OAuth2 status
-    _setGmailUI(!!d.oauth2_token_exists);
-
-    document.getElementById('ml-status').textContent='✓ Config loaded from mail_config.hcf';
-    document.getElementById('ml-status').style.color='var(--green)';
-  }catch(e){
-    document.getElementById('ml-status').textContent='Failed to load config';
-    document.getElementById('ml-status').style.color='var(--red)';
-  }
-}
-async function saveMailConfig(){
-  const toRaw=document.getElementById('ml-to').value;
-  const toList=toRaw.split(',').map(s=>s.trim()).filter(Boolean);
-  if(!toList.length){toast('Enter at least one To address','err');return;}
-  const mode=document.getElementById('ml-mode').value;
-  const payload={
-    mode,
-    enabled:document.getElementById('ml-enabled').checked,
-    to_addrs:toList,
-    on_error:document.getElementById('ml-on-error').checked,
-    on_stop:document.getElementById('ml-on-stop').checked,
-    cooldown_secs:parseInt(document.getElementById('ml-cooldown').value)||300,
-    // SMTP fields (kept in file for easy switching)
-    smtp_host:document.getElementById('ml-host').value.trim(),
-    smtp_port:parseInt(document.getElementById('ml-port').value)||587,
-    use_tls:document.getElementById('ml-tls').checked,
-    username:document.getElementById('ml-user').value.trim(),
-    password:document.getElementById('ml-pass').value,
-    from_addr:document.getElementById('ml-from').value.trim(),
-    // Microsoft OAuth2 fields
-    ms_client_id:document.getElementById('ml-ms-client-id').value.trim(),
-    ms_username:document.getElementById('ml-ms-username').value.trim(),
-  };
-  try{
-    const r=await fetch('/api/save_mail_config',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
-    });
-    const j=await r.json();
-    toast(j.msg||(j.ok?'Saved':'Error'),j.ok?'ok':'err');
-    const st=document.getElementById('ml-status');
-    st.textContent=j.ok?'✓ mail_config.hcf saved':'✕ '+j.msg;
-    st.style.color=j.ok?'var(--green)':'var(--red)';
-  }catch(e){toast('Save failed','err');}
-}
-
-async function testMailAlert(){
-  const to=document.getElementById('ml-test-to').value.trim()||null;
-  const st=document.getElementById('ml-status');
-  st.textContent='Sending test email…';st.style.color='var(--yellow)';
-  try{
-    const r=await fetch('/api/test_mail_alert',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(to?{to_addr:to}:{})
-    });
-    const j=await r.json();
-    toast(j.msg||(j.ok?'Test sent':'Failed'),j.ok?'ok':'err');
-    st.textContent=j.ok?'✓ Test email sent successfully':'✕ '+j.msg;
-    st.style.color=j.ok?'var(--green)':'var(--red)';
-  }catch(e){toast('Test failed','err');st.textContent='Request failed';st.style.color='var(--red)';}
-}
-
-async function connectGmail(){
-  const st=document.getElementById('ml-status');
-  st.textContent='Starting Gmail auth flow…';st.style.color='var(--yellow)';
-  try{
-    const r=await fetch('/api/gmail_oauth2_start',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    const j=await r.json();
-    if(j.ok){
-      document.getElementById('ml-gmail-poll-msg').style.display='';
-      st.textContent=j.msg||'Browser opened — sign in with Google.';
-      st.style.color='var(--yellow)';
-    } else {
-      st.textContent='✕ '+j.msg;st.style.color='var(--red)';
-      toast(j.msg,'err');
-    }
-  }catch(e){toast('Connect failed','err');}
-}
-
-async function checkOAuthStatus(){
-  try{
-    const r=await fetch('/api/gmail_oauth2_status').then(res=>res.json());
-    const st=document.getElementById('ml-status');
-    const poll=document.getElementById('ml-gmail-poll-msg');
-    if(r.status==='done'||r.token_exists){
-      poll.style.display='none';
-      _setGmailUI(true);
-      st.textContent='✓ Gmail connected successfully!';st.style.color='var(--green)';
-      toast('Gmail connected!','ok');
-    } else if(r.status==='error'){
-      poll.style.display='none';
-      st.textContent='✕ Auth failed: '+r.error;st.style.color='var(--red)';
-      toast('OAuth2 failed','err');
-    } else {
-      st.textContent='Still waiting for sign-in…';st.style.color='var(--yellow)';
-    }
-  }catch(e){toast('Status check failed','err');}
-}
-
-async function revokeGmail(){
-  if(!confirm('Disconnect Gmail? You will need to re-authorise to send alerts.'))return;
-  try{
-    const r=await fetch('/api/gmail_oauth2_revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    const j=await r.json();
-    toast(j.msg||(j.ok?'Disconnected':'Error'),j.ok?'ok':'err');
-    if(j.ok) _setGmailUI(false);
-    document.getElementById('ml-status').textContent=j.msg;
-    document.getElementById('ml-status').style.color=j.ok?'var(--green)':'var(--red)';
-  }catch(e){toast('Revoke failed','err');}
-}
-
-
-function _setMsUI(tokenExists){
-  const dot=document.getElementById('ml-ms-dot');
-  const lbl=document.getElementById('ml-ms-label');
-  const rev=document.getElementById('ml-ms-revoke');
-  if(!dot)return;
-  if(tokenExists){
-    dot.style.background='var(--green)';
-    lbl.textContent='Connected — Microsoft account authorised';
-    rev.style.display='';
-  } else {
-    dot.style.background='var(--text3)';
-    lbl.textContent='Not connected';
-    rev.style.display='none';
-  }
-}
-
-async function connectMicrosoft(){
-  const clientId=document.getElementById('ml-ms-client-id').value.trim();
-  const username=document.getElementById('ml-ms-username').value.trim();
-  if(!clientId){toast('Enter Application (Client) ID first','err');return;}
-  if(!username){toast('Enter your mailbox address first','err');return;}
-  // Save config first so the server has client_id
-  await saveMailConfig();
-  const st=document.getElementById('ml-status');
-  st.textContent='Starting Microsoft device-code flow…';st.style.color='var(--yellow)';
-  try{
-    const r=await fetch('/api/microsoft_oauth2_start',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ms_client_id:clientId,ms_username:username})
-    });
-    const j=await r.json();
-    if(j.ok){
-      const box=document.getElementById('ml-ms-device-box');
-      box.style.display='';
-      if(j.user_code) document.getElementById('ml-ms-code').textContent=j.user_code;
-      if(j.verification_uri){
-        const a=document.getElementById('ml-ms-uri');
-        a.href=j.verification_uri; a.textContent=j.verification_uri;
-      }
-      st.textContent='Enter the code at the URL shown above, then click Check Status.';
-      st.style.color='var(--yellow)';
-    } else {
-      st.textContent='✕ '+j.msg;st.style.color='var(--red)';
-      toast(j.msg,'err');
-    }
-  }catch(e){toast('Connect failed','err');}
-}
-
-async function checkMsOAuthStatus(){
-  try{
-    const r=await fetch('/api/microsoft_oauth2_status').then(res=>res.json());
-    const st=document.getElementById('ml-status');
-    const box=document.getElementById('ml-ms-device-box');
-    if(r.status==='done'||r.token_exists){
-      box.style.display='none';
-      _setMsUI(true);
-      st.textContent='✓ Microsoft connected successfully!';st.style.color='var(--green)';
-      toast('Microsoft connected!','ok');
-    } else if(r.status==='error'){
-      box.style.display='none';
-      st.textContent='✕ Auth failed: '+r.error;st.style.color='var(--red)';
-      toast('Microsoft OAuth2 failed','err');
-    } else {
-      st.textContent='Still waiting for sign-in…';st.style.color='var(--yellow)';
-    }
-  }catch(e){toast('Status check failed','err');}
-}
-
-async function revokeMicrosoft(){
-  if(!confirm('Disconnect Microsoft? You will need to re-authorise to send alerts.'))return;
-  try{
-    const r=await fetch('/api/microsoft_oauth2_revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    const j=await r.json();
-    toast(j.msg||(j.ok?'Disconnected':'Error'),j.ok?'ok':'err');
-    if(j.ok){_setMsUI(false);document.getElementById('ml-ms-device-box').style.display='none';}
-    document.getElementById('ml-status').textContent=j.msg;
-    document.getElementById('ml-status').style.color=j.ok?'var(--green)':'var(--red)';
-  }catch(e){toast('Revoke failed','err');}
-}
-
-// ═══════════════════════════════════
-// MEDIA ROOT DIRECTORIES
-// ═══════════════════════════════════
-
-// Tracks the current roots array in-memory so UI renders without extra round-trips
-let _mrRoots = [];
-let _mrDefault = '';
-
-async function loadMediaRoots(){
-  try{
-    const r = await fetch('/api/media_roots');
-    if(!r.ok) throw new Error('Server error '+r.status);
-    const d = await r.json();
-    _mrRoots   = d.roots   || [];
-    _mrDefault = d.default || '';
-    const el = document.getElementById('mr-default-path');
-    if(el) el.textContent = _mrDefault || 'media/';
-    _renderMediaRoots();
-  }catch(e){
-    _mrStatus('Failed to load roots: '+e.message, 'err');
-  }
-}
-
-function _renderMediaRoots(){
-  const container = document.getElementById('mr-list');
-  if(!container) return;
-  container.innerHTML = '';
-
-  _mrRoots.forEach((rootPath, idx) => {
-    const isDefault = (rootPath === _mrDefault);
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:12px';
-
-    // Status dot — green if default, accent for extra roots
-    const dot = document.createElement('span');
-    dot.style.cssText = `width:7px;height:7px;border-radius:50%;flex-shrink:0;background:${isDefault ? 'var(--green)' : 'var(--accent)'}`;
-    row.appendChild(dot);
-
-    // Path text
-    const pathEl = document.createElement('code');
-    pathEl.style.cssText = 'flex:1;color:var(--text);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-    pathEl.title = rootPath;
-    pathEl.textContent = rootPath;
-    row.appendChild(pathEl);
-
-    // Badge
-    const badge = document.createElement('span');
-    badge.style.cssText = `font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;padding:2px 7px;border-radius:10px;flex-shrink:0;${isDefault ? 'background:rgba(100,200,100,0.12);color:var(--green)' : 'background:rgba(184,115,51,0.12);color:var(--accent)'}`;
-    badge.textContent = isDefault ? 'default' : 'extra';
-    row.appendChild(badge);
-
-    // Remove button — disabled for default root
-    if(!isDefault){
-      const btn = document.createElement('button');
-      btn.className = 'btn r';
-      btn.style.cssText = 'padding:3px 10px;font-size:11px;flex-shrink:0';
-      btn.title = 'Remove this extra media root';
-      btn.textContent = '✕ Remove';
-      btn.onclick = () => removeMediaRoot(rootPath);
-      row.appendChild(btn);
-    } else {
-      const lk = document.createElement('span');
-      lk.style.cssText = 'font-size:11px;color:var(--text3);flex-shrink:0';
-      lk.textContent = '🔒 locked';
-      row.appendChild(lk);
-    }
-
-    container.appendChild(row);
-  });
-
-  if(_mrRoots.length === 0){
-    container.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0">No roots loaded yet — click ↻ Load.</div>';
-  }
-}
-
-async function addMediaRoot(){
-  const input = document.getElementById('mr-new-path');
-  const path  = (input?.value || '').trim();
-  if(!path){ _mrStatus('Enter an absolute path first.', 'warn'); return; }
-
-  _mrStatus('Adding…', 'busy');
-  try{
-    // Build the full new list: existing extras + new path
-    const extras = _mrRoots.filter(r => r !== _mrDefault);
-    if(extras.includes(path)){
-      _mrStatus('⚠ That path is already in the list.', 'warn');
-      return;
-    }
-    const newRoots = [...extras, path];
-    await _saveRootsToServer(newRoots);
-    if(input) input.value = '';
-  }catch(e){
-    _mrStatus('✕ '+e.message, 'err');
-  }
-}
-
-async function removeMediaRoot(path){
-  if(!confirm(`Remove media root?\n\n${path}\n\nThe directory itself will not be deleted.`)) return;
-  _mrStatus('Removing…', 'busy');
-  try{
-    const extras = _mrRoots.filter(r => r !== _mrDefault && r !== path);
-    await _saveRootsToServer(extras);
-  }catch(e){
-    _mrStatus('✕ '+e.message, 'err');
-  }
-}
-
-async function _saveRootsToServer(extraRoots){
-  // Always include the default root so the server deduplicates cleanly
-  const roots = [_mrDefault, ...extraRoots].filter(Boolean);
-  const r = await fetch('/api/action', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({action:'save_media_roots', roots})
-  });
-  const d = await r.json().catch(() => ({}));
-  if(!d.ok) throw new Error(d.msg || 'Server error');
-
-  _mrRoots = d.roots || roots;
-  _renderMediaRoots();
-  const warnings = (d.warnings || []).join(' · ');
-  const msg = d.msg + (warnings ? ' ⚠ '+warnings : '');
-  _mrStatus('✓ '+msg, 'ok');
-  toast(d.msg || 'Media roots saved', 'ok');
-}
-
-function _mrStatus(msg, type){
-  const el = document.getElementById('mr-status');
-  if(!el) return;
-  el.textContent = msg;
-  el.style.color = type==='ok' ? 'var(--green)' : type==='err' ? 'var(--red)' : type==='warn' ? 'var(--yellow)' : 'var(--text3)';
-}
-
-
-// ═══════════════════════════════════
-// BACKUP & RESTORE
-// ═══════════════════════════════════
-async function downloadBackup(){
-  const st=document.getElementById('bk-status');
-  st.textContent='Preparing backup…';st.style.color='var(--yellow)';
-  try{
-    const include={
-      streams:      document.getElementById('bk-streams')?.checked!==false,
-      events:       document.getElementById('bk-events')?.checked!==false,
-      mail:         document.getElementById('bk-mail')?.checked!==false,
-      resume:       document.getElementById('bk-resume')?.checked!==false,
-      app_settings: document.getElementById('bk-app-settings')?.checked!==false,
-      media_roots:  document.getElementById('bk-media-roots')?.checked!==false,
-    };
-    const r=await fetch('/api/backup',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(include)
-    });
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.msg||`Server error ${r.status}`);}
-    const blob=await r.blob();
-    // Warn if the downloaded blob is suspiciously small (likely an error body)
-    if(blob.size<20){throw new Error('Server returned an empty backup — check server logs');}
-    const now=new Date();
-    const ts=[now.getFullYear(),
-      String(now.getMonth()+1).padStart(2,'0'),
-      String(now.getDate()).padStart(2,'0'),
-      '_',
-      String(now.getHours()).padStart(2,'0'),
-      String(now.getMinutes()).padStart(2,'0'),
-      String(now.getSeconds()).padStart(2,'0')].join('');
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=`hydracast_backup_${ts}.hc`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    const included=Object.entries(include).filter(([,v])=>v).map(([k])=>k).join(', ');
-    const sizeKB=Math.round(blob.size/1024);
-    st.textContent=`✓ Backup downloaded — ${included} (${sizeKB} KB)`;st.style.color='var(--green)';
-    toast('Backup downloaded','ok');
-  }catch(e){
-    st.textContent='✕ '+e.message;st.style.color='var(--red)';
-    toast('Backup failed: '+e.message,'err');
-  }
-}
-
-// Maximum .hc file size we will parse client-side (4 MB matches server POST limit)
-const _HC_MAX_BYTES = 4*1024*1024;
-
-async function doRestore(file){
-  if(!file)return;
-  // Reset file input so re-selecting same file still triggers onchange
-  const fileInput=document.getElementById('restore-file');
-  if(fileInput) fileInput.value='';
-
-  if(!file.name.endsWith('.hc')){toast('Must be a .hc backup file','err');return;}
-
-  // Client-side size guard — server rejects bodies > 4 MB anyway
-  if(file.size>_HC_MAX_BYTES){
-    toast(`Backup file too large (${Math.round(file.size/1024)} KB > 4096 KB)`, 'err');
-    return;
-  }
-
-  const st=document.getElementById('restore-status');
-  const preview=document.getElementById('restore-preview');
-  st.textContent='Reading file…';st.style.color='var(--yellow)';
-  if(preview){preview.style.display='none';preview.innerHTML='';}
-
-  try{
-    const text=await file.text();
-    let data;
-    try{data=JSON.parse(text);}catch(_){throw new Error('Invalid .hc file — not valid JSON');}
-    if(data.format!=='hydracast_backup'){throw new Error('Not a HydraCast backup file (missing format header)');}
-
-    // ── Build section inventory (treat empty arrays/objects as present) ──────
-    // Use 'format' key presence per-section, not truthiness, so an intentionally
-    // empty streams:[] backup is still recognised and can wipe all streams.
-    const sectionMap={
-      streams:          {key:'streams',          label:'Streams',          present:'streams' in data},
-      events:           {key:'events',            label:'Events',           present:'events' in data},
-      mail_config:      {key:'mail_config',       label:'Mail config',      present:'mail_config' in data},
-      resume_positions: {key:'resume_positions',  label:'Resume positions', present:'resume_positions' in data},
-      app_settings:     {key:'app_settings',      label:'App settings',     present:'app_settings' in data},
-      media_roots:      {key:'media_roots',       label:'Media roots',      present:'media_roots' in data},
-    };
-    const sections=Object.values(sectionMap).filter(s=>s.present).map(s=>s.label);
-    if(sections.length===0){throw new Error('Backup file contains no restorable sections');}
-
-    // ── Show file preview panel ───────────────────────────────────────────────
-    const backupVer=data.version||'unknown';
-    const backupDate=data.created? new Date(data.created).toLocaleString() : 'unknown';
-    const sizeKB=Math.round(file.size/1024);
-
-    // Gather per-section counts for the preview
-    const counts={};
-    if('streams' in data)          counts['Streams']=Array.isArray(data.streams)?`${data.streams.length} stream(s)`:'present';
-    if('events' in data)           counts['Events']=Array.isArray(data.events)?`${data.events.length} event(s)`:'present';
-    if('mail_config' in data)      counts['Mail config']='present (password excluded)';
-    if('resume_positions' in data) counts['Resume positions']=typeof data.resume_positions==='object'?`${Object.keys(data.resume_positions).length} entry(ies)`:'present';
-    if('app_settings' in data)     counts['App settings']='present';
-    if('media_roots' in data)      counts['Media roots']=Array.isArray(data.media_roots)?`${data.media_roots.length} extra root(s)`:'present';
-
-    // Version mismatch warning
-    let verWarning='';
-    const appVer=(typeof APP_VER!=='undefined')?APP_VER:null;
-    if(appVer && backupVer!==appVer){
-      verWarning=`<div style="color:var(--yellow);margin-top:4px">⚠ Backup version <b>${backupVer}</b> differs from running version <b>${appVer}</b> — review carefully before restoring.</div>`;
-    }
-
-    if(preview){
-      const rows=Object.entries(counts).map(([k,v])=>`<tr><td style="color:var(--text3);padding-right:12px">${k}</td><td style="color:var(--text2)">${v}</td></tr>`).join('');
-      preview.innerHTML=`
-        <div style="font-weight:600;color:var(--text);margin-bottom:6px">📦 ${file.name} <span style="font-weight:400;color:var(--text3)">(${sizeKB} KB)</span></div>
-        <div style="color:var(--text3)">Created: <span style="color:var(--text2)">${backupDate}</span> &nbsp;·&nbsp; App version: <span style="color:var(--text2)">${backupVer}</span></div>
-        ${verWarning}
-        <table style="margin-top:8px;border-collapse:collapse">${rows}</table>`;
-      preview.style.display='block';
-    }
-
-    // ── Confirmation dialog with section detail ───────────────────────────────
-    const confirmMsg=[
-      `Restore from: ${file.name}`,
-      `Created:      ${backupDate}`,
-      `Version:      ${backupVer}`,
-      ``,
-      `Sections to restore:`,
-      ...sections.map(s=>`  • ${s}`),
-      ``,
-      `All matching configuration will be replaced and streams will restart.`,
-      ``,
-      `Continue?`,
-    ].join('\n');
-    if(!confirm(confirmMsg))return;
-
-    st.textContent=`Restoring: ${sections.join(', ')}…`;st.style.color='var(--yellow)';
-
-    const r=await fetch('/api/restore',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(data)
-    });
-    let j;
-    try{j=await r.json();}catch(_){throw new Error(`Server returned non-JSON response (status ${r.status})`);}
-
-    if(j.ok){
-      const restored=(j.restored||[]).join(', ')||'(none)';
-      const failed=(j.failed||[]);
-      const warnPart=failed.length?`\n⚠ Warnings: ${failed.join('; ')}`:'' ;
-      st.textContent=`✓ Restored: ${restored}${warnPart} — reloading in 3 s…`;
-      st.style.color=failed.length?'var(--yellow)':'var(--green)';
-      toast('Restore successful — restarting streams…','ok');
-
-      // Reload UI state for every restored section
-      const r_list=j.restored||[];
-      if(r_list.includes('app_settings')){
-        // Reload holiday settings and invalidate cached data
-        if(typeof loadHolidaySettings==='function') loadHolidaySettings();
-        if(typeof loadHolidays==='function'){
-          if(typeof _hdLoaded!=='undefined') _hdLoaded=false;
-          if(typeof _hdData!=='undefined')   _hdData=[];
-          const lbl=document.getElementById('hd-next-label');
-          if(lbl) lbl.textContent='Holidays';
-          loadHolidays();
-        }
-      }
-      // Always reload streams table and events after any restore
-      setTimeout(()=>{
-        if(typeof loadStreams==='function') loadStreams();
-        if(r_list.includes('media_roots') && typeof loadMediaRoots==='function') loadMediaRoots();
-      },3500);
-    }else{
-      throw new Error(j.msg||'Restore failed');
-    }
-  }catch(e){
-    st.textContent='✕ '+e.message;st.style.color='var(--red)';
-    toast('Restore failed: '+e.message,'err');
-  }
-}
-
-// ═══════════════════════════════════
-// HOLIDAY SETTINGS (Settings tab)
-// ═══════════════════════════════════
-async function loadHolidaySettings(){
-  try{
-    const s=await fetch('/api/settings').then(r=>r.json());
-    const ci=document.getElementById('hol-country');
-    const si=document.getElementById('hol-subdiv');
-    if(ci) ci.value=s.holiday_country||'US';
-    if(si) si.value=s.holiday_subdiv||'';
-  }catch(e){}
-}
-
-async function saveHolidaySettings(){
-  const country=(document.getElementById('hol-country')?.value||'').trim();
-  const subdiv=(document.getElementById('hol-subdiv')?.value||'').trim()||null;
-  const st=document.getElementById('hol-status');
-  if(!country){
-    st.textContent='✕ Select a country';st.style.color='var(--red)';return;
-  }
-  st.textContent='Saving…';st.style.color='var(--yellow)';
-  try{
-    const r=await fetch('/api/settings',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({holiday_country:country,holiday_subdiv:subdiv})
-    });
-    const j=await r.json();
-    if(j.error) throw new Error(j.error);
-    st.textContent='✓ Saved — '+country+(subdiv?' / '+subdiv:'');
-    st.style.color='var(--green)';
-    toast('Holiday settings saved','ok');
-    // Invalidate holidays cache so pill + popup update to the new country
-    _hdLoaded=false;
-    _hdData=[];
-    document.getElementById('hd-next-label').textContent='Holidays';
-    loadHolidays();
-  }catch(e){
-    st.textContent='✕ '+e.message;st.style.color='var(--red)';
-    toast('Save failed: '+e.message,'err');
-  }
-}
-
-// ═══════════════════════════════════
-// CLEAR PLAYED EVENTS
-// ═══════════════════════════════════
-// ── Service restart (streams + web process) ───────────────
-async function svcRestartAll() {
-  const el = document.getElementById('svc-restart-status');
-  if (!confirm('This will stop all streams and restart the entire application.\nThe page will reconnect automatically in ~5 seconds.\n\nContinue?')) return;
-  el.textContent = '⟳ Stopping streams…';
-  el.style.color = 'var(--accent-light)';
-  try {
-    // 1) stop all streams gracefully
-    await api('stop_all', {});
-    el.textContent = '⟳ Restarting process…';
-    // 2) tell the server to execv itself; this request will not return
-    fetch('/api/action', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({action: 'restart_process'}),
-    }).catch(() => {});  // connection drop is expected
-    // 3) poll until the server responds again, then reload
-    el.textContent = '⟳ Waiting for server to come back…';
-    let attempts = 0;
-    const poll = setInterval(async () => {
-      attempts++;
-      if (attempts > 40) {  // give up after ~20 s
-        clearInterval(poll);
-        el.style.color = 'var(--red)';
-        el.textContent = '⚠ Server did not respond after 20 s. Refresh manually.';
-        return;
-      }
-      try {
-        const r = await fetch('/api/streams', {cache: 'no-store'});
-        if (r.ok) { clearInterval(poll); location.reload(); }
-      } catch(_) {}
-    }, 500);
-  } catch(e) {
-    el.style.color = 'var(--red)';
-    el.textContent = '⚠ ' + (e.message || 'Request failed');
-  }
-}
-
-async function clearPlayedEvents(){
-  const st=document.getElementById('danger-status');
-  try{
-    const events=await fetch('/api/events').then(r=>r.json());
-    if(!Array.isArray(events)){throw new Error('Could not load events');}
-    const played=events.filter(e=>e.played);
-    if(!played.length){
-      st.textContent='No played events to clear.';st.style.color='var(--text3)';
-      toast('No played events to clear','info');return;
-    }
-    if(!confirm(`Clear ${played.length} played event${played.length!==1?'s':''}?\n\nThis removes them from the schedule history permanently.`)) return;
-    st.textContent='Clearing…';st.style.color='var(--yellow)';
-    const r=await api('clear_played_events',{});
-    if(r?.ok){
-      st.textContent='✓ '+r.msg;st.style.color='var(--green)';
-      toast(r.msg,'ok');
-    }else{
-      throw new Error(r?.msg||'Failed');
-    }
-  }catch(e){
-    st.textContent='✕ '+e.message;st.style.color='var(--red)';
-    toast('Clear failed: '+e.message,'err');
-  }
-}
-
-// ═══════════════════════════════════
-// THEME TOGGLE
-// ═══════════════════════════════════
-// THEME TOGGLE (moon/sun checkbox)
-// ═══════════════════════════════════
-(function initTheme(){
-  try{
-    const stored=localStorage.getItem('hc-theme');
-    const isDark=!stored||stored==='dark';
-    document.documentElement.setAttribute('data-theme',isDark?'dark':'light');
-    const cb=document.getElementById('hc-theme-cb');
-    if(cb)cb.checked=!isDark; // checked = light mode (sun visible on right)
-  }catch(_){}
-})();
-document.addEventListener('DOMContentLoaded',function(){
-  const cb=document.getElementById('hc-theme-cb');
-  if(!cb)return;
-  // Set initial checked state from current attribute
-  cb.checked=document.documentElement.getAttribute('data-theme')==='light';
-  cb.addEventListener('change',function(){
-    const next=this.checked?'light':'dark';
-    document.documentElement.setAttribute('data-theme',next);
-    try{localStorage.setItem('hc-theme',next);}catch(_){}
-  });
-});
-function toggleTheme(){
-  const cb=document.getElementById('hc-theme-cb');
-  if(cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));}
-}
-
-// ═══════════════════════════════════
-// PORT NOTIFICATION PANEL HELPERS
-// ═══════════════════════════════════
-function _showPortNotif(html){
-  const panel=document.getElementById('port-notif-panel');
-  const body=document.getElementById('port-notif-body');
-  if(!panel||!body)return;
-  body.innerHTML=html;
-  panel.classList.remove('closing');
-  panel.classList.add('open');
-  // Dismiss when clicking anywhere outside the panel
-  setTimeout(()=>{
-    function _outsideClick(e){
-      if(!panel.contains(e.target)){
-        closePortNotif();
-        document.removeEventListener('click',_outsideClick);
-      }
-    }
-    document.addEventListener('click',_outsideClick);
-  },200);
-}
-
-function closePortNotif(){
-  const panel=document.getElementById('port-notif-panel');
-  if(!panel)return;
-  panel.classList.add('closing');
-  setTimeout(()=>panel.classList.remove('open','closing'),190);
-}
-
-function _portSpinner(msg){
-  return `<div class="pnb info" style="animation:none">
-    <i class="ti ti-loader-2" style="animation:spin 0.8s linear infinite;font-size:14px;flex-shrink:0"></i>
-    <span>${esc(msg)}</span>
-  </div>`;
-}
-
-function _portBanner(type,msg){
-  const icons={ok:'ti-circle-check',err:'ti-circle-x',warn:'ti-alert-triangle',info:'ti-info-circle'};
-  return `<div class="pnb ${type}">
-    <i class="ti ${icons[type]||'ti-info-circle'}" style="font-size:14px;flex-shrink:0"></i>
-    <span>${msg}</span>
-  </div>`;
-}
-
-function _portMapChips(ports){
-  return Object.entries(ports||{}).map(([p,info])=>{
-    const cls=info.free?'ok':'err';
-    const icon=info.free?'✓':'✕';
-    return `<span class="pmc ${cls}" title="${info.free?'Free':'In use by: '+(info.process||'unknown')}">
-      <span class="pmc-icon">${icon}</span>${p}
-      <span class="pmc-label">${esc(info.label||'')}</span>
-    </span>`;
-  }).join('');
-}
-
-// ═══════════════════════════════════
-// INIT
-// ═══════════════════════════════════
-(async function init(){
-
-  // ── Restore saved interval preferences ──────────────────────────────────
-  try{
-    const pi=localStorage.getItem('hc-poll-interval');
-    if(pi){
-      const sel=document.getElementById('st-poll-interval');
-      if(sel) sel.value=pi;
-    }
-    const si=localStorage.getItem('hc-stats-interval');
-    if(si){
-      const sel=document.getElementById('st-stats-interval');
-      if(sel) sel.value=si;
-    }
-    const li=localStorage.getItem('hc-log-interval');
-    if(li){
-      const sel=document.getElementById('st-log-interval');
-      if(sel) sel.value=li;
-    }
-  }catch(_){}
-
-  loadStreams();
-  updateStats();
-  // Start configurable timers (read values from restored selects)
-  toggleAuto(_settings.autoref);
-  applyStatsInterval();
-  applyLogInterval();
-
-  setInterval(()=>{
-    const now=new Date();
-    const el=document.getElementById('h-time');
-    if(el) el.textContent=[now.getHours(),now.getMinutes(),now.getSeconds()]
-      .map(n=>String(n).padStart(2,'0')).join(':');
-  },1000);
-  setInterval(()=>{
-    if(document.getElementById('tab-viewer').classList.contains('active')) loadViewer();
-  },5000);
-
-  // Load holiday settings into the Settings tab inputs
-  loadHolidaySettings();
-})();
-
-// Keyboard shortcuts
-document.addEventListener('keydown',e=>{
-  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT')return;
-  if((e.key==='r'||e.key==='R')&&!e.ctrlKey&&!e.metaKey){loadStreams();toast('Refreshed','info');}
-  if(e.key==='Escape'){closeSeek();fmCloseDialogs();}
-});
-document.getElementById('seek-modal').addEventListener('click',e=>{
-  if(e.target===e.currentTarget)closeSeek();
-});
-
-// ═══════════════════════════════════════════════════════════════
-// FILE MANAGER
-// ═══════════════════════════════════════════════════════════════
-let _fmCurrentPath = '';
-let _fmLoaded      = false;
-let _fmOp          = null;   // {action, path, name, isDir}
-let _fmAllDirs     = [];     // flat list of all subdir paths for move/copy selects
-
-async function loadFiles(path) {
-  _fmCurrentPath = (path === undefined || path === null) ? '' : String(path);
-  const body   = document.getElementById('fm-body');
-  const status = document.getElementById('fm-status');
-  if (!body) return;
-  body.innerHTML = '<div class="fm-empty"><div class="empty-icon" style="animation:spin 1.2s linear infinite">⟳</div></div>';
-  if (status) status.textContent = 'Loading…';
-
-  try {
-    // ── Fetch current directory + root listing in parallel ──────────────
-    const [d, rootResp] = await Promise.all([
-      fetch('/api/files?path=' + encodeURIComponent(_fmCurrentPath)).then(r => r.json()),
-      _fmCurrentPath
-        ? fetch('/api/files?path=').then(r => r.json()).catch(() => ({ dirs: [], multi_root: false }))
-        : Promise.resolve(null),
-    ]);
-
-    if (d.error) {
-      body.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>${_fmEsc(d.error)}</div></div>`;
-      if (status) status.textContent = 'Error';
-      return;
-    }
-
-    // ── Breadcrumb ──────────────────────────────────────────────────────
-    const bc = document.getElementById('fm-breadcrumb');
-    if (bc) {
-      bc.innerHTML = (d.breadcrumb || [{ name: 'Files', path: '' }]).map((crumb, i, arr) => {
-        const isLast = (i === arr.length - 1);
-        const sep    = i > 0 ? '<span class="fm-sep">›</span>' : '';
-        // Use data-fmpath attribute — avoids JS injection from path strings
-        return sep + `<span data-fmpath="${_fmAttr(crumb.path)}"
-             class="${isLast ? 'fm-cur' : ''}">${_fmEsc(crumb.name)}</span>`;
-      }).join('');
-      // Delegated click so paths with apostrophes/special chars work
-      bc.onclick = (e) => {
-        const sp = e.target.closest('[data-fmpath]');
-        if (sp) loadFiles(sp.dataset.fmpath);
-      };
-    }
-
-    // ── Sidebar rebuild ─────────────────────────────────────────────────
-    // rootData: the top-level listing (may be d itself when _fmCurrentPath='')
-    const rootData   = rootResp || d;
-    const isMultiRoot = rootData.multi_root === true;
-
-    _fmAllDirs   = [''];
-    _fmRootMeta  = [];
-
-    const sidebar = document.getElementById('fm-dir-list');
-    if (sidebar) {
-      // Top-level "root" button
-      const _rootTopLabel =
-        (rootData.breadcrumb && rootData.breadcrumb[0])
-          ? rootData.breadcrumb[0].name
-          : (isMultiRoot ? 'Roots' : 'Files');
-      const _rlEl = document.getElementById('fm-root-label');
-      if (_rlEl) _rlEl.textContent = _rootTopLabel;
-
-      // Build breadcrumb ancestry set so we can highlight active trail
-      const activeCrumbs = new Set(
-        (d.breadcrumb || []).map(c => c.path).filter(p => p !== '')
-      );
-      activeCrumbs.add(_fmCurrentPath);
-
-      sidebar.innerHTML =
-        `<div class="fm-dir-item${_fmCurrentPath === '' ? ' active' : ''}"
-              data-fmpath=""
-              title="${_fmAttr(_rootTopLabel)}">
-           <span class="fm-dir-icon">📁</span> ${_fmEsc(_rootTopLabel)}
-         </div>`;
-
-      if (isMultiRoot) {
-        // Show each root drive
-        (rootData.dirs || []).forEach(root => {
-          const isActive = _fmCurrentPath === root.path
-                        || _fmCurrentPath.startsWith(root.path + '/');
-          _fmAllDirs.push(root.path);
-          _fmRootMeta.push({ path: root.path, label: root.name });
-          sidebar.insertAdjacentHTML('beforeend',
-            `<div class="fm-dir-item${isActive ? ' active' : ''}"
-                  data-fmpath="${_fmAttr(root.path)}"
-                  title="${_fmAttr(root.path)}">
-               <span class="fm-dir-icon">📁</span> ${_fmEsc(root.name)}
-             </div>`);
-        });
-      } else {
-        // Single-root: show immediate subdirs of root in sidebar
-        const sidebarDirs = rootData.dirs || [];
-        const seen = new Set();
-        sidebarDirs.forEach(dir => {
-          if (seen.has(dir.path)) return;
-          seen.add(dir.path);
-          _fmAllDirs.push(dir.path);
-          _fmRootMeta.push({ path: dir.path, label: dir.name });
-
-          const isActive = activeCrumbs.has(dir.path)
-                        || _fmCurrentPath === dir.path
-                        || _fmCurrentPath.startsWith(dir.path + '/');
-
-          // If we're inside this dir, show its children in the sidebar too
-          const subDirsHtml = _fmBuildSidebarSubs(dir, d, activeCrumbs, 1);
-
-          sidebar.insertAdjacentHTML('beforeend',
-            `<div class="fm-dir-item${isActive ? ' active' : ''}"
-                  data-fmpath="${_fmAttr(dir.path)}"
-                  title="${_fmAttr(dir.path)}">
-               <span class="fm-dir-icon">📂</span> ${_fmEsc(dir.name)}
-             </div>
-             ${subDirsHtml}`);
-        });
-      }
-
-      // Delegated click for sidebar
-      sidebar.onclick = (e) => {
-        const item = e.target.closest('[data-fmpath]');
-        if (item && item.dataset.fmpath !== undefined) {
-          loadFiles(item.dataset.fmpath);
-        }
-      };
-    }
-
-    // ── Populate move/copy dir selects with ALL visible paths ───────────
-    // Merge sidebar dirs + current dir's sub-dirs
-    (d.dirs || []).forEach(dir => {
-      if (!_fmAllDirs.includes(dir.path)) _fmAllDirs.push(dir.path);
-    });
-
-    // ── Body rows ───────────────────────────────────────────────────────
-    const rows = [];
-
-    // Folders
-    (d.dirs || []).forEach(dir => {
-      const subInfo = dir.has_subdirs
-        ? `<span style="font-size:9px;color:var(--text3);margin-left:3px" title="Contains subdirectories">▸</span>` : '';
-      const mediaInfo = dir.has_media
-        ? `<span style="font-size:9px;color:var(--green);margin-left:3px" title="Contains media files">🎬</span>` : '';
-      rows.push(
-        `<div class="fm-row" data-row-type="dir" data-row-path="${_fmAttr(dir.path)}" data-row-name="${_fmAttr(dir.name)}">
-           <span class="fm-row-icon">📁</span>
-           <span class="fm-row-name is-dir">${_fmEsc(dir.name)}${subInfo}${mediaInfo}</span>
-           <span class="fm-row-meta">${dir.items} item${dir.items !== 1 ? 's' : ''}</span>
-           <div class="fm-row-actions">
-             <button class="fm-action-btn" data-action="rename" title="Rename this folder">✏ Rename</button>
-             <button class="fm-action-btn mv"  data-action="move"   title="Move this folder">↗ Move</button>
-             <button class="fm-action-btn del" data-action="deldir" title="Delete this folder and all contents">🗑 Delete</button>
-           </div>
-         </div>`
-      );
-    });
-
-    // Files
-    (d.files || []).forEach(f => {
-      const ico = /\.(mp3|aac|flac|wav|ogg|m4a)$/i.test(f.ext) ? '🎵' : '🎬';
-      const sup = f.supported
-        ? `<span style="font-size:10px;color:var(--green);margin-left:4px" title="Supported format">✓</span>`
-        : `<span style="font-size:10px;color:var(--text3);margin-left:4px" title="Unsupported format">—</span>`;
-      rows.push(
-        `<div class="fm-row" data-row-type="file" data-row-path="${_fmAttr(f.path)}" data-row-name="${_fmAttr(f.name)}">
-           <span class="fm-row-icon">${ico}</span>
-           <span class="fm-row-name">${_fmEsc(f.name)}${sup}</span>
-           <span class="fm-row-meta">${_fmEsc(f.size)}</span>
-           <div class="fm-row-actions">
-             <button class="fm-action-btn" data-action="rename" title="Rename this file">✏ Rename</button>
-             <button class="fm-action-btn mv"  data-action="move" title="Move this file">↗ Move</button>
-             <button class="fm-action-btn cp"  data-action="copy" title="Copy this file">⎘ Copy</button>
-             <button class="fm-action-btn del" data-action="del"  title="Delete this file">🗑 Delete</button>
-           </div>
-         </div>`
-      );
-    });
-
-    if (!rows.length) {
-      body.innerHTML = '<div class="fm-empty"><div class="empty-icon">📂</div><div>This folder is empty.</div></div>';
-    } else {
-      body.innerHTML = rows.join('');
-      // ── Single delegated event listener for all row actions ─────────
-      body.onclick = (e) => {
-        // Navigate into dir by clicking its name
-        const nameSp = e.target.closest('.fm-row-name.is-dir');
-        if (nameSp) {
-          const row = nameSp.closest('[data-row-path]');
-          if (row) { loadFiles(row.dataset.rowPath); return; }
+        # Resolve file on disk
+        name = url_path.lstrip("/")                     # e.g. "resources/logo.png" or "static/x.png"
+        candidate = BASE_DIR() / name
+        if not candidate.exists() or not candidate.is_file():
+            self._send(404, b"Not Found", "text/plain")
+            return
+        # Safety: must stay inside BASE_DIR
+        try:
+            candidate.resolve().relative_to(BASE_DIR().resolve())
+        except ValueError:
+            self._send(403, b"Forbidden", "text/plain")
+            return
+        ext  = candidate.suffix.lower()
+        mime = _MIME.get(ext, "application/octet-stream")
+        body = candidate.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type",   mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control",  "public, max-age=86400")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin",  "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        path   = parsed.path.rstrip("/") or "/"
+        qs     = parse_qs(parsed.query)
+
+        routes: Dict[str, Any] = {
+            "/":                   lambda: self._send(200, _HTML_RENDERED, "text/html; charset=utf-8"),
+            "/index.html":         lambda: self._send(200, _HTML_RENDERED, "text/html; charset=utf-8"),
+            "/health":             self._get_health,
+            "/api/streams":        self._get_streams,
+            "/api/streams_config": self._get_streams_config,
+            "/api/library":        self._get_library,
+            "/api/subdirs":        self._get_subdirs,
+            "/api/media_roots":    self._get_media_roots,
+            "/api/files":          lambda: self._get_files(qs),
+            "/api/events":         self._get_events,
+            "/api/holidays":        lambda: self._get_holidays(qs),
+            "/api/holidays/custom": self._get_holidays_custom,
+            "/api/settings":        self._get_settings,
+            "/api/logs":           lambda: self._get_logs(qs),
+            "/api/system_stats":   self._get_system_stats,
+            "/api/stream_detail":  lambda: self._get_stream_detail(qs),
+            "/api/stream_view":    lambda: self._get_stream_view(qs),
+            "/api/check_port":     lambda: self._get_check_port(qs),
+            "/api/suggest_port":   lambda: self._get_suggest_port(qs),
+            "/api/urls_csv":               lambda: self._get_urls_csv(qs),
+            "/api/mail_config":              self._get_mail_config,
+            "/api/gmail_oauth2_status":      self._get_gmail_oauth2_status,
+            "/api/microsoft_oauth2_status":  self._get_ms_oauth2_status,
+            "/api/upload/status":            lambda: self._get_upload_status(qs),
         }
 
-        // Action buttons
-        const btn = e.target.closest('[data-action]');
-        if (!btn) return;
-        const row = btn.closest('[data-row-path]');
-        if (!row) return;
-        const path  = row.dataset.rowPath;
-        const name  = row.dataset.rowName;
-        const isDir = row.dataset.rowType === 'dir';
-        const action = btn.dataset.action;
+        handler = routes.get(path)
+        if handler:
+            try:
+                handler()
+            except Exception as exc:
+                log.error("WebHandler GET %s: %s", path, exc)
+                self._json({"error": "internal server error"}, 500)
+        elif path.startswith("/static/") or path.startswith("/resources/") or path == "/favicon.ico":
+            self._serve_static(path)
+        else:
+            self._send(404, b"Not Found", "text/plain")
 
-        if (action === 'rename') { fmStartRename(path, name, isDir); }
-        else if (action === 'move')   { fmStartMove(path, name, isDir); }
-        else if (action === 'copy')   { fmStartCopy(path, name); }
-        else if (action === 'del')    { fmDelete(path, name); }
-        else if (action === 'deldir') { fmDeleteDir(path, name); }
-      };
-    }
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        ct   = self.headers.get("Content-Type", "")
 
-    // ── Status bar ──────────────────────────────────────────────────────
-    const _pathLabel = _fmCurrentPath
-      ? (d.root_label
-          ? d.root_label + (_fmCurrentPath.includes('/') ? '/' + _fmCurrentPath.split('/').slice(1).join('/') : '')
-          : _fmCurrentPath)
-      : ((d.breadcrumb && d.breadcrumb[0]) ? d.breadcrumb[0].name : 'Media');
-    if (status) status.innerHTML =
-      `<b>${(d.dirs || []).length}</b> folder${(d.dirs || []).length !== 1 ? 's' : ''}&nbsp;&nbsp;` +
-      `<b>${(d.files || []).length}</b> file${(d.files || []).length !== 1 ? 's' : ''}&ensp;·&ensp;` +
-      `<span style="color:var(--accent-light)">${_fmEsc(_pathLabel)}</span>`;
+        # ── Chunked upload endpoints ──────────────────────────────────────────
+        if path == "/api/upload/init":
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(raw)
+            except Exception:
+                self._json({"ok": False, "msg": "Invalid JSON"}, 400); return
+            from hc.web_upload import handle_upload_init
+            # Pass self so handler can extract real client IP and log it.
+            resp, code = handle_upload_init(data, handler=self)
+            self._json(resp, code)
+            return
 
-  } catch(e) {
-    body.innerHTML = `<div class="fm-empty"><div class="empty-icon">⚠</div><div>Load failed: ${_fmEsc(e.message)}</div></div>`;
-    if (status) status.textContent = 'Error';
-  }
-}
+        if path == "/api/upload/chunk":
+            try:
+                cl = int(self.headers.get("Content-Length", 0))
+                if cl > UPLOAD_MAX_BYTES:
+                    self._json({"ok": False, "msg": "Chunk too large"}, 413); return
+                raw_body = self.rfile.read(cl)
+            except Exception as exc:
+                self._json({"ok": False, "msg": f"Read error: {exc}"}, 500); return
+            from hc.web_upload import handle_upload_chunk
+            resp, code = handle_upload_chunk(raw_body, ct, handler=self)
+            self._json(resp, code)
+            return
 
-/** Escape for HTML text content */
-function _fmEsc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-/** Escape for HTML attribute values (double-quoted) */
-function _fmAttr(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+        if path == "/api/upload/finalize":
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(raw)
+            except Exception:
+                self._json({"ok": False, "msg": "Invalid JSON"}, 400); return
+            from hc.web_upload import handle_upload_finalize
+            resp, code = handle_upload_finalize(data, handler=self)
+            self._json(resp, code)
+            return
 
-/** Escape a path string for use inside a single-quoted JS onclick attribute */
-function _fmEscPath(s) {
-  return String(s ?? '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-}
+        if path == "/api/upload/abort":
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(raw)
+            except Exception:
+                self._json({"ok": False, "msg": "Invalid JSON"}, 400); return
+            sid = str(data.get("session_id", "")).strip()
+            if sid:
+                from hc.web_upload import handle_upload_abort
+                resp, code = handle_upload_abort(sid, handler=self)
+                self._json(resp, code)
+            else:
+                self._json({"ok": True})
+            return
 
+        # ── Legacy single-shot upload (multipart/form-data catch-all) ────────
+        if "multipart/form-data" in ct:
+            try:
+                self._handle_upload()
+            except Exception as exc:
+                log.error("Upload error: %s", exc)
+                self._json({"ok": False, "msg": f"Upload error: {exc}"}, 500)
+            return
 
-/**
- * Build sidebar sub-directory entries for dirs that are ancestors of the
- * current path (so the open trail is always visible in the sidebar).
- *
- * @param {Object} dir      - The parent dir object {path, name, items}
- * @param {Object} currentD - The API response for the currently viewed dir
- * @param {Set}    activeCrumbs - Set of path strings in the current breadcrumb
- * @param {number} depth    - Indentation depth
- */
-function _fmBuildSidebarSubs(dir, currentD, activeCrumbs, depth) {
-  // Only expand if this dir is an ancestor of the current path
-  const isAncestor = _fmCurrentPath === dir.path
-                  || _fmCurrentPath.startsWith(dir.path + '/');
-  if (!isAncestor || depth > 6) return '';
+        length = int(self.headers.get("Content-Length", 0))
+        if length > 4 * 1024 * 1024:
+            self._json({"ok": False, "msg": "Request body too large"}, 413)
+            return
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            data: Dict[str, Any] = json.loads(raw)
+        except Exception:
+            self._json({"ok": False, "msg": "Invalid JSON"}, 400)
+            return
 
-  // Use the current dir's subdir listing when we are inside it;
-  // otherwise we don't have sub-listing data (avoid extra API calls).
-  let subs = [];
-  if (_fmCurrentPath === dir.path) {
-    subs = currentD.dirs || [];
-  } else if (_fmCurrentPath.startsWith(dir.path + '/')) {
-    // The current response's breadcrumb tells us the next level crumb
-    // We render only breadcrumb crumbs we know about
-    const nextCrumb = (currentD.breadcrumb || []).find(c =>
-      c.path !== dir.path && c.path.startsWith(dir.path + '/') &&
-      !c.path.slice(dir.path.length + 1).includes('/')
-    );
-    if (nextCrumb) subs = [{ path: nextCrumb.path, name: nextCrumb.name, items: '…' }];
-  }
+        # ── Calendar / holiday / settings endpoints (direct path routing) ───
+        if path == "/api/holidays/custom":
+            try:
+                self._post_holidays_custom(raw)
+            except Exception as exc:
+                log.error("WebHandler POST %s: %s", path, exc)
+                self._json({"ok": False, "msg": f"Internal error: {exc}"}, 500)
+            return
 
-  if (!subs.length) return '';
-  const indent = depth * 14;
-  return subs.map(sub => {
-    if (!_fmAllDirs.includes(sub.path)) _fmAllDirs.push(sub.path);
-    const isActive = _fmCurrentPath === sub.path
-                  || _fmCurrentPath.startsWith(sub.path + '/');
-    const childSubs = _fmBuildSidebarSubs(sub, currentD, activeCrumbs, depth + 1);
-    return `<div class="fm-dir-item${isActive ? ' active' : ''}"
-                  data-fmpath="${_fmAttr(sub.path)}"
-                  style="padding-left:${16 + indent}px"
-                  title="${_fmAttr(sub.path)}">
-               <span class="fm-dir-icon">📂</span> ${_fmEsc(sub.name)}
-             </div>
-             ${childSubs}`;
-  }).join('');
-}
+        if path == "/api/settings":
+            try:
+                self._post_settings(raw)
+            except Exception as exc:
+                log.error("WebHandler POST %s: %s", path, exc)
+                self._json({"ok": False, "msg": f"Internal error: {exc}"}, 500)
+            return
 
+        if path == "/api/events/bulk":
+            try:
+                self._post_events_bulk(raw)
+            except Exception as exc:
+                log.error("WebHandler POST %s: %s", path, exc)
+                self._json({"ok": False, "msg": f"Internal error: {exc}"}, 500)
+            return
 
-// ── New folder ────────────────────────────────────────────────
-async function fmNewFolder() {
-  const name = prompt('New folder name:');
-  if (!name || !name.trim()) return;
-  // _fmCurrentPath is now @N/rel or '' for root.
-  // Pass it as 'parent' so the backend can resolve it via _decode_root.
-  const r = await api('create_subdir', {
-    parent: _fmCurrentPath || '',
-    name:   name.trim(),
-  });
-  if (r.ok) { loadFiles(_fmCurrentPath); loadSubdirs(); }
-}
+        # The calendar React component posts to /api/action with the real
+        # action name inside the JSON body ({"action": "delete_event", ...}).
+        # All other callers post to /api/<action_name> directly.
+        if path == "/api/action":
+            action = str(data.pop("action", "")).strip()
+        else:
+            action = path.replace("/api/", "").strip("/")
+        try:
+            self._dispatch(action, data)
+        except Exception as exc:
+            log.error("WebHandler POST %s: %s", path, exc)
+            self._json({"ok": False, "msg": f"Internal error: {exc}"}, 500)
 
-// ── Rename ────────────────────────────────────────────────────
-function fmStartRename(path, name, isDir) {
-  _fmOp = {action:'rename', path, name, isDir};
-  const inp = document.getElementById('fm-rename-input');
-  inp.value = name;
-  document.getElementById('fm-rename-overlay').classList.add('open');
-  setTimeout(() => { inp.select(); }, 80);
-}
-async function fmDoRename() {
-  const newName = document.getElementById('fm-rename-input').value.trim();
-  if (!newName) { toast('Enter a name','err'); return; }
-  const r = await api('file_rename', {path:_fmOp.path, new_name:newName});
-  if (r.ok) { fmCloseDialogs(); loadFiles(_fmCurrentPath); }
-}
-
-// ── Delete file ───────────────────────────────────────────────
-async function fmDelete(path, name) {
-  if (!confirm(`Delete file:\n"${name}"\n\nThis cannot be undone. Any stream playlist entries for this file will be removed automatically.`)) return;
-  const r = await api('file_delete', {path});
-  if (r.ok) loadFiles(_fmCurrentPath);
-}
-
-// ── Delete directory ──────────────────────────────────────────
-async function fmDeleteDir(path, name) {
-  if (!confirm(`Delete folder:\n"${name}"\n\nAll contents will be permanently deleted and playlist entries removed. Cannot be undone.`)) return;
-  const r = await api('file_delete_dir', {path});
-  if (r.ok) loadFiles(_fmCurrentPath);
-}
-
-// ── Move ──────────────────────────────────────────────────────
-function fmStartMove(path, name, isDir) {
-  _fmOp = {action:'move', path, name, isDir};
-  _fmPopulateDirSelect('fm-move-dest', path);
-  document.getElementById('fm-move-overlay').classList.add('open');
-}
-async function fmDoMove() {
-  const dest = document.getElementById('fm-move-dest').value;
-  const r = await api('file_move', {path:_fmOp.path, dest_dir:dest});
-  if (r.ok) { fmCloseDialogs(); loadFiles(_fmCurrentPath); }
-}
-
-// ── Copy ──────────────────────────────────────────────────────
-function fmStartCopy(path, name) {
-  _fmOp = {action:'copy', path, name};
-  _fmPopulateDirSelect('fm-copy-dest', path);
-  document.getElementById('fm-copy-name').value = '';
-  document.getElementById('fm-copy-overlay').classList.add('open');
-}
-async function fmDoCopy() {
-  const dest    = document.getElementById('fm-copy-dest').value;
-  const newName = document.getElementById('fm-copy-name').value.trim();
-  const r = await api('file_copy', {path:_fmOp.path, dest_dir:dest, new_name:newName});
-  if (r.ok) { fmCloseDialogs(); loadFiles(_fmCurrentPath); }
-}
-
-// ── Dir select helper ─────────────────────────────────────────
-function _fmPopulateDirSelect(selectId, excludePath) {
-  const sel = document.getElementById(selectId);
-  const _rlEl2 = document.getElementById('fm-root-label');
-  const _topLabel = (_rlEl2 && _rlEl2.textContent) ? _rlEl2.textContent + ' (top)' : 'Root (top)';
-  sel.innerHTML = `<option value="">${_topLabel}</option>`;
-  // Build a label map from _fmRootMeta (populated by loadFiles).
-  const labelMap = {};
-  (_fmRootMeta || []).forEach(m => { labelMap[m.path] = m.label; });
-  _fmAllDirs
-    .filter(d => d && d !== excludePath)
-    .forEach(d => {
-      const label = labelMap[d] || d;
-      sel.insertAdjacentHTML('beforeend', `<option value="${d}">${label}</option>`);
-    });
-}
-
-// ── Close all FM dialogs ──────────────────────────────────────
-function fmCloseDialogs() {
-  document.querySelectorAll('.fm-dialog-overlay').forEach(el => el.classList.remove('open'));
-  _fmOp = null;
-}
-
-// ═══════════════════════════════════
-// EVENTS CALENDAR (React)
-// ═══════════════════════════════════
-</script>
-<script type="text/babel" data-presets="react">
-/**
- * EventsCalendar.jsx  — v2.0
- *
- * Changes vs v1:
- *   • Calendar grid fills the full tab width (no fixed-width sidebar push)
- *   • Past dates/times are blocked — clicking them shows a tooltip, not the form
- *   • Created events are editable (click chip → EditModal with all fields)
- *   • Loop mode: play once / loop N times / loop indefinitely
- *   • Multi-date selection: pick multiple dates in one session, schedule all at once
- *   • Sidebar scrolls alongside and shows edit/delete buttons per event
- */
-
-const { useState, useEffect, useRef, useCallback } = React;
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const MONTHS     = ["January","February","March","April","May","June",
-                    "July","August","September","October","November","December"];
-const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-
-const COUNTRIES = [
-  {code:"AE",name:"UAE"},{code:"AR",name:"Argentina"},{code:"AT",name:"Austria"},
-  {code:"AU",name:"Australia"},{code:"BD",name:"Bangladesh"},{code:"BE",name:"Belgium"},
-  {code:"BR",name:"Brazil"},{code:"CA",name:"Canada"},{code:"CH",name:"Switzerland"},
-  {code:"CN",name:"China"},{code:"CO",name:"Colombia"},{code:"CZ",name:"Czech Republic"},
-  {code:"DE",name:"Germany"},{code:"DK",name:"Denmark"},{code:"EG",name:"Egypt"},
-  {code:"ES",name:"Spain"},{code:"FI",name:"Finland"},{code:"FR",name:"France"},
-  {code:"GB",name:"United Kingdom"},{code:"GH",name:"Ghana"},{code:"GR",name:"Greece"},
-  {code:"HU",name:"Hungary"},{code:"ID",name:"Indonesia"},{code:"IE",name:"Ireland"},
-  {code:"IL",name:"Israel"},{code:"IN",name:"India"},{code:"IQ",name:"Iraq"},
-  {code:"IR",name:"Iran"},{code:"IT",name:"Italy"},{code:"JP",name:"Japan"},
-  {code:"KE",name:"Kenya"},{code:"KR",name:"South Korea"},{code:"KW",name:"Kuwait"},
-  {code:"LK",name:"Sri Lanka"},{code:"MA",name:"Morocco"},{code:"MX",name:"Mexico"},
-  {code:"MY",name:"Malaysia"},{code:"NG",name:"Nigeria"},{code:"NL",name:"Netherlands"},
-  {code:"NO",name:"Norway"},{code:"NP",name:"Nepal"},{code:"NZ",name:"New Zealand"},
-  {code:"OM",name:"Oman"},{code:"PH",name:"Philippines"},{code:"PK",name:"Pakistan"},
-  {code:"PL",name:"Poland"},{code:"PT",name:"Portugal"},{code:"QA",name:"Qatar"},
-  {code:"RO",name:"Romania"},{code:"RU",name:"Russia"},{code:"SA",name:"Saudi Arabia"},
-  {code:"SE",name:"Sweden"},{code:"SG",name:"Singapore"},{code:"TH",name:"Thailand"},
-  {code:"TN",name:"Tunisia"},{code:"TR",name:"Turkey"},{code:"TZ",name:"Tanzania"},
-  {code:"UA",name:"Ukraine"},{code:"UG",name:"Uganda"},{code:"US",name:"United States"},
-  {code:"VN",name:"Vietnam"},{code:"ZA",name:"South Africa"},{code:"ZW",name:"Zimbabwe"},
-];
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function fmtDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-}
-function getEventDate(ev) { return (ev.play_at_iso || ev.play_at || "").slice(0,10); }
-function getEventTime(ev) { return (ev.play_at_iso || ev.play_at || "").slice(11,16); }
-
-function isPastDate(ds, todayStr) { return ds < todayStr; }
-function isPastDateTime(ds, timeStr, todayStr) {
-  if (ds < todayStr) return true;
-  if (ds === todayStr) {
-    const now = new Date();
-    const nowHHMM = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
-    return timeStr <= nowHHMM;
-  }
-  return false;
-}
-
-function loopLabel(n) {
-  if (n === 0) return "Play once";
-  if (n === -1) return "Loop forever";
-  return `Loop ×${n+1}`;
-}
-
-// ---------------------------------------------------------------------------
-// Shared label style
-// ---------------------------------------------------------------------------
-const lbl = {
-  display:"block", fontSize:"11px", fontWeight:"500",
-  color:"var(--color-text-secondary)", marginBottom:"6px",
-};
-
-// ---------------------------------------------------------------------------
-// EventChip — clickable, opens edit modal
-// ---------------------------------------------------------------------------
-function EventChip({ ev, onEdit }) {
-  const played = ev.played;
-  return (
-    <div
-      onClick={e => { e.stopPropagation(); onEdit(ev); }}
-      title={`${ev.stream_name} — ${ev.file_name || ev.file_path}\nClick to edit`}
-      style={{
-        borderRadius:"4px", padding:"3px 6px", marginBottom:"3px",
-        fontSize:"11px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-        cursor: played ? "default" : "pointer",
-        background: played ? "var(--color-background-success)" : "var(--color-background-info)",
-        border:`0.5px solid ${played ? "var(--color-border-success)" : "var(--color-border-info)"}`,
-        color: played ? "var(--color-text-success)" : "var(--color-text-info)",
-      }}
-    >
-      <span style={{fontWeight:"500"}}>{getEventTime(ev)}</span>
-      {" "}{ev.stream_name}
-      {ev.loop_count === -1 && " ∞"}
-      {ev.loop_count > 0 && ` ×${ev.loop_count+1}`}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// DayCell
-// ---------------------------------------------------------------------------
-function DayCell({ day, year, month, todayStr, holidays, eventsByDate, onOpen, selectedDates, onToggleSelect, multiSelect }) {
-  if (!day) return (
-    <div style={{
-      minHeight:"120px",
-      borderRight:"0.5px solid var(--color-border-tertiary)",
-      borderBottom:"0.5px solid var(--color-border-tertiary)",
-    }}/>
-  );
-
-  const ds      = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-  const isToday = ds === todayStr;
-  const isPast  = isPastDate(ds, todayStr);
-  const holidayObj = holidays[ds];
-  const holiday    = holidayObj ? holidayObj.name : null;
-  const holidaySrc = holidayObj ? (holidayObj.source || "library") : null;
-  const dayEvts = eventsByDate[ds] || [];
-  const isSelected = selectedDates && selectedDates.has(ds);
-  const hasEvents = dayEvts.length > 0;
-
-  const baseBg = isSelected
-    ? "var(--color-background-success)"
-    : isToday
-      ? "var(--color-background-info)"
-      : holidaySrc === "custom"
-        ? "var(--purple-dim)"
-        : holiday
-          ? "var(--color-background-danger)"
-          : "transparent";
-
-  const handleClick = () => {
-    if (isPast && !isToday) return;
-    if (multiSelect) {
-      onToggleSelect(ds);
-    } else {
-      onOpen(day, ds);
-    }
-  };
-
-  return (
-    <div
-      onClick={handleClick}
-      tabIndex={isPast && !isToday ? -1 : 0}
-      role="button"
-      aria-label={`${MONTHS[month]} ${day}, ${year}${holiday ? `, ${holiday}` : ""}${isPast && !isToday ? " (past)" : ""}`}
-      onKeyDown={e => e.key === "Enter" && handleClick()}
-      style={{
-        minHeight:"120px", padding:"8px 9px",
-        borderRight:"0.5px solid var(--color-border-tertiary)",
-        borderBottom:"0.5px solid var(--color-border-tertiary)",
-        background: baseBg,
-        cursor: isPast && !isToday ? "not-allowed" : "pointer",
-        opacity: isPast && !isToday ? 0.38 : 1,
-        transition:"background 0.15s, box-shadow 0.15s",
-        outline:"none",
-        position:"relative",
-        boxShadow: isToday ? "inset 0 0 0 2px var(--color-text-info)" : hasEvents && !isPast ? "inset 0 0 0 1px var(--color-border-info)" : "none",
-      }}
-      onMouseEnter={e => { if (!isPast || isToday) { e.currentTarget.style.background = isSelected ? "var(--color-background-success)" : "var(--color-background-secondary)"; e.currentTarget.style.boxShadow = `inset 0 0 0 2px var(--accent)`; }}}
-      onMouseLeave={e => { e.currentTarget.style.background = baseBg; e.currentTarget.style.boxShadow = isToday ? "inset 0 0 0 2px var(--color-text-info)" : hasEvents && !isPast ? "inset 0 0 0 1px var(--color-border-info)" : "none"; }}
-    >
-      {/* Multi-select indicator */}
-      {multiSelect && !isPast && (
-        <div style={{
-          position:"absolute",top:"4px",right:"4px",
-          width:"14px",height:"14px",borderRadius:"3px",
-          border:`1px solid ${isSelected ? "var(--color-text-success)" : "var(--color-border-secondary)"}`,
-          background: isSelected ? "var(--color-text-success)" : "transparent",
-          display:"flex",alignItems:"center",justifyContent:"center",
-          flexShrink:0,
-        }}>
-          {isSelected && <i className="ti ti-check" style={{fontSize:"9px",color:"#fff"}}/>}
-        </div>
-      )}
-
-      {/* Day number */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
-        <span style={{
-          fontSize:"15px",
-          fontWeight: isToday ? "700" : "500",
-          width:"26px", height:"26px",
-          borderRadius:"50%",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          background: isToday ? "var(--color-text-info)" : "transparent",
-          color: isToday ? "#fff" : isPast ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
-          flexShrink:0,
-        }}>{day}</span>
-        {holiday && (
-          <i className="ti ti-star-filled" aria-hidden="true"
-             style={{fontSize:"12px",color: holidaySrc==="custom" ? "var(--purple)" : "var(--color-text-danger)",marginTop:"5px"}}/>
-        )}
-      </div>
-
-      {holiday && (
-        <div style={{fontSize:"10px",
-          color: holidaySrc==="custom" ? "var(--purple)" : "var(--color-text-danger)",
-          marginBottom:"4px",lineHeight:"1.3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:"500"}}
-          title={holiday + (holidaySrc==="custom" ? " (custom)" : "")}>{holiday}</div>
-      )}
-
-      {dayEvts.slice(0,3).map((ev,i) => (
-        <EventChip key={i} ev={ev} onEdit={()=>{}}/>
-      ))}
-      {dayEvts.length > 3 && (
-        <div style={{fontSize:"10px",color:"var(--color-text-tertiary)",fontWeight:"500"}}>
-          +{dayEvts.length - 3} more
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar — event list for the current month
-// ---------------------------------------------------------------------------
-function Sidebar({ month, year, events, holidays, onEdit, onDelete, hidePlayed, onToggleHidePlayed }) {
-  const monthPfx = `${year}-${String(month+1).padStart(2,"0")}`;
-  const evts = events
-    .filter(e => getEventDate(e).startsWith(monthPfx))
-    .sort((a,b) => (getEventDate(a)+getEventTime(a)).localeCompare(getEventDate(b)+getEventTime(b)));
-
-  const playedCount = evts.filter(e => e.played).length;
-  const visible = hidePlayed ? evts.filter(e => !e.played) : evts;
-
-  return (
-    <aside style={{width:"230px",borderLeft:"0.5px solid var(--color-border-tertiary)",
-      flexShrink:0,overflowY:"auto",maxHeight:"calc(100vh - 180px)"}}>
-      <div style={{padding:"10px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",
-        position:"sticky",top:0,background:"var(--color-background-primary)",zIndex:1}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom: playedCount > 0 ? "6px" : 0}}>
-          <span style={{fontSize:"12px",fontWeight:"500",color:"var(--color-text-secondary)"}}>
-            {MONTHS[month]} events
-          </span>
-          <span style={{fontSize:"12px",color:"var(--color-text-tertiary)"}}>{evts.length}</span>
-        </div>
-        {playedCount > 0 && (
-          <button
-            onClick={onToggleHidePlayed}
-            title={hidePlayed ? "Show played events in list" : "Hide played events from list (still shown on calendar)"}
-            style={{
-              width:"100%",fontSize:"10px",padding:"3px 8px",
-              display:"flex",alignItems:"center",justifyContent:"center",gap:"4px",
-              background: hidePlayed ? "var(--color-background-success)" : "transparent",
-              color:      hidePlayed ? "var(--color-text-success)"       : "var(--color-text-secondary)",
-              border:`0.5px solid ${hidePlayed ? "var(--color-border-success)" : "var(--color-border-tertiary)"}`,
-              borderRadius:"var(--border-radius-sm)",cursor:"pointer",
-            }}>
-            <i className={`ti ti-${hidePlayed ? "eye" : "eye-off"}`} style={{fontSize:"10px"}}/>
-            {hidePlayed ? `Show ${playedCount} played` : `Hide ${playedCount} played`}
-          </button>
-        )}
-      </div>
-
-      {evts.length === 0 ? (
-        <p style={{padding:"20px 14px",fontSize:"12px",color:"var(--color-text-tertiary)",
-          textAlign:"center",lineHeight:"1.6",margin:0}}>
-          No events this month.<br/>Click any future date to schedule.
-        </p>
-      ) : visible.length === 0 ? (
-        <p style={{padding:"20px 14px",fontSize:"12px",color:"var(--color-text-tertiary)",
-          textAlign:"center",lineHeight:"1.6",margin:0}}>
-          All {playedCount} event{playedCount!==1?"s":""} played.<br/>
-          <span style={{fontSize:"11px",opacity:0.7}}>Events still shown on calendar.</span>
-        </p>
-      ) : (
-        visible.map((ev,i) => {
-          const ds  = getEventDate(ev);
-          const ts  = getEventTime(ev);
-          const holObj = holidays[ds];
-          const hol    = holObj ? holObj.name : null;
-          const holSrc = holObj ? (holObj.source || "library") : null;
-          return (
-            <div key={i} style={{padding:"9px 14px",borderBottom:"0.5px solid var(--color-border-tertiary)",fontSize:"12px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:"2px",alignItems:"center"}}>
-                <span style={{color:"var(--color-text-secondary)",fontWeight:"500"}}>
-                  {ds.slice(5).replace("-","/")} {ts}
-                </span>
-                <span style={{
-                  fontSize:"10px",padding:"1px 6px",borderRadius:"999px",
-                  background: ev.played ? "var(--color-background-success)" : "var(--color-background-info)",
-                  color:      ev.played ? "var(--color-text-success)"       : "var(--color-text-info)",
-                  border:`0.5px solid ${ev.played ? "var(--color-border-success)" : "var(--color-border-info)"}`,
-                }}>{ev.played ? "played" : "upcoming"}</span>
-              </div>
-              <div style={{fontWeight:"500",color:"var(--color-text-primary)",
-                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                {ev.stream_name}
-              </div>
-              <div style={{color:"var(--color-text-tertiary)",overflow:"hidden",
-                textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:"1px"}}
-                title={ev.file_name || ev.file_path}>
-                {ev.file_name || (ev.file_path||"").split("/").pop()}
-              </div>
-              <div style={{fontSize:"10px",color:"var(--color-text-secondary)",marginTop:"2px",
-                display:"flex",alignItems:"center",gap:"4px",flexWrap:"wrap"}}>
-                <i className="ti ti-rotate-clockwise" style={{fontSize:"10px"}}/>
-                {ev.post_action || "resume"}
-                {ev.loop_count === -1 && <span style={{marginLeft:"4px",color:"var(--color-text-info)"}}>∞ loop</span>}
-                {ev.loop_count > 0 && <span style={{marginLeft:"4px",color:"var(--color-text-info)"}}>×{ev.loop_count+1}</span>}
-              </div>
-              {hol && (
-                <div style={{fontSize:"10px",color: holSrc==="custom" ? "var(--purple)" : "var(--color-text-danger)",marginTop:"2px",
-                  display:"flex",alignItems:"center",gap:"3px"}}>
-                  <i className="ti ti-star-filled" style={{fontSize:"9px"}}/> {hol}{holSrc==="custom" && <span style={{fontSize:"9px",marginLeft:"2px",opacity:0.7}}>(custom)</span>}
-                </div>
-              )}
-              {ev.comment && (
-                <div style={{fontSize:"10px",color:"var(--color-text-secondary)",marginTop:"3px",
-                  display:"flex",alignItems:"flex-start",gap:"3px",
-                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
-                  title={ev.comment}>
-                  <i className="ti ti-message-2" style={{fontSize:"10px",marginTop:"1px",flexShrink:0}}/>
-                  <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.comment}</span>
-                </div>
-              )}
-              {!ev.played && (
-                <div style={{display:"flex",gap:"5px",marginTop:"6px"}}>
-                  <button onClick={()=>onEdit(ev)}
-                    style={{fontSize:"10px",padding:"2px 8px",display:"flex",alignItems:"center",gap:"3px"}}>
-                    <i className="ti ti-pencil" style={{fontSize:"10px"}}/>Edit
-                  </button>
-                  <button onClick={()=>onDelete(ev.event_id)}
-                    style={{fontSize:"10px",padding:"2px 8px",
-                      color:"var(--color-text-danger)",borderColor:"var(--color-border-danger)",
-                      display:"flex",alignItems:"center",gap:"3px"}}>
-                    <i className="ti ti-trash" style={{fontSize:"10px"}}/>Del
-                  </button>
-                </div>
-              )}
-            </div>
-          );
+    # ── GET handlers ────────────────────────────────────────────────────────
+    def _get_health(self) -> None:
+        mgr = _WEB_MANAGER
+        if mgr is None:
+            self._json({"status": "starting", "ready": False}, 503)
+            return
+        self._json({
+            "status":    "ok",
+            "ready":     True,
+            "timestamp": datetime.now().isoformat(),
+            "streams":   [{"name": s.config.name, "status": s.status.label} for s in mgr.states],
         })
-      )}
-    </aside>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// LoopSelector
-// ---------------------------------------------------------------------------
-function LoopSelector({ value, onChange }) {
-  const opts = [
-    { v: 0,  label: "Play once" },
-    { v: 1,  label: "Loop ×2" },
-    { v: 2,  label: "Loop ×3" },
-    { v: 4,  label: "Loop ×5" },
-    { v: 9,  label: "Loop ×10" },
-    { v: -1, label: "Loop forever ∞" },
-  ];
-  return (
-    <select value={value} onChange={e=>onChange(Number(e.target.value))} style={{width:"100%"}}>
-      {opts.map(o=><option key={o.v} value={o.v}>{o.label}</option>)}
-    </select>
-  );
-}
+    def _get_streams(self) -> None:
+        mgr = _WEB_MANAGER
+        if not mgr:
+            self._json([])
+            return
+        result = []
+        for st in mgr.states:
+            cfg = st.config
+            result.append({
+                "name":           cfg.name,
+                "port":           cfg.port,
+                "weekdays":       cfg.weekdays_display(),
+                "status":         st.status.label,
+                "progress":       st.progress,
+                "position":       st.format_pos(),
+                "current_secs":   st.current_pos,
+                "duration":       st.duration,
+                "time_remaining": st.time_remaining(),
+                "fps":            st.fps,
+                "rtsp_url":       cfg.rtsp_url_external,
+                "hls_url":        cfg.hls_url if cfg.hls_enabled else "",
+                "shuffle":        cfg.shuffle,
+                "playlist_count": len(cfg.playlist),
+                "enabled":        cfg.enabled,
+                "error_msg":      st.error_msg,
+                "loop_count":     st.loop_count,
+                "restart_count":  st.restart_count,
+                "bitrate":        st.bitrate,
+                "video_bitrate":  cfg.video_bitrate,
+                "audio_bitrate":  cfg.audio_bitrate,
+                "speed":          st.speed,
+                "app_ver":        APP_VER,
+                # Whether a one-shot event is actively playing right now
+                "oneshot_active": bool(getattr(st, "oneshot_active", False)),
+                # current_file() returns the full Path of what FFmpeg is playing.
+                # We expose only the filename (.name). Works for both playlist and oneshot.
+                "current_file":   (
+                    Path(cf).name
+                    if (cf := (
+                        st.current_file()
+                        if callable(getattr(st, "current_file", None))
+                        else getattr(st, "current_file", None)
+                    )) else None
+                ),
+                # Next pending (not yet played) event for this stream.
+                # Only populated when no oneshot is active; during oneshot,
+                # current_file already shows the event file being played.
+                "active_event":   next(
+                    (ev.file_path.name for ev in mgr.events
+                     if ev.stream_name == cfg.name and not ev.played),
+                    None
+                ) if not getattr(st, "oneshot_active", False) else None,
+                # next 2 upcoming playlist items
+                "next_in_queue":  _get_next_in_queue(st, cfg, n=2),
+                # Compliance alert (v2)
+                "compliance_enabled":       cfg.compliance_enabled,
+                "compliance_alert":         getattr(st, "compliance_alert", None),
+                "compliance_alert_enabled": getattr(cfg, "compliance_alert_enabled", True),
+            })
+        self._json(result)
 
-// ---------------------------------------------------------------------------
-// CreateModal — supports multi-date + loop
-// ---------------------------------------------------------------------------
-function CreateModal({ dates, holidays, streams, library, libraryLoading, todayStr, onClose, onCreate }) {
-  const [time,       setTime]       = useState("12:00");
-  const [endTime,    setEndTime]    = useState("");
-  const [selStreams,  setSelStreams] = useState({});   // name -> true
-  const [files,      setFiles]      = useState({});   // name -> file_path
-  const [loopCount,  setLoopCount]  = useState(0);
-  const [postAction, setPostAction] = useState("resume");
-  const [startPos,   setStartPos]   = useState("00:00:00");
-  const [comment,    setComment]    = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [err,        setErr]        = useState("");
+    def _get_streams_config(self) -> None:
+        mgr = _WEB_MANAGER
+        if not mgr:
+            self._json([])
+            return
+        result = []
+        for st in mgr.states:
+            cfg = st.config
+            result.append({
+                "name":          cfg.name,
+                "port":          cfg.port,
+                "files":         ";".join(
+                    f"{i.file_path}@{i.start_position}#{i.priority}"
+                    for i in cfg.playlist),
+                "weekdays":      cfg.weekdays_display(),
+                "enabled":       cfg.enabled,
+                "shuffle":       cfg.shuffle,
+                "stream_path":   cfg.stream_path,
+                "video_bitrate": cfg.video_bitrate,
+                "audio_bitrate": cfg.audio_bitrate,
+                "hls_enabled":          cfg.hls_enabled,
+                # Compliance fields (v5.0.6+)
+                "compliance_enabled":       cfg.compliance_enabled,
+                "compliance_start":         cfg.compliance_start,
+                "compliance_loop":          cfg.compliance_loop,
+                "compliance_alert_enabled": getattr(cfg, "compliance_alert_enabled", True),
+            })
+        self._json(result)
 
-  // sorted date list
-  const sortedDates = [...dates].sort();
+    def _get_urls_csv(self, qs: Dict[str, Any]) -> None:
+        """
+        Download a CSV of all stream URLs.
 
-  // Check if any selected date+time is in the past
-  const hasPastDateTime = sortedDates.some(ds => isPastDateTime(ds, time, todayStr));
+        Query params:
+          include_files=1   also emit a 'filenames' column with each stream's
+                            playlist file names (pipe-separated).
 
-  const toggle = name => setSelStreams(p => { const n={...p}; n[name] ? delete n[name] : (n[name]=true); return n; });
+        Columns always present:
+          name, ip, port, stream_path, rtsp_url, hls_url, status, enabled
 
-  const submit = async () => {
-    const sel = Object.keys(selStreams);
-    if (!sel.length) { setErr("Select at least one stream."); return; }
-    for (const s of sel) {
-      if (!files[s]) { setErr(`Select a file for "${s}".`); return; }
-    }
-    if (hasPastDateTime) { setErr("One or more selected date/time combinations are in the past."); return; }
+        Optional column (include_files=1):
+          filenames   — pipe-separated list of playlist file basenames
+        """
+        import io, csv as _csv
+        from hc.utils import _local_ip
 
-    const [hh,mm] = time.split(":").map(Number);
-    const timeStr = `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:00`;
+        include_files = qs.get("include_files", ["0"])[0] == "1"
+        lan_ip        = _local_ip()
+        mgr           = _WEB_MANAGER
 
-    let broadcast_end_time;
-    if (endTime) {
-      const [ehh,emm] = endTime.split(":").map(Number);
-      broadcast_end_time = `${String(ehh).padStart(2,"0")}:${String(emm).padStart(2,"0")}:00`;
-    }
+        fieldnames = ["name", "ip", "port", "stream_path",
+                      "rtsp_url", "hls_url", "status", "enabled"]
+        if include_files:
+            fieldnames.append("filenames")
 
-    setSubmitting(true);
-    setErr("");
-    try {
-      // Fire one bulk call per date
-      let totalCreated = 0;
-      for (const ds of sortedDates) {
-        const iso = `${ds}T${timeStr}`;
-        const payload = {
-          play_at:    iso,
-          streams:    sel.map(name => ({ stream_name: name, file_path: files[name] })),
-          post_action: postAction,
-          loop_count: loopCount,
-          comment:    comment.trim(),
-        };
-        if (broadcast_end_time) {
-          // handle crossing midnight
-          let edate = ds;
-          if (broadcast_end_time <= timeStr) {
-            // advance by 1 day
-            const d = new Date(ds); d.setDate(d.getDate()+1);
-            edate = fmtDate(d);
+        rows = []
+        if mgr:
+            for st in mgr.states:
+                cfg = st.config
+                row: Dict[str, Any] = {
+                    "name":        cfg.name,
+                    "ip":          lan_ip,
+                    "port":        cfg.port,
+                    "stream_path": cfg.stream_path or "",
+                    "rtsp_url":    cfg.rtsp_url_external,
+                    "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
+                    "status":      st.status.label,
+                    "enabled":     "yes" if cfg.enabled else "no",
+                }
+                if include_files:
+                    row["filenames"] = "|".join(
+                        item.file_path.name for item in cfg.playlist
+                    )
+                rows.append(row)
+
+        buf = io.StringIO()
+        writer = _csv.DictWriter(buf, fieldnames=fieldnames, lineterminator="\r\n")
+        writer.writeheader()
+        writer.writerows(rows)
+        body = buf.getvalue().encode("utf-8")
+
+        ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"hydracast_urls_{ts}.csv"
+
+        self.send_response(200)
+        self.send_header("Content-Type",        "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+        self.send_header("Content-Length",      str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        for k, v in _SEC_HEADERS.items():
+            self.send_header(k, v)
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        log.info("URL CSV downloaded: %s (%d stream(s), files=%s)",
+                 fname, len(rows), include_files)
+
+    def _get_library(self) -> None:
+        self._json(_get_library_cached())
+
+    def _get_subdirs(self) -> None:
+        from hc.web_filemanager import _encode_path
+        dirs: List[Dict] = []
+        roots = get_media_roots()
+        for root_idx, root in enumerate(roots):
+            if not root.is_dir():
+                continue
+            for d in sorted(root.rglob("*")):
+                if d.is_dir():
+                    try:
+                        rel = str(d.relative_to(root))
+                        if rel:
+                            encoded = _encode_path(root_idx, rel)
+                            label = rel if root_idx == 0 else f"[{root.name}] {rel}"
+                            dirs.append({"path": encoded, "label": label})
+                    except ValueError:
+                        pass
+        self._json({
+            "dirs":       dirs,
+            "root_label": str(MEDIA_DIR()),
+            "roots":      [str(r) for r in roots],
+        })
+
+    def _get_media_roots(self) -> None:
+        """Return the list of configured media root directories."""
+        roots = get_media_roots()
+        self._json({
+            "roots":   [str(r) for r in roots],
+            "default": str(MEDIA_DIR()),
+        })
+
+    def _get_events(self) -> None:
+        mgr = _WEB_MANAGER
+        if not mgr:
+            self._json([])
+            return
+        now = datetime.now()
+        result = []
+        for ev in sorted(mgr.events, key=lambda e: e.play_at):
+            diff = (ev.play_at - now).total_seconds()
+            entry: Dict[str, Any] = {
+                "event_id":      ev.event_id,
+                "stream_name":   ev.stream_name,
+                "file_name":     ev.file_path.name,
+                "file_path":     str(ev.file_path),
+                "play_at":       ev.play_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "play_at_iso":   ev.play_at.isoformat(),
+                "seconds_until": round(diff),
+                "post_action":   getattr(ev, "post_action",  "resume") or "resume",
+                "start_pos":     getattr(ev, "start_pos",    "00:00:00") or "00:00:00",
+                "end_pos":       getattr(ev, "end_pos",      ""),
+                "loop_count":    getattr(ev, "loop_count",   0),
+                "comment":       getattr(ev, "comment",      "") or "",
+                "played":        ev.played,
+            }
+            be = getattr(ev, "broadcast_end", None)
+            if be is not None:
+                entry["broadcast_end"] = be.isoformat()
+            result.append(entry)
+        self._json(result)
+
+    # _get_holidays is intentionally NOT defined here.
+    # The implementation in _CalendarHandlersMixin (web_handlers_calendar.py)
+    # is the authoritative one: it merges library holidays with custom holidays
+    # from disk and uses a disk cache for offline/restart resilience.
+    # Defining it here again would shadow that version and break custom holidays.
+
+    def _get_settings(self) -> None:
+        """Return the persisted app settings (holiday_country, etc.)."""
+        from hc.web_settings_manager import load_settings
+        try:
+            self._json(load_settings())
+        except Exception as exc:
+            log.error("_get_settings: %s", exc)
+            self._json({"error": str(exc)}, 500)
+
+    def _get_logs(self, qs: Dict[str, Any]) -> None:
+        mgr = _WEB_MANAGER
+        if not mgr:
+            self._json({"entries": []})
+            return
+        level  = qs.get("level",  ["ALL"])[0].upper()
+        stream = qs.get("stream", [""])[0].strip()
+        try:
+            n = min(1000, int(qs.get("n", ["500"])[0]))
+        except ValueError:
+            n = 500
+        if level not in ("ALL", "INFO", "WARN", "ERROR"):
+            level = "ALL"
+        entries = mgr._glog.filtered(
+            level=None if level == "ALL" else level,
+            stream=stream or None, n=n,
+        )
+        self._json({"entries": entries})
+
+    def _get_system_stats(self) -> None:
+        try:
+            cpu  = psutil.cpu_percent(interval=0.1)
+            mem  = psutil.virtual_memory()
+            disk = psutil.disk_usage(str(BASE_DIR()))
+            self._json({
+                "cpu":          round(cpu, 1),
+                "mem_percent":  round(mem.percent, 1),
+                "mem_used":     _fmt_size(mem.used),
+                "mem_total":    _fmt_size(mem.total),
+                "disk_percent": round(disk.percent, 1),
+                "disk_used":    _fmt_size(disk.used),
+                "disk_total":   _fmt_size(disk.total),
+                "web_port":     get_web_port(),
+                "lan_ip":       _local_ip(),
+            })
+        except Exception as exc:
+            self._json({"error": str(exc)}, 500)
+
+    def _get_stream_detail(self, qs: Dict[str, Any]) -> None:
+        name = qs.get("name", [""])[0].strip()
+        mgr  = _WEB_MANAGER
+        if not mgr or not name:
+            self._json({"error": "bad request"}, 400)
+            return
+        st = mgr.get_state(name)
+        if not st:
+            self._json({"error": "not found"}, 404)
+            return
+        cfg = st.config
+        with st._lock:
+            log_snap = list(st.log[-80:])
+        cur_real = st.playlist_order[st.playlist_index] if st.playlist_order else 0
+        playlist = []
+        for i, item in enumerate(cfg.playlist):
+            playlist.append({
+                "file":     item.file_path.name,
+                "path":     str(item.file_path),
+                "start":    item.start_position,
+                "priority": item.priority,
+                "exists":   item.file_path.exists(),
+                "current":  (i == cur_real),
+            })
+        self._json({
+            "name":          cfg.name,
+            "port":          cfg.port,
+            "rtsp_url":      cfg.rtsp_url_external,
+            "hls_url":       cfg.hls_url if cfg.hls_enabled else "",
+            "weekdays":      cfg.weekdays_display(),
+            "status":        st.status.label,
+            "progress":      st.progress,
+            "current_pos":   st.current_pos,
+            "duration":      st.duration,
+            "position":      st.format_pos(),
+            "fps":           st.fps,
+            "loop_count":    st.loop_count,
+            "restart_count": st.restart_count,
+            "error_msg":     st.error_msg,
+            "playlist":      playlist,
+            "log":           log_snap,
+            "started_at":    st.started_at.isoformat() if st.started_at else None,
+        })
+
+    def _get_stream_view(self, qs: Dict[str, Any]) -> None:
+        name = qs.get("name", [""])[0].strip()
+        mgr  = _WEB_MANAGER
+        if not mgr or not name:
+            self._json({"error": "bad request"}, 400)
+            return
+        st = mgr.get_state(name)
+        if not st:
+            self._json({"error": "not found"}, 404)
+            return
+        cfg = st.config
+        self._json({
+            "name":        cfg.name,
+            "status":      st.status.label,
+            "rtsp_url":    cfg.rtsp_url_external,
+            "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
+            "current_pos": st.current_pos,
+            "duration":    st.duration,
+            "progress":    st.progress,
+        })
+
+    def _get_mail_config(self) -> None:
+        """Return the current mail_config.hcf contents (password redacted)."""
+        from hc.constants import BASE_DIR
+        import json as _json
+        path = BASE_DIR() / "mail_config.hcf"
+        try:
+            if path.exists():
+                cfg = _json.loads(path.read_text(encoding="utf-8"))
+                # Redact the password so it never crosses the wire in plain text.
+                if "password" in cfg and cfg["password"]:
+                    cfg["password"] = "••••••••"
+                # Tell the UI whether a Gmail token already exists
+                from hc.mailer import get_oauth2_flow_status
+                status = get_oauth2_flow_status()
+                cfg["oauth2_token_exists"] = status["token_exists"]
+                # Add Microsoft OAuth2 token status
+                try:
+                    from hc.mailer import get_microsoft_oauth2_status
+                    ms_status = get_microsoft_oauth2_status(cfg)
+                    cfg["ms_token_exists"] = ms_status.get("token_exists", False)
+                except Exception:
+                    cfg["ms_token_exists"] = False
+                self._json(cfg)
+            else:
+                # Return template defaults so the form is pre-filled sensibly.
+                self._json({
+                    "enabled": False, "mode": "smtp",
+                    "smtp_host": "smtp.gmail.com",
+                    "smtp_port": 587, "use_tls": True,
+                    "username": "", "password": "",
+                    "from_addr": "", "to_addrs": [],
+                    "on_error": True, "on_stop": True, "cooldown_secs": 300,
+                    "ms_client_id": "", "ms_username": "",
+                    "oauth2_token_exists": False, "ms_token_exists": False,
+                })
+        except Exception as exc:
+            self._json({"error": str(exc)}, 500)
+
+    def _get_gmail_oauth2_status(self) -> None:
+        """Return the current OAuth2 flow status (polled by UI while auth is in progress)."""
+        try:
+            from hc.mailer import get_oauth2_flow_status
+            self._json(get_oauth2_flow_status())
+        except Exception as exc:
+            self._json({"status": "error", "error": str(exc), "token_exists": False})
+
+    def _get_ms_oauth2_status(self) -> None:
+        """Return Microsoft OAuth2 device-code flow status and token presence."""
+        try:
+            from hc.constants import BASE_DIR
+            import json as _json
+            cfg: dict = {}
+            try:
+                cfg = _json.loads((BASE_DIR() / "mail_config.hcf").read_text(encoding="utf-8"))
+            except Exception:
+                pass
+            from hc.mailer import get_microsoft_oauth2_status
+            self._json(get_microsoft_oauth2_status(cfg))
+        except Exception as exc:
+            self._json({"status": "error", "error": str(exc), "token_exists": False})
+
+    def _get_check_port(self, qs: Dict[str, Any]) -> None:
+        """
+        GET /api/check_port?port=8555
+
+        Check whether a proposed RTSP base port is safe to use.
+
+        Validates:
+          1. Port is in range 1024–65534.
+          2. Port is ODD  (HydraCast convention: RTSP=odd, HLS=port+1=even).
+          3. All four derived ports are free from any existing process:
+               RTSP = port   HLS = port+1   RTP = port+2* (bumped even)
+               RTCP = RTP+1
+          4. Firewall rules do not appear to block the RTSP port
+             (Windows: netsh advfirewall; Linux: iptables / ufw).
+
+        Returns JSON:
+          {
+            "ok": true/false,      // overall safe to use
+            "port": 8555,
+            "hls_port": 8556,
+            "rtp_port": 8558,
+            "rtcp_port": 8559,
+            "odd_ok": true,        // port is odd
+            "ports": {             // per-port status
+              "8555": {"free": true,  "process": null},
+              "8556": {"free": false, "process": "nginx (pid 1234)"},
+              ...
+            },
+            "firewall": {
+              "checked": true,
+              "blocked": false,
+              "detail": "No blocking rule found"
+            },
+            "warnings": ["…"],     // non-fatal advisories
+            "errors":   ["…"]      // fatal blockers (ok=false)
           }
-          payload.broadcast_end = `${edate}T${broadcast_end_time}`;
+        """
+        import socket as _socket
+        import subprocess as _sp
+        import sys as _sys
+
+        try:
+            raw = qs.get("port", [""])[0].strip()
+            if not raw:
+                self._json({"ok": False, "errors": ["Port parameter is required"]})
+                return
+            port = int(raw)
+        except (ValueError, TypeError):
+            self._json({"ok": False, "errors": ["Port must be an integer"]})
+            return
+
+        errors: list   = []
+        warnings: list = []
+
+        # ── 1. Range check ────────────────────────────────────────────────────
+        if not (1024 <= port <= 65534):
+            self._json({"ok": False,
+                        "errors": [f"Port {port} is out of range (1024–65534)"]})
+            return
+
+        # ── 2. Odd check ──────────────────────────────────────────────────────
+        odd_ok = (port % 2 != 0)
+        if not odd_ok:
+            errors.append(
+                f"Port {port} is even. HydraCast requires an ODD RTSP base port "
+                f"(HLS will use the adjacent even port {port + 1})."
+            )
+
+        # Derive companion ports
+        hls_port  = port + 1
+        rtp_base  = port + 2
+        if rtp_base % 2 != 0:
+            rtp_base += 1
+        rtcp_port = rtp_base + 1
+
+        all_ports = {
+            port:      "RTSP",
+            hls_port:  "HLS",
+            rtp_base:  "RTP",
+            rtcp_port: "RTCP",
         }
-        const res  = await fetch("/api/events/bulk", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (data.created?.length) totalCreated += data.created.length;
-      }
-      await onCreate(totalCreated);
-      onClose();
-    } catch(e) {
-      setErr(e.message || "Failed to schedule events.");
-      setSubmitting(false);
-    }
-  };
 
-  const dateLabel = sortedDates.length === 1
-    ? new Date(sortedDates[0]+"T12:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
-    : `${sortedDates.length} dates selected`;
+        # ── 3. Process occupancy check ────────────────────────────────────────
+        def _process_on_port(p: int):
+            """Return 'name (pid NNN)' if any process holds TCP or UDP port p."""
+            try:
+                for conn in psutil.net_connections(kind="inet"):
+                    if conn.laddr and conn.laddr.port == p:
+                        pid = conn.pid
+                        if pid:
+                            try:
+                                proc = psutil.Process(pid)
+                                return f"{proc.name()} (pid {pid})"
+                            except psutil.NoSuchProcess:
+                                return f"pid {pid} (exited)"
+                        return "unknown process"
+            except Exception:
+                pass
+            return None
 
-  return (
-    <div style={{
-      background:"var(--color-background-primary)",
-      border:"0.5px solid var(--color-border-primary)",
-      borderRadius:"var(--border-radius-lg)",
-      width:"540px",maxHeight:"82vh",overflowY:"auto",
-      boxShadow:"0 8px 32px rgba(0,0,0,0.22)",
-    }}>
-      {/* Header */}
-      <div style={{padding:"16px 20px",borderBottom:"0.5px solid var(--color-border-tertiary)",
-        display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-        <div>
-          <p style={{margin:0,fontSize:"15px",fontWeight:"500",color:"var(--color-text-primary)"}}>
-            Schedule event{sortedDates.length > 1 ? "s" : ""}
-          </p>
-          <p style={{margin:"3px 0 0",fontSize:"13px",color:"var(--color-text-secondary)"}}>
-            {dateLabel}
-          </p>
-        </div>
-        <button onClick={onClose} aria-label="Close"
-          style={{background:"none",border:"none",cursor:"pointer",
-            color:"var(--color-text-secondary)",fontSize:"20px",lineHeight:1,padding:"2px 6px"}}>×</button>
-      </div>
+        port_status: Dict[str, Any] = {}
+        for p, label in all_ports.items():
+            occupant = _process_on_port(p)
+            free     = (occupant is None)
+            port_status[str(p)] = {
+                "label":   label,
+                "free":    free,
+                "process": occupant,
+            }
+            if not free:
+                errors.append(
+                    f"{label} port {p} is already in use by {occupant}."
+                )
 
-      <div style={{padding:"18px 20px"}}>
-        {/* Selected dates (multi) */}
-        {sortedDates.length > 1 && (
-          <div style={{marginBottom:"16px"}}>
-            <label style={lbl}>Selected dates ({sortedDates.length})</label>
-            <div style={{display:"flex",flexWrap:"wrap",gap:"5px"}}>
-              {sortedDates.map(ds=>{
-                const past = isPastDateTime(ds, time, todayStr);
-                return (
-                  <span key={ds} style={{
-                    fontSize:"11px",padding:"2px 8px",borderRadius:"999px",
-                    background: past ? "var(--color-background-danger)" : "var(--color-background-info)",
-                    color:      past ? "var(--color-text-danger)"       : "var(--color-text-info)",
-                    border:`0.5px solid ${past ? "var(--color-border-danger)" : "var(--color-border-info)"}`,
-                  }}>
-                    {ds.slice(5).replace("-","/")}
-                    {past && " ⚠"}
-                  </span>
-                );
-              })}
-            </div>
-            {hasPastDateTime && (
-              <p style={{fontSize:"11px",color:"var(--color-text-danger)",margin:"6px 0 0"}}>
-                ⚠ Some dates are in the past and will be skipped.
-              </p>
-            )}
-          </div>
-        )}
+        # ── 4. Firewall probe ─────────────────────────────────────────────────
+        firewall: Dict[str, Any] = {"checked": False, "blocked": False, "detail": ""}
 
-        {/* Time */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>Broadcast start time</label>
-          <input type="time" value={time} onChange={e=>setTime(e.target.value)} style={{width:"160px"}}/>
-          {sortedDates.length===1 && hasPastDateTime && (
-            <span style={{fontSize:"11px",color:"var(--color-text-danger)",marginLeft:"10px"}}>
-              ⚠ This time is in the past
-            </span>
-          )}
-        </div>
+        try:
+            is_win   = _sys.platform.startswith("win")
+            is_linux = _sys.platform.startswith("linux")
 
-        {/* End time */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>
-            Broadcast end time
-            <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>optional</span>
-          </label>
-          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-            <input type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} style={{width:"160px"}}/>
-            {endTime && (
-              <button onClick={()=>setEndTime("")}
-                style={{fontSize:"11px",padding:"3px 9px",color:"var(--color-text-tertiary)"}}>Clear</button>
-            )}
-          </div>
-          <p style={{fontSize:"11px",color:"var(--color-text-tertiary)",margin:"5px 0 0"}}>
-            Leave blank to play to file end.
-            {endTime && time && endTime <= time && (
-              <span style={{color:"var(--color-text-info)",marginLeft:"6px"}}>(wraps to next day)</span>
-            )}
-          </p>
-        </div>
+            if is_win:
+                # netsh advfirewall: list inbound rules that mention this port
+                r = _sp.run(
+                    ["netsh", "advfirewall", "firewall", "show", "rule",
+                     "name=all", "dir=in", "verbose"],
+                    capture_output=True, text=True, timeout=8,
+                )
+                out = r.stdout.lower()
+                port_str = str(port)
+                # Simple heuristic: look for a "block" rule that mentions our port
+                blocked = False
+                for line in out.splitlines():
+                    if port_str in line and "block" in line:
+                        blocked = True
+                        break
+                firewall = {
+                    "checked": True,
+                    "blocked": blocked,
+                    "detail":  (
+                        f"Windows Firewall: blocking inbound rule found for port {port}."
+                        if blocked else
+                        "Windows Firewall: no explicit blocking rule found for this port."
+                    ),
+                }
+                if blocked:
+                    warnings.append(
+                        f"Windows Firewall may block inbound traffic on port {port}. "
+                        "Add an Allow rule or disable the block rule."
+                    )
 
-        {/* Start position */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>
-            Start position
-            <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>HH:MM:SS</span>
-          </label>
-          <input value={startPos} onChange={e=>setStartPos(e.target.value)}
-            placeholder="00:00:00" style={{width:"140px"}}/>
-        </div>
+            elif is_linux:
+                # Try ufw first, then iptables
+                ufw_ok = False
+                try:
+                    r2 = _sp.run(
+                        ["ufw", "status", "verbose"],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if r2.returncode == 0:
+                        out2 = r2.stdout.lower()
+                        ufw_ok = True
+                        # If ufw is active and port is not listed as ALLOW
+                        if "status: active" in out2:
+                            allowed = str(port) in out2 and "allow" in out2
+                            # Coarse check: if port not mentioned at all, may be blocked
+                            port_mentioned = str(port) in out2
+                            if not port_mentioned:
+                                warnings.append(
+                                    f"ufw is active but port {port} has no explicit ALLOW rule. "
+                                    "Add with: sudo ufw allow {port}/tcp".format(port=port)
+                                )
+                            firewall = {
+                                "checked": True,
+                                "blocked": False,
+                                "detail":  (
+                                    f"ufw is active; port {port} appears allowed."
+                                    if port_mentioned else
+                                    f"ufw is active; no ALLOW rule found for port {port}."
+                                ),
+                            }
+                except FileNotFoundError:
+                    pass
 
-        {/* Loop */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>Loop / repeat</label>
-          <LoopSelector value={loopCount} onChange={setLoopCount}/>
-        </div>
+                if not ufw_ok:
+                    # Fall back to iptables -L
+                    try:
+                        r3 = _sp.run(
+                            ["iptables", "-L", "INPUT", "-n", "--line-numbers"],
+                            capture_output=True, text=True, timeout=5,
+                        )
+                        out3 = r3.stdout.lower()
+                        drop_or_reject = (
+                            f"dpt:{port}" in out3
+                            and ("drop" in out3 or "reject" in out3)
+                        )
+                        firewall = {
+                            "checked": True,
+                            "blocked": drop_or_reject,
+                            "detail":  (
+                                f"iptables: DROP/REJECT rule found for port {port}."
+                                if drop_or_reject else
+                                f"iptables: no DROP/REJECT rule found for port {port}."
+                            ),
+                        }
+                        if drop_or_reject:
+                            warnings.append(
+                                f"iptables has a DROP/REJECT rule for port {port}. "
+                                "Run: sudo iptables -I INPUT -p tcp --dport {p} -j ACCEPT"
+                                .format(p=port)
+                            )
+                    except Exception:
+                        firewall = {
+                            "checked": False,
+                            "blocked": False,
+                            "detail":  "iptables check failed (permission denied or not installed).",
+                        }
+            else:
+                firewall = {
+                    "checked": False,
+                    "blocked": False,
+                    "detail":  "Firewall check not supported on this OS.",
+                }
+        except Exception as exc:
+            firewall = {
+                "checked": False,
+                "blocked": False,
+                "detail":  f"Firewall check error: {exc}",
+            }
 
-        {/* Post-action */}
-        <div style={{marginBottom:"16px"}}>
-          <label style={lbl}>After playback</label>
-          <select value={postAction} onChange={e=>setPostAction(e.target.value)} style={{width:"100%"}}>
-            <option value="resume">Return to normal schedule / compliance</option>
-            <option value="stop">Stop stream</option>
-            <option value="black">Show black screen</option>
-          </select>
-        </div>
+        if firewall.get("blocked"):
+            errors.append(firewall["detail"])
 
-        {/* Streams */}
-        <div style={{marginBottom:"16px"}}>
-          <label style={lbl}>
-            Streams
-            {Object.keys(selStreams).length > 0 &&
-              <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>
-                — {Object.keys(selStreams).length} selected
-              </span>}
-          </label>
-          {streams.length === 0 ? (
-            <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:0}}>No streams configured.</p>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-              {[...streams].sort((a,b)=>a.name.localeCompare(b.name)).map(st => {
-                const sel = !!selStreams[st.name];
-                return (
-                  <div key={st.name} style={{
-                    border:`0.5px solid ${sel ? "var(--color-border-info)" : "var(--color-border-tertiary)"}`,
-                    borderRadius:"var(--border-radius-md)",overflow:"hidden",
-                    background: sel ? "var(--color-background-info)" : "var(--color-background-secondary)",
-                    transition:"border-color 0.12s",
-                  }}>
-                    <div onClick={()=>toggle(st.name)}
-                      style={{display:"flex",alignItems:"center",gap:"10px",padding:"9px 12px",cursor:"pointer"}}>
-                      <div style={{
-                        width:"15px",height:"15px",borderRadius:"3px",flexShrink:0,
-                        border:`0.5px solid ${sel ? "var(--color-border-info)" : "var(--color-border-secondary)"}`,
-                        background: sel ? "var(--color-text-info)" : "transparent",
-                        display:"flex",alignItems:"center",justifyContent:"center",
-                      }}>
-                        {sel && <i className="ti ti-check" style={{fontSize:"10px",color:"#fff"}}/>}
-                      </div>
-                      <div style={{flex:1}}>
-                        <p style={{margin:0,fontSize:"13px",fontWeight:"500",color:"var(--color-text-primary)"}}>{st.name}</p>
-                        <p style={{margin:0,fontSize:"11px",color:"var(--color-text-secondary)"}}>:{st.port}</p>
-                      </div>
-                      <span style={{
-                        fontSize:"10px",padding:"2px 7px",borderRadius:"999px",
-                        background:"var(--color-background-secondary)",
-                        color:"var(--color-text-secondary)",
-                        border:"0.5px solid var(--color-border-tertiary)",
-                      }}>{st.status}</span>
-                    </div>
-                    {sel && (
-                      <div style={{padding:"0 12px 11px",borderTop:"0.5px solid var(--color-border-tertiary)"}}>
-                        <label style={{...lbl,paddingTop:"9px",display:"block"}}>File for {st.name}</label>
-                        {libraryLoading ? (
-                          <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:0}}>Loading library…</p>
-                        ) : (
-                          <select value={files[st.name]||""} onChange={e=>setFiles(f=>({...f,[st.name]:e.target.value}))} style={{width:"100%"}}>
-                            <option value="">— select a file —</option>
-                            {library.map((f,i) => (
-                              <option key={i} value={f.full_path}>{f.path}</option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        ok = len(errors) == 0
+        self._json({
+            "ok":        ok,
+            "port":      port,
+            "hls_port":  hls_port,
+            "rtp_port":  rtp_base,
+            "rtcp_port": rtcp_port,
+            "odd_ok":    odd_ok,
+            "ports":     port_status,
+            "firewall":  firewall,
+            "warnings":  warnings,
+            "errors":    errors,
+        })
 
-        {/* Comment / notes */}
-        <div style={{marginBottom:"16px"}}>
-          <label style={lbl}>
-            Comment
-            <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>optional</span>
-          </label>
-          <textarea
-            value={comment}
-            onChange={e=>setComment(e.target.value)}
-            placeholder="Internal note or description for this event…"
-            maxLength={500}
-            rows={2}
-            style={{
-              width:"100%",resize:"vertical",
-              background:"var(--color-background-secondary)",
-              border:"0.5px solid var(--color-border-primary)",
-              borderRadius:"var(--border-radius-md)",
-              color:"var(--color-text-primary)",
-              font:"13px var(--font-sans)",
-              padding:"7px 10px",
-              outline:"none",
-              lineHeight:"1.5",
-            }}
-          />
-        </div>
+    def _get_suggest_port(self, qs: Dict[str, Any]) -> None:
+        """
+        GET /api/suggest_port?from=8555
 
-        {err && (
-          <div style={{padding:"8px 12px",borderRadius:"var(--border-radius-md)",
-            background:"var(--color-background-danger)",border:"0.5px solid var(--color-border-danger)",
-            fontSize:"12px",color:"var(--color-text-danger)",marginBottom:"14px"}}>{err}</div>
-        )}
+        Scan odd ports starting from ``from`` (inclusive, must be odd;
+        bumped +1 if even) and return the first port where all four
+        derived ports (RTSP, HLS, RTP, RTCP) are completely free.
 
-        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",alignItems:"center"}}>
-          <button onClick={onClose}>Cancel</button>
-          <button onClick={submit} disabled={submitting||(hasPastDateTime&&sortedDates.length===1)}
-            style={{background:"var(--color-text-info)",color:"#fff",border:"none",
-              opacity:(submitting||(hasPastDateTime&&sortedDates.length===1))?0.55:1}}>
-            {submitting ? "Scheduling…" : sortedDates.length > 1 ? `Schedule for ${sortedDates.filter(ds=>!isPastDateTime(ds,time,todayStr)).length} date(s)` : "Schedule event"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+        Returns JSON:
+          {
+            "port": 8561,          // suggested free odd port (or null if none found)
+            "searched": 50         // how many candidates were checked
+          }
+        """
+        import socket as _socket
 
-// ---------------------------------------------------------------------------
-// EditModal — edit all fields of an existing event
-// ---------------------------------------------------------------------------
-function EditModal({ ev, streams, library, libraryLoading, todayStr, onClose, onSave, onDelete }) {
-  const [streamName, setStreamName] = useState(ev.stream_name);
-  const [filePath,   setFilePath]   = useState(ev.file_path || "");
-  const [playAt,     setPlayAt]     = useState((ev.play_at_iso||ev.play_at||"").slice(0,16));
-  const [postAction, setPostAction] = useState(ev.post_action || "resume");
-  const [startPos,   setStartPos]   = useState(ev.start_pos  || "00:00:00");
-  const [loopCount,  setLoopCount]  = useState(ev.loop_count !== undefined ? ev.loop_count : 0);
-  const [comment,    setComment]    = useState(ev.comment || "");
-  const [saving,     setSaving]     = useState(false);
-  const [err,        setErr]        = useState("");
+        try:
+            raw  = qs.get("from", ["8555"])[0].strip()
+            base = int(raw) if raw else 8555
+        except (ValueError, TypeError):
+            base = 8555
 
-  const isPast = playAt && isPastDateTime(playAt.slice(0,10), playAt.slice(11,16), todayStr);
+        # Clamp and make odd
+        base = max(1025, min(base, 65520))
+        if base % 2 == 0:
+            base += 1
 
-  const save = async () => {
-    if (!streamName) { setErr("Stream is required."); return; }
-    if (!filePath)   { setErr("File is required."); return; }
-    if (!playAt)     { setErr("Date/time is required."); return; }
-    if (isPast)      { setErr("Cannot reschedule to a past date/time."); return; }
-    setSaving(true); setErr("");
-    try {
-      const res = await fetch("/api/action", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          action:      "update_event",
-          event_id:    ev.event_id,
-          stream_name: streamName,
-          file_path:   filePath,
-          play_at:     playAt,
-          post_action: postAction,
-          start_pos:   startPos,
-          loop_count:  loopCount,
-          comment:     comment.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.msg || "Failed");
-      await onSave();
-      onClose();
-    } catch(e) {
-      setErr(e.message);
-      setSaving(false);
-    }
-  };
+        def _port_free(p: int) -> bool:
+            """True if no process is bound to TCP or UDP port p."""
+            try:
+                for conn in psutil.net_connections(kind="inet"):
+                    if conn.laddr and conn.laddr.port == p:
+                        return False
+            except Exception:
+                pass
+            # Double-check with a quick socket bind attempt
+            for kind in (_socket.SOCK_STREAM, _socket.SOCK_DGRAM):
+                try:
+                    s = _socket.socket(_socket.AF_INET, kind)
+                    s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+                    s.bind(("", p))
+                    s.close()
+                except OSError:
+                    return False
+            return True
 
-  const del = async () => {
-    if (!confirm(`Delete this event for "${ev.stream_name}"?`)) return;
-    await onDelete(ev.event_id);
-    onClose();
-  };
+        def _all_free(rtsp: int) -> bool:
+            hls  = rtsp + 1
+            rtp  = rtsp + 2
+            if rtp % 2 != 0:
+                rtp += 1
+            rtcp = rtp + 1
+            return all(_port_free(p) for p in (rtsp, hls, rtp, rtcp))
 
-  return (
-    <div style={{
-      background:"var(--color-background-primary)",
-      border:"0.5px solid var(--color-border-primary)",
-      borderRadius:"var(--border-radius-lg)",
-      width:"500px",maxHeight:"82vh",overflowY:"auto",
-      boxShadow:"0 8px 32px rgba(0,0,0,0.22)",
-    }}>
-      <div style={{padding:"16px 20px",borderBottom:"0.5px solid var(--color-border-tertiary)",
-        display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <p style={{margin:0,fontSize:"15px",fontWeight:"500",color:"var(--color-text-primary)"}}>
-          Edit event
-        </p>
-        <button onClick={onClose} aria-label="Close"
-          style={{background:"none",border:"none",cursor:"pointer",
-            color:"var(--color-text-secondary)",fontSize:"20px",lineHeight:1,padding:"2px 6px"}}>×</button>
-      </div>
+        searched = 0
+        candidate = base
+        found: Optional[int] = None
+        while candidate <= 65520 and searched < 200:
+            searched += 1
+            if _all_free(candidate):
+                found = candidate
+                break
+            candidate += 2   # always stay odd
 
-      <div style={{padding:"18px 20px"}}>
-        {/* Stream */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>Stream</label>
-          <select value={streamName} onChange={e=>setStreamName(e.target.value)} style={{width:"100%"}}>
-            {[...streams].sort((a,b)=>a.name.localeCompare(b.name)).map(st=>(
-              <option key={st.name} value={st.name}>{st.name} :{st.port}</option>
-            ))}
-          </select>
-        </div>
+        self._json({"port": found, "searched": searched})
 
-        {/* File */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>File</label>
-          {libraryLoading ? (
-            <p style={{fontSize:"12px",color:"var(--color-text-tertiary)",margin:0}}>Loading library…</p>
-          ) : (
-            <select value={filePath} onChange={e=>setFilePath(e.target.value)} style={{width:"100%"}}>
-              <option value="">— select a file —</option>
-              {library.map((f,i)=>(
-                <option key={i} value={f.full_path}>{f.path}</option>
-              ))}
-            </select>
-          )}
-          {filePath && !library.find(f=>f.full_path===filePath) && (
-            <p style={{fontSize:"11px",color:"var(--color-text-secondary)",margin:"4px 0 0",
-              fontFamily:"var(--font-mono)",wordBreak:"break-all"}}>{filePath}</p>
-          )}
-        </div>
+    def _get_upload_status(self, qs: Dict[str, Any]) -> None:
+        """GET /api/upload/status?session_id=X  — chunked upload progress + resume info."""
+        from hc.web_upload import handle_upload_status
+        session_id = qs.get("session_id", [""])[0].strip()
+        resp, code = handle_upload_status(session_id)
+        self._json(resp, code)
 
-        {/* Date/time */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>Date &amp; time</label>
-          <input type="datetime-local" value={playAt}
-            onChange={e=>setPlayAt(e.target.value)}
-            min={`${todayStr}T00:00`}
-            style={{width:"230px"}}/>
-          {isPast && (
-            <p style={{fontSize:"11px",color:"var(--color-text-danger)",margin:"4px 0 0"}}>
-              ⚠ This date/time is in the past
-            </p>
-          )}
-        </div>
+    # ── POST dispatch ────────────────────────────────────────────────────────
+    def _dispatch(self, action: str, data: Dict[str, Any]) -> None:
+        # File-manager actions are handled by _FileManagerMixin
+        _FILE_OPS = {"file_mkdir", "file_rename", "file_delete", "file_delete_dir", "file_move", "file_copy"}
+        if action in _FILE_OPS:
+            self._handle_file_op(action, data)
+            return
 
-        {/* Start position */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>Start position <span style={{fontWeight:"400",color:"var(--color-text-tertiary)"}}>HH:MM:SS</span></label>
-          <input value={startPos} onChange={e=>setStartPos(e.target.value)}
-            placeholder="00:00:00" style={{width:"140px"}}/>
-        </div>
+        mgr = _WEB_MANAGER
+        if not mgr:
+            self._json({"ok": False, "msg": "Manager not ready"})
+            return
 
-        {/* Loop */}
-        <div style={{marginBottom:"14px"}}>
-          <label style={lbl}>Loop / repeat</label>
-          <LoopSelector value={loopCount} onChange={setLoopCount}/>
-        </div>
+        if action == "start":
+            st = mgr.get_state(str(data.get("name", "")))
+            if st:
+                mgr.start(st.config.name)
+                self._json({"ok": True, "msg": f"Starting {st.config.name}"})
+            else:
+                self._json({"ok": False, "msg": "Stream not found"})
 
-        {/* Post-action */}
-        <div style={{marginBottom:"16px"}}>
-          <label style={lbl}>After playback</label>
-          <select value={postAction} onChange={e=>setPostAction(e.target.value)} style={{width:"100%"}}>
-            <option value="resume">Return to normal schedule / compliance</option>
-            <option value="stop">Stop stream</option>
-            <option value="black">Show black screen</option>
-          </select>
-        </div>
+        elif action == "stop":
+            st = mgr.get_state(str(data.get("name", "")))
+            if st:
+                mgr.stop(st.config.name)
+                self._json({"ok": True, "msg": f"Stopping {st.config.name}"})
+            else:
+                self._json({"ok": False, "msg": "Stream not found"})
 
-        {/* Comment / notes */}
-        <div style={{marginBottom:"16px"}}>
-          <label style={lbl}>
-            Comment
-            <span style={{fontWeight:"400",color:"var(--color-text-tertiary)",marginLeft:"6px"}}>optional</span>
-          </label>
-          <textarea
-            value={comment}
-            onChange={e=>setComment(e.target.value)}
-            placeholder="Internal note or description…"
-            maxLength={500}
-            rows={2}
-            style={{
-              width:"100%",resize:"vertical",
-              background:"var(--color-background-secondary)",
-              border:"0.5px solid var(--color-border-primary)",
-              borderRadius:"var(--border-radius-md)",
-              color:"var(--color-text-primary)",
-              font:"13px var(--font-sans)",
-              padding:"7px 10px",
-              outline:"none",
-              lineHeight:"1.5",
-            }}
-          />
-        </div>
+        elif action == "restart":
+            st = mgr.get_state(str(data.get("name", "")))
+            if st:
+                mgr.restart(st.config.name)
+                self._json({"ok": True, "msg": f"Restarting {st.config.name}"})
+            else:
+                self._json({"ok": False, "msg": "Stream not found"})
 
-        {err && (
-          <div style={{padding:"8px 12px",borderRadius:"var(--border-radius-md)",
-            background:"var(--color-background-danger)",border:"0.5px solid var(--color-border-danger)",
-            fontSize:"12px",color:"var(--color-text-danger)",marginBottom:"14px"}}>{err}</div>
-        )}
+        elif action == "start_all":
+            mgr.start_all()
+            self._json({"ok": True, "msg": "Starting all streams"})
 
-        <div style={{display:"flex",gap:"8px",justifyContent:"space-between",alignItems:"center"}}>
-          <button onClick={del}
-            style={{fontSize:"12px",padding:"5px 12px",
-              color:"var(--color-text-danger)",borderColor:"var(--color-border-danger)",
-              display:"flex",alignItems:"center",gap:"4px"}}>
-            <i className="ti ti-trash" style={{fontSize:"12px"}}/>Delete
-          </button>
-          <div style={{display:"flex",gap:"8px"}}>
-            <button onClick={onClose}>Cancel</button>
-            <button onClick={save} disabled={saving||isPast}
-              style={{background:"var(--color-text-info)",color:"#fff",border:"none",
-                opacity:(saving||isPast)?0.55:1}}>
-              {saving ? "Saving…" : "Save changes"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+        elif action == "stop_all":
+            for _st in mgr.states:
+                try:
+                    mgr.stop(_st.config.name)
+                except Exception:
+                    pass
+            self._json({"ok": True, "msg": "Stopped all streams"})
 
-// ---------------------------------------------------------------------------
-// Legend
-// ---------------------------------------------------------------------------
-function Legend() {
-  return (
-    <div style={{display:"flex",alignItems:"center",gap:"10px",fontSize:"11px",color:"var(--color-text-secondary)"}}>
-      {[
-        ["var(--color-background-danger)","var(--color-border-danger)","Public Holiday"],
-        ["var(--purple-dim)","var(--purple)","Custom Holiday"],
-        ["var(--color-background-info)","var(--color-border-info)","Upcoming"],
-        ["var(--color-background-success)","var(--color-border-success)","Played"],
-      ].map(([bg,border,label]) => (
-        <span key={label} style={{display:"flex",alignItems:"center",gap:"4px"}}>
-          <span style={{width:"9px",height:"9px",borderRadius:"2px",
-            background:bg,border:`0.5px solid ${border}`,display:"inline-block",flexShrink:0}}/>
-          {label}
-        </span>
-      ))}
-    </div>
-  );
-}
+        elif action == "restart_all":
+            for st in mgr.states:
+                try:
+                    mgr.restart(st.config.name)
+                except Exception:
+                    pass
+            self._json({"ok": True, "msg": "Restarting all streams"})
 
-// ---------------------------------------------------------------------------
-// Main EventsCalendar
-// ---------------------------------------------------------------------------
-function EventsCalendar() {
-  const TODAY = new Date();
-  const todayStr = fmtDate(TODAY);
+        elif action == "restart_process":
+            # Stop all streams, flush the response, then os.execv to
+            # replace this process with a fresh copy of itself.
+            import os as _os, sys as _sys, threading as _thr
+            if mgr is not None:
+                for st in mgr.states:
+                    try:
+                        mgr.stop(st.config.name)
+                    except Exception:
+                        pass
+            self._json({"ok": True, "msg": "Restarting process…"})
+            def _do_exec():
+                import time as _time
+                _time.sleep(0.4)  # let the HTTP response flush
+                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+            _thr.Thread(target=_do_exec, daemon=True).start()
 
-  const [month,      setMonth]      = useState(TODAY.getMonth());
-  const [year,       setYear]       = useState(TODAY.getFullYear());
-  const [events,     setEvents]     = useState([]);
-  const [streams,    setStreams]     = useState([]);
-  const [library,    setLibrary]    = useState([]);
-  const [libLoading, setLibLoading] = useState(false);
-  const [settings,   setSettings]   = useState({ holiday_country:"US", holiday_subdiv:null });
-  const [holidays,   setHolidays]   = useState({});
-  const [holKey,     setHolKey]     = useState("");
-  const [loading,    setLoading]    = useState(true);
-  const [modal,      setModal]      = useState(null);   // null | "create" | "edit" | "settings"
-  const [selDates,   setSelDates]   = useState(new Set());  // multi-date selection
-  const [multiMode,  setMultiMode]  = useState(false);
-  const [editEv,     setEditEv]     = useState(null);
-  const [toast,      setToast]      = useState(null);
-  const [hidePlayed, setHidePlayed] = useState(false);
-  const libLoaded = useRef(false);
-  const toastRef  = useRef(null);
+        elif action == "skip_next":
+            st = mgr.get_state(str(data.get("name", "")))
+            if st:
+                _w = mgr.get_worker(st.config.name)
+                if _w: _w.skip_to_next()
+                self._json({"ok": True, "msg": f"Skipping in {st.config.name}"})
+            else:
+                self._json({"ok": False, "msg": "Stream not found"})
 
-  // Expose a global hook so vanilla-JS add/delete handlers can force a
-  // holiday re-fetch by clearing holKey (bypasses the key === holKey guard).
-  useEffect(() => {
-    window.calendarRefreshHolidays = () => setHolKey("");
-    return () => { try { delete window.calendarRefreshHolidays; } catch(_){} };
-  }, []);
+        elif action == "seek":
+            st = mgr.get_state(str(data.get("name", "")))
+            try:
+                secs = float(data.get("seconds", 0))
+                if secs < 0:
+                    raise ValueError("negative")
+            except (TypeError, ValueError):
+                self._json({"ok": False, "msg": "Invalid seek position"})
+                return
+            if st:
+                _w = mgr.get_worker(st.config.name)
+                if _w: _w.seek(secs)
+                self._json({"ok": True, "msg": f"Seeking to {_fmt_duration(secs)}"})
+            else:
+                self._json({"ok": False, "msg": "Stream not found"})
 
-  const showToast = (msg, type="success") => {
-    if (toastRef.current) clearTimeout(toastRef.current);
-    setToast({ msg, type });
-    toastRef.current = setTimeout(() => setToast(null), 3500);
-  };
+        elif action == "update_config":
+            # Update a single stream's mutable config fields
+            try:
+                name_s = str(data.get("name", "")).strip()
+                if not name_s:
+                    self._json({"ok": False, "msg": "Missing stream name"})
+                    return
+                st = mgr.get_state(name_s)
+                if not st:
+                    self._json({"ok": False, "msg": "Stream not found"})
+                    return
+                cfg = st.config
+                # Port
+                new_port = int(data.get("port", cfg.port))
+                if not (1024 <= new_port <= 65534):
+                    raise ValueError(f"Port {new_port} out of range (1024–65534)")
+                if new_port % 2 == 0:
+                    raise ValueError(
+                        f"Port {new_port} is even. HydraCast requires an ODD RTSP port "
+                        f"(HLS will use port {new_port + 1})."
+                    )
+                cfg.port = new_port
+                # Stream path
+                sp = str(data.get("stream_path", cfg.stream_path)).strip()
+                if sp:
+                    cfg.stream_path = sp
+                # Bitrates
+                vbr = str(data.get("video_bitrate", "")).strip()
+                if vbr:
+                    cfg.video_bitrate = CSVManager._sanitize_bitrate(vbr, cfg.video_bitrate)
+                abr = str(data.get("audio_bitrate", "")).strip()
+                if abr:
+                    cfg.audio_bitrate = CSVManager._sanitize_bitrate(abr, cfg.audio_bitrate)
+                # Booleans
+                cfg.shuffle     = bool(data.get("shuffle",     cfg.shuffle))
+                cfg.enabled     = bool(data.get("enabled",     cfg.enabled))
+                cfg.hls_enabled = bool(data.get("hls_enabled", cfg.hls_enabled))
+                # Compliance fields
+                if "compliance_enabled" in data:
+                    cfg.compliance_enabled = bool(data["compliance_enabled"])
+                if "compliance_start" in data:
+                    raw_cs = str(data["compliance_start"]).strip()
+                    cfg.compliance_start = CSVManager._sanitize_hms(raw_cs)
+                if "compliance_loop" in data:
+                    cfg.compliance_loop = bool(data["compliance_loop"])
+                # Weekdays
+                if "weekdays" in data:
+                    cfg.weekdays = CSVManager.parse_weekdays(str(data["weekdays"]))
+                # Playlist source: folder_source takes priority over file list
+                folder_source_raw = str(data.get("folder_source") or "").strip()
+                raw_files = str(data.get("files", "")).strip()
+                if folder_source_raw:
+                    from hc.folder_scanner import scan_folder, SortMode
+                    folder_source = _decode_fm_path_to_absolute(folder_source_raw)
+                    if folder_source is None or not folder_source.is_dir():
+                        raise ValueError(f"Folder not found or access denied: '{folder_source_raw}'")
+                    playlist, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
+                    for w in warnings:
+                        log.warning("update_config folder scan: %s", w)
+                    if not playlist:
+                        raise ValueError(f"No supported media files found in '{folder_source_raw}'")
+                    cfg.playlist      = playlist
+                    cfg.folder_source = folder_source
+                elif raw_files:
+                    raw_files = raw_files.replace("\n", ";")
+                    # Decode any @N/rel encoded paths to real absolute paths
+                    decoded_parts = []
+                    for tok in raw_files.split(";"):
+                        tok = tok.strip()
+                        if not tok:
+                            continue
+                        # Preserve @start and #priority suffixes
+                        import re as _re2
+                        m_pri   = _re2.search(r'#(\d+)$', tok)
+                        m_start = _re2.search(r'@(\d{1,2}:\d{2}:\d{2})$', tok.split('#')[0])
+                        pri_sfx   = f"#{m_pri.group(1)}"   if m_pri   else ""
+                        start_sfx = f"@{m_start.group(1)}" if m_start else ""
+                        path_part = _re2.sub(r'@\d{1,2}:\d{2}:\d{2}$', '', _re2.sub(r'#\d+$', '', tok)).strip()
+                        abs_p = _decode_fm_path_to_absolute(path_part)
+                        if abs_p is not None:
+                            decoded_parts.append(f"{abs_p}{start_sfx}{pri_sfx}")
+                        else:
+                            decoded_parts.append(tok)  # pass through; parse_files will reject
+                    parsed = CSVManager.parse_files(";".join(decoded_parts))
+                    if parsed:
+                        cfg.playlist      = parsed
+                        cfg.folder_source = None
+                # Persist
+                all_cfgs = [s.config for s in mgr.states]
+                CSVManager.save(all_cfgs)
+                self._json({"ok": True, "msg": f"Config updated for {name_s}"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
-  const refreshEvents = useCallback(() =>
-    fetch("/api/events").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setEvents(d); }).catch(()=>{}), []);
+        elif action == "save_config":
+            try:
+                streams_data = data.get("streams", [])
+                if not isinstance(streams_data, list):
+                    raise ValueError("streams must be a list")
+                configs: List[StreamConfig] = []
+                for row in streams_data:
+                    name_s = str(row.get("name", "")).strip()
+                    if not name_s or len(name_s) > 64:
+                        raise ValueError(f"Invalid stream name: '{name_s}'")
+                    port = int(row.get("port", 0))
+                    if not (1024 <= port <= 65535):
+                        raise ValueError(f"Port {port} out of range")
+                    raw_files = str(row.get("files", "")).replace("\n", ";")
+                    playlist  = CSVManager.parse_files(raw_files)
+                    configs.append(StreamConfig(
+                        name=name_s, port=port, playlist=playlist,
+                        weekdays=CSVManager.parse_weekdays(str(row.get("weekdays", "all"))),
+                        enabled=bool(row.get("enabled", True)),
+                        shuffle=bool(row.get("shuffle", False)),
+                        stream_path=str(row.get("stream_path", "stream")).strip() or "stream",
+                        video_bitrate=CSVManager._sanitize_bitrate(str(row.get("video_bitrate", "2500k")), "2500k"),
+                        audio_bitrate=CSVManager._sanitize_bitrate(str(row.get("audio_bitrate", "128k")), "128k"),
+                        hls_enabled=bool(row.get("hls_enabled", False)),
+                        compliance_enabled=bool(row.get("compliance_enabled", False)),
+                        compliance_start=CSVManager._sanitize_hms(str(row.get("compliance_start", "06:00:00"))),
+                        compliance_loop=bool(row.get("compliance_loop", False)),
+                    ))
+                ports = [c.port for c in configs]
+                if len(set(ports)) != len(ports):
+                    raise ValueError("Duplicate port numbers")
+                CSVManager.save(configs)
+                self._json({"ok": True, "msg": "Config saved. Restart HydraCast to apply."})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
-  // Initial load
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/streams").then(r=>r.json()).catch(()=>[]),
-      fetch("/api/events").then(r=>r.json()).catch(()=>[]),
-      fetch("/api/settings").then(r=>r.json()).catch(()=>({holiday_country:"US"})),
-    ]).then(([str, evts, sett]) => {
-      setStreams(Array.isArray(str) ? [...str].sort((a,b)=>a.name.localeCompare(b.name)) : []);
-      setEvents(Array.isArray(evts) ? evts : []);
-      setSettings(sett || {});
-      setLoading(false);
-    });
-  }, []);
+        elif action == "add_event":
+            try:
+                stream_name = str(data.get("stream_name", "")).strip()
+                file_path   = str(data.get("file_path",   "")).strip()
+                play_at     = str(data.get("play_at",     "")).strip()
+                start_pos   = str(data.get("start_pos",   "00:00:00")).strip()
+                end_pos     = str(data.get("end_pos",     "")).strip()
+                post_action = str(data.get("post_action", "resume")).strip()
+                notes       = str(data.get("notes", "")).strip()[:200]
+                if post_action not in ("resume", "stop", "black"):
+                    post_action = "resume"
+                if not re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", start_pos):
+                    start_pos = "00:00:00"
+                # end_pos is optional; validate if provided
+                if end_pos and not re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", end_pos):
+                    end_pos = ""
+                if not stream_name:
+                    raise ValueError("Stream name is required")
+                if mgr.get_state(stream_name) is None:
+                    raise ValueError(f"Stream '{stream_name}' not found")
+                dt = None
+                for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        dt = datetime.strptime(play_at, fmt); break
+                    except ValueError:
+                        continue
+                if dt is None:
+                    raise ValueError("Invalid datetime format")
+                fp = _decode_fm_path_to_absolute(file_path)
+                if fp is None:
+                    fp_bare = Path(file_path)
+                    if fp_bare.is_absolute() and fp_bare.exists():
+                        fp = fp_bare
+                    else:
+                        raise ValueError("File not found or path outside any media root")
+                ev_id = hashlib.md5(
+                    f"{stream_name}{play_at}{file_path}".encode()
+                ).hexdigest()[:8]
+                # Guard: reject exact duplicate (same stream+time+file)
+                if any(e.event_id == ev_id for e in mgr.events):
+                    raise ValueError("An identical event is already scheduled")
+                ev_kwargs = dict(
+                    event_id    = ev_id,
+                    stream_name = stream_name,
+                    file_path   = fp,
+                    play_at     = dt,
+                    post_action = post_action,
+                    start_pos   = start_pos,
+                )
+                # end_pos is stored as attribute if OneShotEvent supports it
+                ev = OneShotEvent(**ev_kwargs)
+                if end_pos:
+                    try:
+                        ev.end_pos = end_pos
+                    except AttributeError:
+                        pass
+                mgr.add_event(ev)
+                self._json({"ok": True, "msg": f"Event scheduled for {dt.strftime('%Y-%m-%d %H:%M')}"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
-  // Holidays
-  useEffect(() => {
-    if (loading) return;
-    const country = settings.holiday_country || "US";
-    const subdiv  = settings.holiday_subdiv  || "";
-    const key = `${year}:${country}:${subdiv}`;
-    if (key === holKey) return;
-    const qs = new URLSearchParams({ year, country });
-    if (subdiv) qs.set("subdiv", subdiv);
-    fetch(`/api/holidays?${qs}`)
-      .then(r=>r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          const map = {};
-          data.forEach(h => { map[h.date] = { name: h.name, source: h.source || "library" }; });
-          setHolidays(map);
-          setHolKey(key);
-        }
-      }).catch(()=>{});
-  }, [year, settings, loading, holKey]);
+        elif action == "delete_event":
+            ev_id = str(data.get("event_id", "")).strip()
+            if not ev_id:
+                self._json({"ok": False, "msg": "Missing event_id"})
+                return
+            removed = mgr.remove_event(ev_id)
+            self._json({"ok": removed, "msg": "Event deleted" if removed else "Event not found"})
 
-  // Lazy-load library
-  useEffect(() => {
-    if ((modal === "create" || modal === "edit") && !libLoaded.current) {
-      setLibLoading(true);
-      fetch("/api/library")
-        .then(r=>r.json())
-        .then(data=>{ setLibrary(Array.isArray(data)?data:[]); libLoaded.current=true; })
-        .catch(()=>{})
-        .finally(()=>setLibLoading(false));
-    }
-  }, [modal]);
+        elif action == "update_event":
+            try:
+                ev_id = str(data.get("event_id", "")).strip()
+                if not ev_id:
+                    raise ValueError("Missing event_id")
+                ev = next((e for e in mgr.events if e.event_id == ev_id), None)
+                if ev is None:
+                    raise ValueError(f"Event '{ev_id}' not found")
+                if ev.played:
+                    raise ValueError("Cannot edit an already-played event")
+                if "stream_name" in data:
+                    sn = str(data["stream_name"]).strip()
+                    if mgr.get_state(sn) is None:
+                        raise ValueError(f"Stream '{sn}' not found")
+                    ev.stream_name = sn
+                if "file_path" in data:
+                    fp = _decode_fm_path_to_absolute(str(data["file_path"]).strip())
+                    if fp is None:
+                        fp_bare = Path(str(data["file_path"]).strip())
+                        if fp_bare.is_absolute() and fp_bare.exists():
+                            fp = fp_bare
+                        else:
+                            raise ValueError("File not found or path outside any media root")
+                    ev.file_path = fp
+                if "play_at" in data:
+                    play_at_s = str(data["play_at"]).strip()
+                    dt = None
+                    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                        try:
+                            dt = datetime.strptime(play_at_s, fmt); break
+                        except ValueError:
+                            continue
+                    if dt is None:
+                        raise ValueError("Invalid datetime format")
+                    if dt <= datetime.now():
+                        raise ValueError("Cannot reschedule an event to the past")
+                    ev.play_at = dt
+                if "post_action" in data:
+                    ev.post_action = str(data["post_action"]).strip()
+                if "start_pos" in data:
+                    sp = str(data["start_pos"]).strip()
+                    ev.start_pos = sp if re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", sp) else "00:00:00"
+                if "loop_count" in data:
+                    ev.loop_count = int(data["loop_count"])
+                JSONManager._save_events(mgr.events)
+                self._json({"ok": True, "msg": "Event updated"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
-  // Poll events every 15s
-  useEffect(() => {
-    const t = setInterval(refreshEvents, 15_000);
-    return () => clearInterval(t);
-  }, [refreshEvents]);
+        elif action == "schedule_event":
+            try:
+                stream_name = str(data.get("stream_name", "")).strip()
+                file_path   = str(data.get("file_path",   "")).strip()
+                play_at     = str(data.get("play_at",     "")).strip()
+                post_action = str(data.get("post_action", "resume")).strip()
+                start_pos   = str(data.get("start_pos",   "00:00:00")).strip()
+                loop_count  = int(data.get("loop_count",  0))
+                if not re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", start_pos):
+                    start_pos = "00:00:00"
+                if not stream_name:
+                    raise ValueError("Stream name is required")
+                if mgr.get_state(stream_name) is None:
+                    raise ValueError(f"Stream '{stream_name}' not found")
+                dt = None
+                for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        dt = datetime.strptime(play_at, fmt); break
+                    except ValueError:
+                        continue
+                if dt is None:
+                    raise ValueError("Invalid datetime format")
+                if dt <= datetime.now():
+                    raise ValueError("Cannot schedule an event in the past")
+                fp = _decode_fm_path_to_absolute(file_path)
+                if fp is None:
+                    fp_bare = Path(file_path)
+                    if fp_bare.is_absolute() and fp_bare.exists():
+                        fp = fp_bare
+                    else:
+                        raise ValueError("File not found or path outside any media root")
+                ev_id = hashlib.md5(
+                    f"{stream_name}{play_at}{file_path}".encode()
+                ).hexdigest()[:8]
+                if any(e.event_id == ev_id for e in mgr.events):
+                    raise ValueError("An identical event is already scheduled")
+                ev = OneShotEvent(
+                    event_id    = ev_id,
+                    stream_name = stream_name,
+                    file_path   = fp,
+                    play_at     = dt,
+                    post_action = post_action,
+                    start_pos   = start_pos,
+                    loop_count  = loop_count,
+                )
+                mgr.add_event(ev)
+                self._json({"ok": True, "msg": f"Event scheduled for {dt.strftime('%Y-%m-%d %H:%M')}"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
-  // Calendar grid
-  const firstDay    = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-  const cells = [];
-  for (let i=0; i<firstDay; i++) cells.push(null);
-  for (let d=1; d<=daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
+        elif action == "create_stream":
+            try:
+                name_s = str(data.get("name", "")).strip()
+                if not name_s or len(name_s) > 64:
+                    raise ValueError(f"Invalid stream name: '{name_s}'")
+                if not re.fullmatch(r"[\w\-. ]+", name_s):
+                    raise ValueError(
+                        "Stream name may only contain letters, numbers, "
+                        "spaces, hyphens, dots and underscores."
+                    )
+                port = int(data.get("port", 0))
+                if not (1024 <= port <= 65534):
+                    raise ValueError(f"Port {port} out of range (1024–65534).")
+                if port % 2 == 0:
+                    raise ValueError(
+                        f"Port {port} is even. HydraCast requires an ODD RTSP port "
+                        f"(HLS will use the adjacent even port {port + 1}). "
+                        f"Try port {port + 1} or use the Check Port button."
+                    )
 
-  const eventsByDate = {};
-  events.forEach(ev => {
-    const d = getEventDate(ev);
-    if (d) (eventsByDate[d] = eventsByDate[d] || []).push(ev);
-  });
-  // Sort each day's events ascending by time
-  Object.keys(eventsByDate).forEach(d => {
-    eventsByDate[d].sort((a,b) => getEventTime(a).localeCompare(getEventTime(b)));
-  });
+                # Stream path — empty string means root mount (IP:Port/)
+                stream_path = str(data.get("stream_path", "")).strip()
 
-  // Handlers
-  const prevMonth = () => month===0 ? (setMonth(11),setYear(y=>y-1)) : setMonth(m=>m-1);
-  const nextMonth = () => month===11 ? (setMonth(0),setYear(y=>y+1)) : setMonth(m=>m+1);
-  const goToday   = () => { setMonth(TODAY.getMonth()); setYear(TODAY.getFullYear()); };
+                # Playlist source: folder_source overrides file list
+                folder_source_raw = str(data.get("folder_source") or "").strip()
+                folder_source = None
+                playlist: "List[PlaylistItem]" = []
+                if folder_source_raw:
+                    from hc.folder_scanner import scan_folder, SortMode
+                    folder_source = _decode_fm_path_to_absolute(folder_source_raw)
+                    if folder_source is None or not folder_source.is_dir():
+                        raise ValueError(f"Folder not found or access denied: '{folder_source_raw}'")
+                    playlist, warnings = scan_folder(folder_source, SortMode.ALPHA_FWD)
+                    for w in warnings:
+                        log.warning("create_stream folder scan: %s", w)
+                    if not playlist:
+                        raise ValueError(f"No supported media files found in '{folder_source_raw}'")
+                else:
+                    raw_files = str(data.get("files", "")).strip().replace("\n", ";")
+                    # Decode any @N/rel encoded paths to real absolute paths
+                    import re as _re3
+                    decoded_parts2 = []
+                    for tok in raw_files.split(";"):
+                        tok = tok.strip()
+                        if not tok:
+                            continue
+                        m_pri2   = _re3.search(r'#(\d+)$', tok)
+                        m_start2 = _re3.search(r'@(\d{1,2}:\d{2}:\d{2})$', tok.split('#')[0])
+                        pri_sfx2   = f"#{m_pri2.group(1)}"   if m_pri2   else ""
+                        start_sfx2 = f"@{m_start2.group(1)}" if m_start2 else ""
+                        path_part2 = _re3.sub(r'@\d{1,2}:\d{2}:\d{2}$', '', _re3.sub(r'#\d+$', '', tok)).strip()
+                        abs_p2 = _decode_fm_path_to_absolute(path_part2)
+                        if abs_p2 is not None:
+                            decoded_parts2.append(f"{abs_p2}{start_sfx2}{pri_sfx2}")
+                        else:
+                            decoded_parts2.append(tok)
+                    playlist = CSVManager.parse_files(";".join(decoded_parts2))
+                    if not playlist:
+                        raise ValueError("At least one valid file path is required.")
 
-  const openCreateSingle = (day, ds) => {
-    if (isPastDate(ds, todayStr) && ds !== todayStr) return;
-    setSelDates(new Set([ds]));
-    setModal("create");
-  };
+                # Compliance
+                comp_start = CSVManager._sanitize_hms(
+                    str(data.get("compliance_start", "06:00:00")))
 
-  const toggleDateSelect = (ds) => {
-    if (isPastDate(ds, todayStr) && ds !== todayStr) return;
-    setSelDates(prev => {
-      const n = new Set(prev);
-      n.has(ds) ? n.delete(ds) : n.add(ds);
-      return n;
-    });
-  };
+                cfg = StreamConfig(
+                    name=name_s,
+                    port=port,
+                    playlist=playlist,
+                    weekdays=CSVManager.parse_weekdays(str(data.get("weekdays", "all"))),
+                    enabled=bool(data.get("enabled", True)),
+                    shuffle=bool(data.get("shuffle", False)),
+                    stream_path=stream_path,
+                    video_bitrate=CSVManager._sanitize_bitrate(
+                        str(data.get("video_bitrate", "2500k")), "2500k"),
+                    audio_bitrate=CSVManager._sanitize_bitrate(
+                        str(data.get("audio_bitrate", "128k")), "128k"),
+                    hls_enabled=bool(data.get("hls_enabled", False)),
+                    folder_source=folder_source,
+                    compliance_enabled=bool(data.get("compliance_enabled", False)),
+                    compliance_start=comp_start,
+                    compliance_loop=bool(data.get("compliance_loop", False)),
+                )
+                mgr.add_stream(cfg)
+                path_label = f"/{stream_path}" if stream_path else "/"
+                self._json({
+                    "ok":  True,
+                    "msg": f"Stream '{name_s}' created on port {port} (path: {path_label}). "
+                           "You can start it now from the Configure tab.",
+                })
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
-  const openMultiCreate = () => {
-    if (selDates.size === 0) { showToast("Select at least one date first.", "error"); return; }
-    setModal("create");
-  };
+        elif action == "delete_stream":
+            try:
+                name_s = str(data.get("name", "")).strip()
+                if not name_s:
+                    raise ValueError("Missing stream name.")
+                mgr.remove_stream(name_s)
+                self._json({"ok": True, "msg": f"Stream '{name_s}' deleted."})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
-  const openEdit = (ev) => {
-    if (ev.played) return;
-    setEditEv(ev);
-    setModal("edit");
-  };
+        elif action == "delete_played_events":
+            ids = data.get("event_ids", [])
+            if not isinstance(ids, list):
+                self._json({"ok": False, "msg": "event_ids must be a list"})
+                return
+            id_set = set(str(i).strip() for i in ids)
+            count = mgr.remove_events(id_set)
+            self._json({"ok": True, "msg": f"Removed {count} event(s)"})
 
-  const handleCreated = async (count) => {
-    await refreshEvents();
-    setSelDates(new Set());
-    setMultiMode(false);
-    showToast(`${count} event${count!==1?"s":""} scheduled`);
-  };
+        elif action == "clear_played_events":
+            # Remove ALL events that have already been played
+            played_ids = {ev.event_id for ev in mgr.events if ev.played}
+            if not played_ids:
+                self._json({"ok": True, "msg": "No played events to clear"})
+                return
+            count = mgr.remove_events(played_ids)
+            self._json({"ok": True, "msg": f"Cleared {count} played event(s)"})
 
-  const handleDelete = async (evId) => {
-    try {
-      const res = await fetch("/api/action", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ action:"delete_event", event_id: evId }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        await refreshEvents();
-        showToast("Event deleted");
-      } else {
-        showToast(data.msg || "Delete failed", "error");
-      }
-    } catch(e) {
-      showToast("Delete failed", "error");
-    }
-  };
+        elif action == "fire_event_now":
+            ev_id = str(data.get("event_id", "")).strip()
+            if not ev_id:
+                self._json({"ok": False, "msg": "Missing event_id"})
+                return
+            ok = mgr.fire_event_now(ev_id)
+            self._json({"ok": ok, "msg": "Event fired" if ok else "Event not found or stream not running"})
 
-  if (loading) return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"300px",
-      fontSize:"14px",color:"var(--color-text-secondary)"}}>
-      <i className="ti ti-loader-2" style={{fontSize:"20px",marginRight:"8px"}}/>
-      Loading calendar…
-    </div>
-  );
+        elif action == "cancel_event":
+            name = str(data.get("name", "")).strip()
+            st = mgr.get_state(name)
+            if not st:
+                self._json({"ok": False, "msg": f"Stream '{name}' not found"})
+                return
+            if not st.oneshot_active:
+                self._json({"ok": False, "msg": "No event is currently running on this stream"})
+                return
+            w = mgr.get_worker(name)
+            if not w:
+                self._json({"ok": False, "msg": "Worker not found"})
+                return
+            threading.Thread(
+                target=w.cancel_oneshot, daemon=True,
+                name=f"cancel-event-{st.config.port}",
+            ).start()
+            self._json({"ok": True, "msg": f"Event cancelled — resuming on '{name}'"})
 
-  return (
-    <div style={{position:"relative",display:"flex",flexDirection:"column",height:"100%",minHeight:"680px"}}>
-      {/* Toast — bottom center */}
-      {toast && (
-        <div style={{
-          position:"fixed",bottom:"28px",left:"50%",transform:"translateX(-50%)",
-          zIndex:2000,
-          padding:"10px 22px",borderRadius:"999px",
-          background: toast.type==="error" ? "var(--color-background-danger)" : "var(--color-background-success)",
-          color:      toast.type==="error" ? "var(--color-text-danger)"      : "var(--color-text-success)",
-          border:`1px solid ${toast.type==="error" ? "var(--color-border-danger)" : "var(--color-border-success)"}`,
-          fontSize:"13px",fontWeight:"600",
-          boxShadow:"0 4px 24px rgba(0,0,0,0.28)",
-          whiteSpace:"nowrap",
-          animation:"toastIn 0.22s cubic-bezier(0.34,1.56,0.64,1)",
-        }}>{toast.msg}</div>
-      )}
+        elif action == "delete_file":
+            raw_path = str(data.get("path", "")).strip()
+            if not raw_path:
+                self._json({"ok": False, "msg": "Missing path"})
+                return
+            p    = Path(raw_path)
+            safe = _safe_in_any_root(p)
+            if safe is None or not safe.is_file():
+                self._json({"ok": False, "msg": "File not in any media root or not found"})
+                return
+            try:
+                safe.unlink()
+                _invalidate_lib_cache()
+                self._json({"ok": True, "msg": f"Deleted {safe.name}"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
 
-      {/* Modal overlay */}
-      {modal && (
-        <div role="dialog" aria-modal="true"
-          onClick={e=>{ if(e.target===e.currentTarget) setModal(null); }}
-          style={{
-            position:"fixed",inset:0,zIndex:1000,
-            background:"rgba(0,0,0,0.48)",
-            backdropFilter:"blur(6px)",
-            WebkitBackdropFilter:"blur(6px)",
-            display:"flex",alignItems:"flex-start",justifyContent:"center",
-            paddingTop:"60px",overflowY:"auto",
-          }}>
-          {modal==="create" && (
-            <CreateModal
-              dates={selDates}
-              holidays={holidays}
-              streams={streams}
-              library={library}
-              libraryLoading={libLoading}
-              todayStr={todayStr}
-              onClose={()=>{ setModal(null); }}
-              onCreate={handleCreated}
-            />
-          )}
-          {modal==="edit" && editEv && (
-            <EditModal
-              ev={editEv}
-              streams={streams}
-              library={library}
-              libraryLoading={libLoading}
-              todayStr={todayStr}
-              onClose={()=>{ setModal(null); setEditEv(null); }}
-              onSave={refreshEvents}
-              onDelete={async id=>{ await handleDelete(id); await refreshEvents(); }}
-            />
-          )}
-        </div>
-      )}
+        elif action == "create_subdir":
+            # Accept either:
+            #   {name: "@N/rel/path/newfolder"}  — fully encoded path
+            #   {parent: "@N/rel/path", name: "newfolder"}  — parent + leaf name
+            raw_name   = str(data.get("name",   "")).strip()
+            raw_parent = str(data.get("parent", "")).strip()
 
-      {/* Calendar header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-        padding:"12px 16px",borderBottom:"0.5px solid var(--color-border-tertiary)",flexWrap:"wrap",gap:"8px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-          <button onClick={prevMonth} aria-label="Previous month"
-            style={{width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <i className="ti ti-chevron-left" style={{fontSize:"15px"}}/>
-          </button>
-          <span style={{fontSize:"18px",fontWeight:"600",minWidth:"200px",textAlign:"center",letterSpacing:"-0.02em"}}>
-            {MONTHS[month]} {year}
-          </span>
-          <button onClick={nextMonth} aria-label="Next month"
-            style={{width:"28px",height:"28px",display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <i className="ti ti-chevron-right" style={{fontSize:"15px"}}/>
-          </button>
-          <button onClick={goToday} style={{fontSize:"11px",padding:"4px 9px",marginLeft:"4px"}}>Today</button>
-        </div>
+            if not raw_name or ".." in raw_name:
+                self._json({"ok": False, "msg": "Invalid folder name"})
+                return
 
-        <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
-          <Legend/>
+            from hc.web_filemanager import _resolve_fm_path, _decode_root, _encode_path
 
-          {/* Multi-date mode toggle */}
-          <button
-            onClick={()=>{ setMultiMode(m=>!m); setSelDates(new Set()); }}
-            style={{
-              fontSize:"11px",padding:"4px 10px",
-              display:"flex",alignItems:"center",gap:"5px",
-              background: multiMode ? "var(--color-background-info)" : "transparent",
-              color:      multiMode ? "var(--color-text-info)"       : "var(--color-text-secondary)",
-              border:`0.5px solid ${multiMode ? "var(--color-border-info)" : "var(--color-border-tertiary)"}`,
-            }}>
-            <i className="ti ti-calendar-plus" style={{fontSize:"13px"}}/>
-            {multiMode ? `${selDates.size} date${selDates.size!==1?"s":""} selected` : "Multi-date"}
-          </button>
+            if raw_parent:
+                # Resolve parent first, then append the leaf folder name
+                leaf = re.sub(r'[/\\<>"|?*\x00]', "_", raw_name.lstrip("/\\"))
+                if not leaf:
+                    self._json({"ok": False, "msg": "Invalid folder name"})
+                    return
 
-          {/* Schedule button (multi mode) */}
-          {multiMode && selDates.size > 0 && (
-            <button onClick={openMultiCreate}
-              style={{fontSize:"11px",padding:"4px 10px",
-                background:"var(--color-text-info)",color:"#fff",border:"none",
-                display:"flex",alignItems:"center",gap:"5px"}}>
-              <i className="ti ti-calendar-event" style={{fontSize:"13px"}}/>
-              Schedule {selDates.size} date{selDates.size!==1?"s":""}
-            </button>
-          )}
-        </div>
-      </div>
+                if raw_parent == "" or raw_parent == "/":
+                    # Root of default media dir
+                    dest_dir = _safe_in_root(MEDIA_DIR() / leaf, MEDIA_DIR())
+                else:
+                    resolved = _resolve_fm_path(raw_parent)
+                    if resolved is None:
+                        self._json({"ok": False, "msg": "Parent path not found or access denied"})
+                        return
+                    root_dir, parent_abs = resolved
+                    if not parent_abs.is_dir():
+                        self._json({"ok": False, "msg": "Parent is not a directory"})
+                        return
+                    candidate = parent_abs / leaf
+                    dest_dir = _safe_in_root(candidate, root_dir)
 
-      {/* Grid + sidebar */}
-      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-        <div style={{flex:"1 1 0",minWidth:0,overflow:"auto"}}>
-          {/* Weekday headers */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",
-            borderBottom:"0.5px solid var(--color-border-tertiary)",
-            position:"sticky",top:0,background:"var(--color-background-primary)",zIndex:2}}>
-            {DAYS_SHORT.map(d => (
-              <div key={d} style={{padding:"10px 0",textAlign:"center",fontSize:"13px",fontWeight:"600",
-                color:"var(--color-text-secondary)",borderRight:"0.5px solid var(--color-border-tertiary)",
-                letterSpacing:"0.03em"}}>
-                {d}
-              </div>
-            ))}
-          </div>
-          {/* Day cells */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))"}}>
-            {cells.map((day,idx) => (
-              <DayCell
-                key={idx}
-                day={day}
-                year={year}
-                month={month}
-                todayStr={todayStr}
-                holidays={holidays}
-                eventsByDate={eventsByDate}
-                onOpen={openCreateSingle}
-                selectedDates={selDates}
-                onToggleSelect={toggleDateSelect}
-                multiSelect={multiMode}
-              />
-            ))}
-          </div>
-        </div>
+                if dest_dir is None:
+                    self._json({"ok": False, "msg": "Path traversal denied"})
+                    return
 
-        <Sidebar
-          month={month}
-          year={year}
-          events={events}
-          holidays={holidays}
-          onEdit={openEdit}
-          onDelete={handleDelete}
-          hidePlayed={hidePlayed}
-          onToggleHidePlayed={()=>setHidePlayed(h=>!h)}
-        />
-      </div>
-    </div>
-  );
-}
+            elif raw_name.startswith("@"):
+                # Fully encoded @N/rel/newfolder
+                # Split off the last segment as the new leaf name
+                parts = raw_name.rsplit("/", 1)
+                if len(parts) == 2:
+                    parent_enc, leaf = parts[0], parts[1]
+                else:
+                    # e.g. "@0" with no slash — create a dir directly inside root 0
+                    parent_enc, leaf = raw_name, ""
 
-// Mount once DOM is ready
-(function mountCalendar(){
-  const root = document.getElementById('events-calendar-root');
-  if (!root || !window.ReactDOM) return;
+                leaf = re.sub(r'[/\\<>"|?*\x00]', "_", leaf)
 
-  class ErrorBoundary extends React.Component {
-    constructor(p) { super(p); this.state = { err: null }; }
-    static getDerivedStateFromError(e) { return { err: e }; }
-    render() {
-      if (this.state.err) return React.createElement('div', {
-        style: {
-          padding:'40px', textAlign:'center',
-          color:'var(--red)', fontSize:'13px', lineHeight:'1.6'
-        }
-      }, '\u26a0 Events calendar failed to load: ' + this.state.err.message);
-      return this.props.children;
-    }
-  }
+                if parent_enc:
+                    decoded = _decode_root(parent_enc)
+                    if decoded is None:
+                        self._json({"ok": False, "msg": "Invalid encoded path"})
+                        return
+                    _, root_dir, rel_within = decoded
+                    try:
+                        root_dir = root_dir.resolve()
+                    except Exception:
+                        pass
+                    parent_abs = root_dir / rel_within if rel_within else root_dir
+                    if not leaf:
+                        self._json({"ok": False, "msg": "Folder name is required"})
+                        return
+                    candidate = parent_abs / leaf
+                    dest_dir  = _safe_in_root(candidate, root_dir)
+                else:
+                    dest_dir = None
 
-  ReactDOM.createRoot(root).render(
-    React.createElement(ErrorBoundary, null,
-      React.createElement(EventsCalendar))
-  );
-})();
-</script>
-</body>
-</html>
+                if dest_dir is None:
+                    self._json({"ok": False, "msg": "Path traversal denied"})
+                    return
 
-"""
+            else:
+                # Plain name — create inside MEDIA_DIR
+                safe_name = re.sub(r'[/\\<>"|?*\x00]', "_", raw_name)
+                dest_dir  = _safe_in_root(MEDIA_DIR() / safe_name, MEDIA_DIR())
+                if dest_dir is None:
+                    self._json({"ok": False, "msg": "Path traversal denied"})
+                    return
+
+            try:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                self._json({"ok": True, "msg": f"Created: {dest_dir.name}"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "save_mail_config":
+            try:
+                from hc.constants import BASE_DIR
+                import json as _json
+                mode      = str(data.get("mode", "smtp")).strip()
+                to_addrs  = data.get("to_addrs", [])
+                if not isinstance(to_addrs, list) or not to_addrs:
+                    raise ValueError("to_addrs must be a non-empty list")
+                smtp_port = int(data.get("smtp_port", 587))
+                if not (1 <= smtp_port <= 65535):
+                    raise ValueError(f"Invalid SMTP port: {smtp_port}")
+                path = BASE_DIR() / "mail_config.hcf"
+                # Preserve the stored password if the client sent the redaction placeholder
+                password = str(data.get("password", ""))
+                if password in ("••••••••", ""):
+                    try:
+                        existing = _json.loads(path.read_text(encoding="utf-8"))
+                        password = existing.get("password", "")
+                    except Exception:
+                        password = ""
+                cfg = {
+                    "enabled":       bool(data.get("enabled", False)),
+                    "mode":          mode,
+                    "to_addrs":      [str(a).strip() for a in to_addrs if str(a).strip()],
+                    "on_error":      bool(data.get("on_error", True)),
+                    "on_stop":       bool(data.get("on_stop", True)),
+                    "cooldown_secs": max(0, int(data.get("cooldown_secs", 300))),
+                    # SMTP fields (kept even in OAuth2 mode so switching back works)
+                    "smtp_host":     str(data.get("smtp_host", "")).strip(),
+                    "smtp_port":     smtp_port,
+                    "use_tls":       bool(data.get("use_tls", True)),
+                    "username":      str(data.get("username", "")).strip(),
+                    "password":      password,
+                    "from_addr":     str(data.get("from_addr", "")).strip(),
+                    # Microsoft OAuth2 fields
+                    "ms_client_id":  str(data.get("ms_client_id", "")).strip(),
+                    "ms_username":   str(data.get("ms_username", "")).strip(),
+                }
+                path.write_text(_json.dumps(cfg, indent=4, ensure_ascii=False), encoding="utf-8")
+                log.info("mail_config.hcf updated via Web UI (mode=%s enabled=%s)", mode, cfg["enabled"])
+                self._json({"ok": True, "msg": "mail_config.hcf saved"})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "test_mail_alert":
+            try:
+                to_addr = str(data.get("to_addr", "")).strip() or None
+                from hc.mailer import test_alert
+                ok, err = test_alert(to_addr)
+                if ok:
+                    self._json({"ok": True,  "msg": "Test email sent — check your inbox."})
+                else:
+                    self._json({"ok": False, "msg": err or "Test failed — check server logs."})
+            except Exception as exc:
+                self._json({"ok": False, "msg": f"Test error: {exc}"})
+
+        elif action == "gmail_oauth2_start":
+            try:
+                from hc.mailer import start_gmail_oauth2_flow
+                ok, msg = start_gmail_oauth2_flow()
+                self._json({"ok": ok, "msg": msg})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "gmail_oauth2_revoke":
+            try:
+                from hc.mailer import revoke_gmail_token
+                ok, msg = revoke_gmail_token()
+                self._json({"ok": ok, "msg": msg})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "microsoft_oauth2_start":
+            try:
+                client_id = str(data.get("ms_client_id", "")).strip()
+                if not client_id:
+                    # Fall back to value already saved in mail_config.hcf
+                    from hc.constants import BASE_DIR
+                    import json as _json
+                    try:
+                        saved = _json.loads((BASE_DIR() / "mail_config.hcf").read_text("utf-8"))
+                        client_id = saved.get("ms_client_id", "").strip()
+                    except Exception:
+                        pass
+                if not client_id:
+                    self._json({"ok": False, "msg": "Enter Application (Client) ID and save config first."})
+                    return
+                from hc.mailer import start_microsoft_oauth2_flow
+                ok, instructions = start_microsoft_oauth2_flow(client_id)
+                if ok:
+                    from hc.mailer import _ms_flow_state  # type: ignore[attr-defined]
+                    self._json({
+                        "ok":              True,
+                        "msg":             instructions,
+                        "user_code":       _ms_flow_state.get("user_code", ""),
+                        "verification_uri": _ms_flow_state.get("verification_uri", "https://microsoft.com/devicelogin"),
+                    })
+                else:
+                    self._json({"ok": False, "msg": instructions})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "microsoft_oauth2_revoke":
+            try:
+                from hc.constants import BASE_DIR
+                import json as _json
+                cfg: dict = {}
+                try:
+                    cfg = _json.loads((BASE_DIR() / "mail_config.hcf").read_text("utf-8"))
+                except Exception:
+                    pass
+                from hc.mailer import revoke_microsoft_token
+                ok, msg = revoke_microsoft_token(cfg)
+                self._json({"ok": ok, "msg": msg})
+            except Exception as exc:
+                self._json({"ok": False, "msg": str(exc)})
+
+        elif action == "backup":
+            self._handle_backup(data)
+
+        elif action == "restore":
+            self._handle_restore(data)
+
+        elif action == "save_media_roots":
+            self._handle_save_media_roots(data)
+
+        elif action == "holidays/custom":
+            # POST /api/holidays/custom — add a user-defined holiday
+            self._post_holidays_custom(raw)
+
+        elif action == "settings":
+            # POST /api/settings — persist holiday country / subdiv preference
+            from hc.web_settings_manager import save_settings
+            try:
+                if not isinstance(data, dict):
+                    self._json({"error": "Request body must be a JSON object."}, 400)
+                    return
+                result = save_settings(data)
+                self._json(result)
+            except Exception as exc:
+                log.error("POST /api/settings: %s", exc)
+                self._json({"error": str(exc)}, 500)
+
+        elif action == "events/bulk":
+            # POST /api/events/bulk — create one OneShotEvent per stream entry
+            mgr = _WEB_MANAGER
+            if mgr is None:
+                self._json({"error": "Manager not ready — try again shortly."}, 503)
+                return
+            try:
+                play_at_str: str = data["play_at"]
+                streams_raw = data["streams"]
+                if not isinstance(streams_raw, list) or not streams_raw:
+                    raise ValueError("'streams' must be a non-empty list.")
+                play_at = datetime.fromisoformat(play_at_str)
+            except (KeyError, ValueError) as exc:
+                self._json({"error": f"Bad payload: {exc}"}, 400)
+                return
+
+            # Optional broadcast end time
+            broadcast_end = None
+            be_str = data.get("broadcast_end", "")
+            if be_str:
+                try:
+                    broadcast_end = datetime.fromisoformat(be_str)
+                    if broadcast_end <= play_at:
+                        log.warning("events/bulk: broadcast_end not after play_at — ignored")
+                        broadcast_end = None
+                except ValueError:
+                    log.warning("events/bulk: invalid broadcast_end %r — ignored", be_str)
+
+            bulk_comment: str = str(data.get("comment", "")).strip()[:500]
+
+            created = []
+            errors  = []
+            for item in streams_raw:
+                stream_name = item.get("stream_name", "").strip()
+                file_path_s = item.get("file_path",   "").strip()
+                if not stream_name or not file_path_s:
+                    errors.append({"stream_name": stream_name or "?",
+                                   "error": "stream_name and file_path are required."})
+                    continue
+                if mgr.get_state(stream_name) is None:
+                    errors.append({"stream_name": stream_name,
+                                   "error": f"Stream '{stream_name}' not found."})
+                    log.warning("events/bulk: unknown stream: %s", stream_name)
+                    continue
+                try:
+                    ev = JSONManager.add_event(
+                        mgr.events,
+                        stream_name   = stream_name,
+                        file_path     = Path(file_path_s),
+                        play_at       = play_at,
+                        broadcast_end = broadcast_end,
+                    )
+                    if bulk_comment:
+                        try:
+                            ev.comment = bulk_comment
+                            JSONManager._save_events(mgr.events)
+                        except AttributeError:
+                            pass
+                    ev_dict = {
+                        "event_id":    ev.event_id,
+                        "stream_name": ev.stream_name,
+                        "file_path":   str(ev.file_path),
+                        "play_at":     ev.play_at.isoformat(),
+                    }
+                    if broadcast_end is not None:
+                        ev_dict["broadcast_end"] = broadcast_end.isoformat()
+                    created.append(ev_dict)
+                    log.info("events/bulk: created event stream=%s file=%s at=%s",
+                             stream_name, file_path_s, play_at.isoformat())
+                except Exception as exc:
+                    errors.append({"stream_name": stream_name, "error": str(exc)})
+                    log.error("events/bulk: failed stream=%s: %s", stream_name, exc)
+
+            status = 400 if not created else (207 if errors else 200)
+            self._json({"created": created, "errors": errors}, status)
+
+        elif action == "open_firewall":
+            # POST /api/open_firewall  {"ports": [8555, 8556, 8558, 8559]}
+            # Attempt to open the given TCP ports in the system firewall.
+            # Returns {ok, msg, opened, failed, platform, elevated}
+            import sys as _sys
+            raw_ports = data.get("ports", [])
+            try:
+                ports_to_open = [int(p) for p in raw_ports if 0 < int(p) < 65536]
+            except (TypeError, ValueError):
+                self._json({"ok": False, "msg": "Invalid ports list"}); return
+            if not ports_to_open:
+                self._json({"ok": False, "msg": "No valid ports provided"}); return
+
+            platform = _sys.platform
+            opened: list = []
+            failed: list = []
+            elevated = False
+            msg = ""
+
+            try:
+                if platform.startswith("win"):
+                    import ctypes
+                    elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
+                    if not elevated:
+                        self._json({
+                            "ok": False,
+                            "msg": "Administrator privileges required to modify Windows Firewall.",
+                            "platform": "windows",
+                            "elevated": False,
+                            "hint": "Re-launch HydraCast as Administrator to auto-open ports.",
+                        }); return
+                    import subprocess as _sp
+                    for p in ports_to_open:
+                        rule = f"HydraCast Port {p}"
+                        # Check if already exists
+                        chk = _sp.run(
+                            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule}"],
+                            capture_output=True, text=True,
+                        )
+                        if "No rules match" not in chk.stdout and chk.returncode == 0:
+                            opened.append(p)  # already open
+                            continue
+                        r = _sp.run(
+                            ["netsh", "advfirewall", "firewall", "add", "rule",
+                             f"name={rule}", "dir=in", "action=allow",
+                             "protocol=TCP", f"localport={p}"],
+                            capture_output=True, text=True,
+                        )
+                        if r.returncode == 0:
+                            opened.append(p)
+                        else:
+                            failed.append({"port": p, "error": r.stderr.strip() or "netsh error"})
+                    msg = (
+                        f"Opened {len(opened)} port(s) via Windows Firewall (netsh)."
+                        if opened else "No ports were opened."
+                    )
+
+                elif platform.startswith("linux"):
+                    import os as _os, subprocess as _sp
+                    elevated = (_os.geteuid() == 0)
+                    if not elevated:
+                        self._json({
+                            "ok": False,
+                            "msg": "Root privileges required to modify Linux firewall.",
+                            "platform": "linux",
+                            "elevated": False,
+                            "hint": "Run HydraCast as root, or manually open ports with:\n"
+                                    + "\n".join(f"  sudo ufw allow {p}/tcp" for p in ports_to_open),
+                        }); return
+                    import shutil as _sh
+                    if _sh.which("ufw"):
+                        for p in ports_to_open:
+                            r = _sp.run(["ufw", "allow", f"{p}/tcp"], capture_output=True, text=True)
+                            (opened if r.returncode == 0 else failed).append(
+                                p if r.returncode == 0 else {"port": p, "error": r.stderr.strip()}
+                            )
+                        _sp.run(["ufw", "--force", "enable"], capture_output=True)
+                        msg = f"Opened {len(opened)} port(s) via ufw."
+                    elif _sh.which("firewall-cmd"):
+                        for p in ports_to_open:
+                            r = _sp.run(
+                                ["firewall-cmd", "--permanent", "--add-port", f"{p}/tcp"],
+                                capture_output=True, text=True,
+                            )
+                            (opened if r.returncode == 0 else failed).append(
+                                p if r.returncode == 0 else {"port": p, "error": r.stderr.strip()}
+                            )
+                        _sp.run(["firewall-cmd", "--reload"], capture_output=True)
+                        msg = f"Opened {len(opened)} port(s) via firewalld."
+                    elif _sh.which("iptables"):
+                        for p in ports_to_open:
+                            chk = _sp.run(
+                                ["iptables", "-C", "INPUT", "-p", "tcp", "--dport", str(p), "-j", "ACCEPT"],
+                                capture_output=True,
+                            )
+                            if chk.returncode == 0:
+                                opened.append(p); continue
+                            r = _sp.run(
+                                ["iptables", "-I", "INPUT", "-p", "tcp", "--dport", str(p), "-j", "ACCEPT"],
+                                capture_output=True, text=True,
+                            )
+                            (opened if r.returncode == 0 else failed).append(
+                                p if r.returncode == 0 else {"port": p, "error": r.stderr.strip()}
+                            )
+                        msg = f"Opened {len(opened)} port(s) via iptables."
+                    else:
+                        self._json({
+                            "ok": False,
+                            "msg": "No supported firewall tool found (ufw / firewall-cmd / iptables).",
+                            "platform": "linux",
+                            "elevated": elevated,
+                        }); return
+
+                else:
+                    self._json({
+                        "ok": False,
+                        "msg": "Automatic firewall configuration is not supported on this OS. "
+                               "Please open the required ports manually.",
+                        "platform": platform,
+                        "elevated": False,
+                    }); return
+
+            except Exception as exc:
+                log.error("open_firewall error: %s", exc)
+                self._json({"ok": False, "msg": f"Firewall error: {exc}"}); return
+
+            ok = len(opened) > 0 and len(failed) == 0
+            log.info("open_firewall: opened=%s failed=%s", opened, failed)
+            self._json({
+                "ok":       ok,
+                "msg":      msg,
+                "opened":   opened,
+                "failed":   failed,
+                "platform": platform,
+                "elevated": elevated,
+            })
+
+        else:
+            self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
+
+    # ── Multipart upload (legacy single-shot, kept for backward-compat) ────────
+    def _handle_upload(self) -> None:
+        from hc.web_access_log import _real_ip
+        try:
+            cl = int(self.headers.get("Content-Length", 0))
+            if cl > UPLOAD_MAX_BYTES:
+                self._json({"ok": False, "msg": "File exceeds 10 GB limit"}, 413)
+                return
+
+            client_ip = _real_ip(self)
+            ct = self.headers.get("Content-Type", "")
+            boundary: Optional[bytes] = None
+            for part in ct.split(";"):
+                p = part.strip()
+                if p.lower().startswith("boundary="):
+                    boundary = p[9:].strip('"').encode("latin-1")
+                    break
+            if not boundary:
+                self._json({"ok": False, "msg": "Missing boundary"})
+                return
+
+            raw = self.rfile.read(cl)
+            sep = b"--" + boundary
+
+            file_bytes: Optional[bytes] = None
+            file_name:  Optional[str]   = None
+            subdir = ""
+
+            for seg in raw.split(sep):
+                seg = seg.lstrip(b"\r\n")
+                if not seg or seg.startswith(b"--"):
+                    continue
+                if b"\r\n\r\n" not in seg:
+                    continue
+                hdr_raw, body = seg.split(b"\r\n\r\n", 1)
+                if body.endswith(b"\r\n"):
+                    body = body[:-2]
+                hdr_str = hdr_raw.decode("utf-8", errors="replace")
+                cd_line = next(
+                    (ln for ln in hdr_str.splitlines()
+                     if ln.lower().startswith("content-disposition:")),
+                    "",
+                )
+                field_name = fname = ""
+                for tok in cd_line.split(";"):
+                    tok = tok.strip()
+                    if tok.startswith("name="):
+                        field_name = tok[5:].strip('"')
+                    elif tok.startswith("filename="):
+                        fname = tok[9:].strip('"')
+                if field_name == "file" and fname:
+                    file_bytes = body
+                    file_name  = fname
+                elif field_name == "subdir":
+                    subdir = body.decode("utf-8", errors="replace").strip().lstrip("/\\")
+
+            if file_bytes is None or not file_name:
+                self._json({"ok": False, "msg": "No file field found"})
+                return
+
+            subdir_raw  = re.sub(r'\.\.', '_', subdir)
+            dest_dir = _decode_upload_subdir(subdir_raw)
+            if dest_dir is None:
+                self._json({"ok": False, "msg": "Invalid upload directory"})
+                return
+
+            fname_clean = Path(file_name).name
+            ext         = Path(fname_clean).suffix.lower()
+            if ext not in SUPPORTED_EXTS:
+                self._json({"ok": False, "msg": f"Unsupported extension: {ext}"})
+                return
+
+            safe_name = re.sub(r'[^\w.\-]', '_', fname_clean)
+            if not safe_name or safe_name.startswith('.'):
+                self._json({"ok": False, "msg": "Invalid filename"})
+                return
+
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            dest     = dest_dir / safe_name
+            tmp_path = dest.with_suffix(dest.suffix + ".tmp")
+            try:
+                tmp_path.write_bytes(file_bytes)
+                tmp_path.rename(dest)
+            except Exception:
+                tmp_path.unlink(missing_ok=True)
+                raise
+
+            _invalidate_lib_cache()
+            import logging as _lg
+            _lg.getLogger("hc.upload_audit").info(
+                "LEGACY UPLOAD  ip=%-15s  file=%-40s  size=%d B",
+                client_ip, safe_name, len(file_bytes),
+            )
+            log.info("Upload saved: %s (ip=%s)", dest, client_ip)
+            # ── Notify folder-source streams about the new file ──
+            _notify_folder_upload(dest_dir)
+            self._json({"ok": True, "msg": f"Saved: {safe_name}"})
+        except Exception as exc:
+            log.error("Upload error: %s", exc)
+            self._json({"ok": False, "msg": f"Upload error: {exc}"}, 500)
+
+    # ── Media roots management ────────────────────────────────────────────────
+    def _handle_save_media_roots(self, data: Dict[str, Any]) -> None:
+        """
+        POST action: save_media_roots
+        Body: { "roots": ["/path/a", "/path/b"] }
+
+        Replaces the extra media roots list.  The default MEDIA_DIR is always
+        kept as the first root and cannot be removed.  Invalidates the library
+        cache so the new roots are reflected immediately in the Web UI.
+        """
+        from pathlib import Path as _Path
+        try:
+            raw_roots = data.get("roots", [])
+            if not isinstance(raw_roots, list):
+                self._json({"ok": False, "msg": "'roots' must be a list of path strings"})
+                return
+            new_roots: List[Path] = []
+            errors: List[str] = []
+            for r in raw_roots:
+                p = _Path(str(r).strip())
+                if not p.is_absolute():
+                    errors.append(f"'{p}' is not an absolute path — skipped")
+                    continue
+                if not p.exists():
+                    errors.append(f"'{p}' does not exist — skipped")
+                    continue
+                if not p.is_dir():
+                    errors.append(f"'{p}' is not a directory — skipped")
+                    continue
+                new_roots.append(p)
+            set_media_roots(new_roots)
+            _invalidate_lib_cache()
+            roots_now = get_media_roots()
+            log.info(
+                "media_roots updated: %d root(s) total%s",
+                len(roots_now),
+                f" | warnings: {'; '.join(errors)}" if errors else "",
+            )
+            self._json({
+                "ok":       True,
+                "roots":    [str(r) for r in roots_now],
+                "warnings": errors,
+                "msg":      (
+                    f"Media roots updated: {len(roots_now)} root(s) active."
+                    + (f" Warnings: {'; '.join(errors)}." if errors else "")
+                ),
+            })
+        except Exception as exc:
+            log.error("save_media_roots error: %s", exc)
+            self._json({"ok": False, "msg": f"Error: {exc}"}, 500)
+
+    # ── Backup ───────────────────────────────────────────────────────────────
+    def _handle_backup(self, include: Dict[str, Any]) -> None:
+        """
+        Build a plain-JSON .hc backup and send it as a downloadable file.
+        *include* is a dict with boolean flags: streams, events, mail, resume.
+        """
+        import json as _json
+        from hc.constants import BASE_DIR, CONFIG_DIR
+
+        try:
+            payload: Dict[str, Any] = {
+                "format":  "hydracast_backup",
+                "version": APP_VER,
+                "created": datetime.now().isoformat(timespec="seconds"),
+            }
+
+            # ── Streams ─────────────────────────────────────────────────────
+            if include.get("streams", True):
+                p = CONFIG_DIR() / "streams.hcf"
+                try:
+                    payload["streams"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else []
+                except Exception:
+                    payload["streams"] = []
+
+            # ── Events ──────────────────────────────────────────────────────
+            if include.get("events", True):
+                p = CONFIG_DIR() / "events.hcf"
+                try:
+                    payload["events"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else []
+                except Exception:
+                    payload["events"] = []
+
+            # ── Mail config (password redacted for safety) ───────────────────
+            if include.get("mail", True):
+                p = BASE_DIR() / "mail_config.hcf"
+                try:
+                    if p.exists():
+                        mc = _json.loads(p.read_text(encoding="utf-8"))
+                        # Redact password — restore will leave it blank
+                        mc.pop("password", None)
+                        payload["mail_config"] = mc
+                    else:
+                        payload["mail_config"] = {}
+                except Exception:
+                    payload["mail_config"] = {}
+
+            # ── Resume positions ────────────────────────────────────────────
+            if include.get("resume", True):
+                p = BASE_DIR() / "resume_positions.hcf"
+                try:
+                    payload["resume_positions"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else {}
+                except Exception:
+                    payload["resume_positions"] = {}
+
+            # ── App settings (holiday country, UI prefs persisted server-side) ──
+            if include.get("app_settings", True):
+                p = CONFIG_DIR() / "app_settings.hcf"
+                try:
+                    payload["app_settings"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else {}
+                except Exception:
+                    payload["app_settings"] = {}
+
+            # ── Media roots (extra user-defined root directories) ────────────
+            if include.get("media_roots", True):
+                p = CONFIG_DIR() / "media_roots.hcf"
+                try:
+                    payload["media_roots"] = _json.loads(
+                        p.read_text(encoding="utf-8")) if p.exists() else []
+                except Exception:
+                    payload["media_roots"] = []
+
+
+            body = _json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
+            ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"hydracast_backup_{ts}.hc"
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            for k, v in _SEC_HEADERS.items():
+                self.send_header(k, v)
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            log.info("Backup downloaded: %s (%d bytes)", fname, len(body))
+
+        except Exception as exc:
+            log.error("Backup error: %s", exc)
+            self._json({"ok": False, "msg": f"Backup error: {exc}"}, 500)
+
+    # ── Restore ──────────────────────────────────────────────────────────────
+    def _handle_restore(self, payload: Dict[str, Any]) -> None:
+        """
+        Restore from a .hc backup payload.  Writes config files back to disk
+        then restarts all streams so changes take effect immediately.
+        """
+        import json as _json
+        from hc.constants import BASE_DIR, CONFIG_DIR
+
+        try:
+            if payload.get("format") != "hydracast_backup":
+                self._json({"ok": False, "msg": "Not a valid HydraCast backup file"})
+                return
+
+            restored: list[str] = []
+            failed:   list[str] = []
+
+            # ── Streams ─────────────────────────────────────────────────────
+            if "streams" in payload:
+                try:
+                    p = CONFIG_DIR() / "streams.hcf"
+                    if not isinstance(payload["streams"], list):
+                        raise ValueError("streams must be a list")
+                    p.write_text(
+                        _json.dumps(payload["streams"], indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    restored.append("streams")
+                    log.info("restore: streams.hcf written (%d streams)",
+                             len(payload["streams"]))
+                except Exception as exc:
+                    failed.append(f"streams: {exc}")
+                    log.error("restore: streams section failed: %s", exc)
+
+            # ── Events ──────────────────────────────────────────────────────
+            if "events" in payload:
+                try:
+                    p = CONFIG_DIR() / "events.hcf"
+                    if not isinstance(payload["events"], list):
+                        raise ValueError("events must be a list")
+                    p.write_text(
+                        _json.dumps(payload["events"], indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    restored.append("events")
+                except Exception as exc:
+                    failed.append(f"events: {exc}")
+                    log.error("restore: events section failed: %s", exc)
+
+            # ── Mail config (password intentionally absent — user must re-enter) ──
+            if "mail_config" in payload:
+                try:
+                    p = BASE_DIR() / "mail_config.hcf"
+                    existing: Dict[str, Any] = {}
+                    try:
+                        if p.exists():
+                            existing = _json.loads(p.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                    mc = dict(payload["mail_config"])
+                    # Preserve the stored password if restore doesn't include one
+                    if "password" not in mc and "password" in existing:
+                        mc["password"] = existing["password"]
+                    p.write_text(
+                        _json.dumps(mc, indent=4, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    restored.append("mail_config")
+                except Exception as exc:
+                    failed.append(f"mail_config: {exc}")
+                    log.error("restore: mail_config section failed: %s", exc)
+
+            # ── Resume positions ────────────────────────────────────────────
+            if "resume_positions" in payload:
+                try:
+                    p = BASE_DIR() / "resume_positions.hcf"
+                    if not isinstance(payload["resume_positions"], dict):
+                        raise ValueError("resume_positions must be an object")
+                    p.write_text(
+                        _json.dumps(payload["resume_positions"], indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    restored.append("resume_positions")
+                except Exception as exc:
+                    failed.append(f"resume_positions: {exc}")
+                    log.error("restore: resume_positions section failed: %s", exc)
+
+            # ── App settings ────────────────────────────────────────────────
+            if "app_settings" in payload:
+                try:
+                    from hc.web_settings_manager import save_settings
+                    if not isinstance(payload["app_settings"], dict):
+                        raise ValueError("app_settings must be an object")
+                    save_settings(payload["app_settings"])
+                    restored.append("app_settings")
+                except Exception as exc:
+                    failed.append(f"app_settings: {exc}")
+                    log.error("restore: app_settings section failed: %s", exc)
+
+            # ── Media roots ──────────────────────────────────────────────────
+            if "media_roots" in payload:
+                try:
+                    if not isinstance(payload["media_roots"], list):
+                        raise ValueError("media_roots must be a list")
+                    new_roots = [Path(r) for r in payload["media_roots"] if r]
+                    set_media_roots(new_roots)
+                    _invalidate_lib_cache()
+                    restored.append("media_roots")
+                    log.info("restore: media_roots updated (%d extra root(s))",
+                             len(new_roots))
+                except Exception as exc:
+                    failed.append(f"media_roots: {exc}")
+                    log.error("restore: media_roots section failed: %s", exc)
+
+
+            # ── Reload manager state ─────────────────────────────────────────
+            mgr = _WEB_MANAGER
+            if mgr and "streams" in restored:
+                try:
+                    from hc.json_manager import JSONManager
+                    new_configs = JSONManager.load()
+                    mgr.reload_from_configs(new_configs)
+                    log.info("restore: manager reloaded with %d stream(s)", len(new_configs))
+                except AttributeError:
+                    for st in list(mgr.states):
+                        try:
+                            mgr.restart(st.config.name)
+                        except Exception:
+                            pass
+                except Exception as exc:
+                    log.warning("restore: manager reload failed: %s — streams not restarted", exc)
+
+            if "events" in restored and mgr:
+                try:
+                    from hc.json_manager import JSONManager
+                    mgr.events = JSONManager.load_events()
+                except Exception:
+                    pass
+
+            log.info("restore: completed — restored: %s%s",
+                     ", ".join(restored),
+                     f" | FAILED: {', '.join(failed)}" if failed else "")
+
+            if not restored and failed:
+                self._json({"ok": False,
+                            "msg": f"Restore failed: {'; '.join(failed)}",
+                            "restored": [], "failed": failed})
+            else:
+                msg = f"Restored: {', '.join(restored)}."
+                if failed:
+                    msg += f" Warnings: {'; '.join(failed)}."
+                else:
+                    msg += " Streams reloaded."
+                self._json({
+                    "ok":       True,
+                    "msg":      msg,
+                    "restored": restored,
+                    "failed":   failed,
+                })
+
+        except Exception as exc:
+            log.error("Restore error: %s", exc)
+            self._json({"ok": False, "msg": f"Restore error: {exc}"}, 500)
+
+    # ── PUT handler ──────────────────────────────────────────────────────────
+    def do_PUT(self) -> None:
+        path = urlparse(self.path).path
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length) if length else b"{}"
+
+        try:
+            if path == "/api/holidays/custom":
+                self._put_holidays_custom(raw)
+            else:
+                self._send(404, b"Not Found", "text/plain")
+        except Exception as exc:
+            log.error("WebHandler PUT %s: %s", path, exc)
+            self._json({"error": "internal server error"}, 500)
+
+    # ── DELETE handler ───────────────────────────────────────────────────────
+    def do_DELETE(self) -> None:
+        path = urlparse(self.path).path
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length) if length else b"{}"
+
+        try:
+            if path == "/api/holidays/custom":
+                self._delete_holidays_custom(raw)
+            elif path == "/api/holidays/cache":
+                self._delete_holidays_cache(raw)
+            else:
+                self._send(404, b"Not Found", "text/plain")
+        except Exception as exc:
+            log.error("WebHandler DELETE %s: %s", path, exc)
+            self._json({"error": "internal server error"}, 500)
