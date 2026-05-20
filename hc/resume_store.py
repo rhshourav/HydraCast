@@ -1,7 +1,7 @@
 """
 hc/resume_store.py — Disk-based per-stream resume-position storage.
 
-Positions are written to  <CONFIG_DIR>/resume_positions.hcf  so they survive a
+Positions are written to  <CONFIG_DIR>/resume_positions.json  so they survive a
 full program restart.  The file is keyed by stream name; each entry records
 the file path, playback position in seconds, and a human-readable timestamp.
 
