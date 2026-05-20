@@ -400,7 +400,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
     def do_OPTIONS(self) -> None:
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin",  "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
@@ -525,6 +525,31 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             data: Dict[str, Any] = json.loads(raw)
         except Exception:
             self._json({"ok": False, "msg": "Invalid JSON"}, 400)
+            return
+
+        # ── Calendar / holiday / settings endpoints (direct path routing) ───
+        if path == "/api/holidays/custom":
+            try:
+                self._post_holidays_custom(raw)
+            except Exception as exc:
+                log.error("WebHandler POST %s: %s", path, exc)
+                self._json({"ok": False, "msg": f"Internal error: {exc}"}, 500)
+            return
+
+        if path == "/api/settings":
+            try:
+                self._post_settings(raw)
+            except Exception as exc:
+                log.error("WebHandler POST %s: %s", path, exc)
+                self._json({"ok": False, "msg": f"Internal error: {exc}"}, 500)
+            return
+
+        if path == "/api/events/bulk":
+            try:
+                self._post_events_bulk(raw)
+            except Exception as exc:
+                log.error("WebHandler POST %s: %s", path, exc)
+                self._json({"ok": False, "msg": f"Internal error: {exc}"}, 500)
             return
 
         # The calendar React component posts to /api/action with the real
