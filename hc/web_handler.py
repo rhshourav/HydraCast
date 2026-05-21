@@ -2212,8 +2212,106 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 "elevated": elevated,
             })
 
+        elif action == "reset":
+            self._handle_reset(data)
+
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
+
+    # ── Hard factory reset ───────────────────────────────────────────────────
+    def _handle_reset(self, data: Dict[str, Any]) -> None:
+        """
+        POST /api/reset  { "confirm": true }
+
+        1. Stop every running stream.
+        2. Delete every file inside config/ — wipes streams, events,
+           mail config, app settings, resume positions, media roots,
+           holiday caches, everything.
+        3. Clear all in-memory state.
+        4. Send HTTP response so the browser gets a reply.
+        5. os.execv — replace this process with a fresh copy of itself.
+        """
+        import os as _os, sys as _sys, threading as _thr
+
+        if not data.get("confirm"):
+            self._json({"ok": False, "msg": "confirm=true required"}, 400)
+            return
+
+        mgr     = _WEB_MANAGER
+        stopped: List[str] = []
+        wiped:   List[str] = []
+        errors:  List[str] = []
+
+        # ── 1. Stop all running streams ───────────────────────────────────────
+        if mgr is not None:
+            for st in list(getattr(mgr, "states", [])):
+                try:
+                    mgr.stop(st.config.name)
+                    stopped.append(st.config.name)
+                except Exception as exc:
+                    errors.append(f"stop {st.config.name}: {exc}")
+
+        # ── 2. Wipe every file in config/ ────────────────────────────────────
+        from hc.constants import CONFIG_DIR as _CFG_DIR
+        cfg_dir = _CFG_DIR()
+        try:
+            for p in sorted(cfg_dir.iterdir()):
+                if p.is_file():
+                    try:
+                        p.unlink()
+                        wiped.append(p.name)
+                    except Exception as exc:
+                        errors.append(f"delete {p.name}: {exc}")
+                        log.error("reset: could not delete '%s': %s", p.name, exc)
+        except Exception as exc:
+            errors.append(f"config dir: {exc}")
+            log.error("reset: config dir error: %s", exc)
+
+        # ── 3. Clear in-memory state ──────────────────────────────────────────
+        try:
+            from hc.web_settings_manager import reset_settings
+            reset_settings()
+        except Exception:
+            pass
+
+        try:
+            set_media_roots([])
+            _invalidate_lib_cache()
+        except Exception:
+            pass
+
+        if mgr is not None:
+            try:
+                mgr.reload_from_configs([])
+            except Exception:
+                pass
+            try:
+                mgr.events = []
+            except Exception:
+                pass
+
+        log.info("reset: wiped [%s] stopped [%s]%s",
+                 ", ".join(wiped) or "none",
+                 ", ".join(stopped) or "none",
+                 f" errors: {'; '.join(errors)}" if errors else "")
+
+        # ── 4. Respond before execv kills the socket ──────────────────────────
+        self._json({
+            "ok":      True,
+            "msg":     "Reset complete — restarting server…",
+            "wiped":   wiped,
+            "stopped": stopped,
+            "errors":  errors,
+        })
+
+        # ── 5. Restart the process after a short flush delay ──────────────────
+        def _do_reset_restart():
+            import time as _t
+            _t.sleep(0.6)
+            _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+
+        _thr.Thread(target=_do_reset_restart, daemon=True,
+                    name="hc-factory-reset").start()
 
     # ── Multipart upload (legacy single-shot, kept for backward-compat) ────────
     def _handle_upload(self) -> None:
