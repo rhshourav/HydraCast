@@ -345,25 +345,17 @@ def _active_event_name(st, cfg, mgr) -> Optional[str]:
            most recently played event name as a transient placeholder.
     """
     oneshot_active = bool(getattr(st, "oneshot_active", False))
-    cf_raw = (
-        st.current_file()
-        if callable(getattr(st, "current_file", None))
-        else getattr(st, "current_file", None)
-    )
     stream_events = [ev for ev in mgr.events if ev.stream_name == cfg.name]
 
     if oneshot_active:
-        if cf_raw:
-            # current_file is already shown -- active_event not needed
-            return None
-        # current_file is None: worker doesn't expose the oneshot path via
-        # current_file().  Use the live active_oneshot_event attribute that
-        # play_oneshot() sets directly on the state object — this is the
-        # exact event currently playing, regardless of played/unplayed status.
+        # During a oneshot, current_file() returns the playlist/compliance file
+        # (the playlist index never advances during a oneshot), NOT the oneshot
+        # file.  Never call it here — go straight to active_oneshot_event which
+        # play_oneshot() sets to the exact event being played right now.
         active_ev = getattr(st, "active_oneshot_event", None)
         if active_ev is not None:
             return active_ev.file_path.name
-        # Fallback (active_oneshot_event not yet set or already cleared):
+        # Fallback: active_oneshot_event not yet set or already cleared —
         # take the most recently fired event (highest play_at, played=True).
         played_events = sorted(
             (ev for ev in stream_events if ev.played),
@@ -371,6 +363,13 @@ def _active_event_name(st, cfg, mgr) -> Optional[str]:
             reverse=True,
         )
         return played_events[0].file_path.name if played_events else None
+
+    # No oneshot active — need current_file only for the non-oneshot cases below.
+    cf_raw = (
+        st.current_file()
+        if callable(getattr(st, "current_file", None))
+        else getattr(st, "current_file", None)
+    )
 
     # No oneshot active -- show next pending event.
     pending = next(
@@ -687,7 +686,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 #  C) no oneshot active → show next pending event, or last-played name
                 #     if current_file is also None (brief resume transition).
                 "active_event":   _active_event_name(st, cfg, mgr),
-                # next 2 upcoming playlist items
+                # active_event during oneshot = active_oneshot_event.file_path.name
+                # (set directly by play_oneshot(); never derived from current_file
+                #  which always points to the playlist/compliance file, not the event).
                 "next_in_queue":  _get_next_in_queue(st, cfg, n=2),
                 # Compliance alert (v2)
                 "compliance_enabled":       cfg.compliance_enabled,
