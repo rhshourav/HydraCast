@@ -852,7 +852,39 @@ class _PostHandlersMixin:
             errors.append(f"config dir scan: {exc}")
             log.error("reset: config dir error: %s", exc)
 
-        # ── 3. Clear in-memory state ──────────────────────────────────────────
+        # ── 3. Clear holiday store — custom holidays + library caches ────────
+        # The holiday store may persist files outside CONFIG_DIR (e.g. under
+        # BASE_DIR), so we clear them explicitly rather than relying solely on
+        # the config-dir wipe above.
+        try:
+            from hc.web_holiday_store import _custom_path, _cache_dir  # type: ignore[attr-defined]
+            _custom = _custom_path()
+            _cache  = _cache_dir()
+            try:
+                _custom.unlink(missing_ok=True)
+                wiped.append(_custom.name)
+            except Exception as exc:
+                errors.append(f"holiday custom clear: {exc}")
+            try:
+                if _cache.exists():
+                    _shutil.rmtree(_cache, ignore_errors=False)
+                    wiped.append(str(_cache.name) + "/")
+            except Exception as exc:
+                errors.append(f"holiday cache clear: {exc}")
+        except Exception:
+            # Fallback: scan BASE_DIR for any "holidays" subdirectory that
+            # lives outside CONFIG_DIR and wipe it too.
+            try:
+                from hc.constants import BASE_DIR as _BASE_DIR
+                for _hdir_name in ("holidays", "holiday_cache", "hol_cache"):
+                    _hdir = _BASE_DIR() / _hdir_name
+                    if _hdir.exists() and _hdir.is_dir():
+                        _shutil.rmtree(_hdir, ignore_errors=False)
+                        wiped.append(str(_hdir.relative_to(_BASE_DIR())) + "/")
+            except Exception as exc:
+                errors.append(f"holiday dir fallback clear: {exc}")
+
+        # ── 4. Clear in-memory state ──────────────────────────────────────────
         try:
             from hc.web_settings_manager import reset_settings
             reset_settings()
