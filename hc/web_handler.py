@@ -423,6 +423,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             "/api/holidays":        lambda: self._get_holidays(qs),
             "/api/holidays/custom": self._get_holidays_custom,
             "/api/settings":        self._get_settings,
+            "/api/settings/schema": self._get_settings_schema,
             "/api/logs":           lambda: self._get_logs(qs),
             "/api/system_stats":   self._get_system_stats,
             "/api/stream_detail":  lambda: self._get_stream_detail(qs),
@@ -782,12 +783,32 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
     # Defining it here again would shadow that version and break custom holidays.
 
     def _get_settings(self) -> None:
-        """Return the persisted app settings (holiday_country, etc.)."""
+        """Return persisted app settings as a flat dict (backwards-compatible)."""
         from hc.web_settings_manager import load_settings
         try:
             self._json(load_settings())
         except Exception as exc:
             log.error("_get_settings: %s", exc)
+            self._json({"error": str(exc)}, 500)
+
+    def _get_settings_schema(self) -> None:
+        """
+        GET /api/settings/schema
+
+        Return settings structured for the UI:
+          {
+            "groups":  ["appearance", "regional", "notifications", "system"],
+            "schema":  { <key>: { group, type, label, description, default, options? } },
+            "values":  { <key>: <current_value> }
+          }
+        The UI iterates ``groups`` for tabs, uses ``schema`` to auto-build
+        form controls, and populates them from ``values``.
+        """
+        from hc.web_settings_manager import load_settings_grouped
+        try:
+            self._json(load_settings_grouped())
+        except Exception as exc:
+            log.error("_get_settings_schema: %s", exc)
             self._json({"error": str(exc)}, 500)
 
     def _get_logs(self, qs: Dict[str, Any]) -> None:
@@ -1931,6 +1952,9 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             except Exception as exc:
                 self._json({"ok": False, "msg": f"Test error: {exc}"})
 
+        elif action == "reset_everything":
+            self._handle_reset_everything(data)
+
         elif action == "backup":
             self._handle_backup(data)
 
@@ -1945,14 +1969,17 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             self._post_holidays_custom(raw)
 
         elif action == "settings":
-            # POST /api/settings — persist holiday country / subdiv preference
-            from hc.web_settings_manager import save_settings
+            # POST /api/settings — persist settings; accepts flat or grouped payload.
+            # Flat:    { "accent_color": "#b87333", "holiday_country": "US", … }
+            # Grouped: { "appearance": { "accent_color": "#b87333" }, … }
+            from hc.web_settings_manager import save_settings, load_settings_grouped
             try:
                 if not isinstance(data, dict):
                     self._json({"error": "Request body must be a JSON object."}, 400)
                     return
-                result = save_settings(data)
-                self._json(result)
+                save_settings(data)
+                # Return the full grouped payload so the UI can refresh in one round-trip
+                self._json(load_settings_grouped())
             except Exception as exc:
                 log.error("POST /api/settings: %s", exc)
                 self._json({"error": str(exc)}, 500)
@@ -2326,11 +2353,208 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             log.error("save_media_roots error: %s", exc)
             self._json({"ok": False, "msg": f"Error: {exc}"}, 500)
 
+    # ── Factory reset ────────────────────────────────────────────────────────
+    def _handle_reset_everything(self, data: Dict[str, Any]) -> None:
+        """
+        POST action: reset_everything
+        Body (all optional):
+          {
+            "confirm":        true,          // must be true — safety gate
+            "backup_first":   true,          // if true, write a .hc backup before wiping
+            "keep_mail":      false,         // if true, preserve mail_config.hcf
+            "keep_media_roots": false,       // if true, preserve media_roots.hcf
+          }
+
+        Wipes every HydraCast config file, stops all streams, clears in-memory
+        state, and resets application settings to factory defaults.  The backup
+        (if requested) is returned as a downloadable .hc file; otherwise a JSON
+        ``{"ok": true, …}`` response is sent.
+
+        Config files removed:
+          streams.hcf, events.hcf, resume_positions.hcf, app_settings.hcf
+          + optionally: mail_config.hcf, media_roots.hcf
+        """
+        import json as _json
+        from hc.constants import CONFIG_DIR
+        from hc.web_settings_manager import reset_settings
+
+        # ── Safety gate ───────────────────────────────────────────────────────
+        if not data.get("confirm"):
+            self._json({
+                "ok":  False,
+                "msg": "Reset aborted: 'confirm' must be true.",
+            }, 400)
+            return
+
+        backup_first    = bool(data.get("backup_first",    True))
+        keep_mail       = bool(data.get("keep_mail",       False))
+        keep_media_roots = bool(data.get("keep_media_roots", False))
+
+        cfg_dir = CONFIG_DIR()
+        mgr     = _WEB_MANAGER
+
+        try:
+            # ── 1. Optional pre-reset backup ──────────────────────────────────
+            # Build the backup payload in memory so we can send it later if
+            # the caller set backup_first; otherwise we discard it.
+            backup_payload: Dict[str, Any] = {
+                "format":  "hydracast_backup",
+                "version": APP_VER,
+                "created": datetime.now().isoformat(timespec="seconds"),
+                "note":    "Pre-reset automatic backup",
+            }
+            for fname, key in [
+                ("streams.hcf",          "streams"),
+                ("events.hcf",           "events"),
+                ("mail_config.hcf",      "mail_config"),
+                ("resume_positions.hcf", "resume_positions"),
+                ("app_settings.hcf",     "app_settings"),
+                ("media_roots.hcf",      "media_roots"),
+            ]:
+                p = cfg_dir / fname
+                try:
+                    backup_payload[key] = (
+                        _json.loads(p.read_text(encoding="utf-8")) if p.exists() else
+                        ([] if key in ("streams", "events", "media_roots") else {})
+                    )
+                except Exception:
+                    backup_payload[key] = [] if key in ("streams", "events", "media_roots") else {}
+
+            # ── 2. Stop all streams ───────────────────────────────────────────
+            stopped: List[str] = []
+            if mgr is not None:
+                for st in list(mgr.states):
+                    try:
+                        mgr.stop(st.config.name)
+                        stopped.append(st.config.name)
+                    except Exception as exc:
+                        log.warning("reset_everything: could not stop '%s': %s",
+                                    st.config.name, exc)
+
+            # ── 3. Delete config files ────────────────────────────────────────
+            _FILES_TO_WIPE = [
+                "streams.hcf",
+                "events.hcf",
+                "resume_positions.hcf",
+                "app_settings.hcf",
+            ]
+            if not keep_mail:
+                _FILES_TO_WIPE.append("mail_config.hcf")
+            if not keep_media_roots:
+                _FILES_TO_WIPE.append("media_roots.hcf")
+
+            wiped: List[str] = []
+            wipe_errors: List[str] = []
+            for fname in _FILES_TO_WIPE:
+                p = cfg_dir / fname
+                try:
+                    p.unlink(missing_ok=True)
+                    wiped.append(fname)
+                except Exception as exc:
+                    wipe_errors.append(f"{fname}: {exc}")
+                    log.error("reset_everything: failed to delete '%s': %s", fname, exc)
+
+            # ── 4. Reset in-memory state ──────────────────────────────────────
+            # App settings → factory defaults
+            reset_settings()
+
+            # Clear media roots if wiped
+            if not keep_media_roots:
+                try:
+                    from hc.constants import set_media_roots
+                    set_media_roots([])
+                    _invalidate_lib_cache()
+                except Exception as exc:
+                    log.warning("reset_everything: could not reset media_roots: %s", exc)
+
+            # Reload manager from now-empty config
+            if mgr is not None:
+                try:
+                    from hc.json_manager import JSONManager
+                    mgr.reload_from_configs([])
+                except AttributeError:
+                    pass  # manager version without reload_from_configs
+                except Exception as exc:
+                    log.warning("reset_everything: manager reload failed: %s", exc)
+                # Clear events
+                try:
+                    mgr.events = []
+                except Exception:
+                    pass
+
+            log.info(
+                "reset_everything: wiped %s | stopped streams: %s%s",
+                ", ".join(wiped),
+                ", ".join(stopped) or "none",
+                f" | errors: {'; '.join(wipe_errors)}" if wipe_errors else "",
+            )
+
+            # ── 5. Return ─────────────────────────────────────────────────────
+            if backup_first:
+                # Send the pre-reset backup as a downloadable file
+                body  = _json.dumps(backup_payload, indent=2, ensure_ascii=False).encode("utf-8")
+                ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
+                fname = f"hydracast_pre_reset_backup_{ts}.hc"
+                self.send_response(200)
+                self.send_header("Content-Type",        "application/json")
+                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.send_header("Content-Length",      str(len(body)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                # Embed reset result in a response header the UI can read
+                summary = (
+                    f"wiped={','.join(wiped)};"
+                    f"stopped={len(stopped)};"
+                    f"errors={len(wipe_errors)}"
+                )
+                self.send_header("X-Reset-Summary", summary)
+                for k, v in _SEC_HEADERS.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                try:
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                log.info("reset_everything: pre-reset backup sent (%d bytes)", len(body))
+            else:
+                self._json({
+                    "ok":          True,
+                    "msg":         (
+                        f"Factory reset complete. "
+                        f"Wiped: {', '.join(wiped)}. "
+                        f"Stopped streams: {len(stopped)}."
+                        + (f" Errors: {'; '.join(wipe_errors)}." if wipe_errors else "")
+                    ),
+                    "wiped":       wiped,
+                    "stopped":     stopped,
+                    "errors":      wipe_errors,
+                    "kept": (
+                        (["mail_config.hcf"] if keep_mail else []) +
+                        (["media_roots.hcf"] if keep_media_roots else [])
+                    ),
+                })
+
+        except Exception as exc:
+            log.error("reset_everything error: %s", exc)
+            self._json({"ok": False, "msg": f"Reset error: {exc}"}, 500)
+
     # ── Backup ───────────────────────────────────────────────────────────────
     def _handle_backup(self, include: Dict[str, Any]) -> None:
         """
         Build a plain-JSON .hc backup and send it as a downloadable file.
-        *include* is a dict with boolean flags: streams, events, mail, resume.
+
+        *include* is a dict with boolean flags controlling which sections to
+        include in the archive.  All default to True:
+
+          streams       — streams.hcf  (stream configs)
+          events        — events.hcf   (one-shot scheduled events)
+          mail          — mail_config.hcf (password is ALWAYS redacted)
+          resume        — resume_positions.hcf
+          app_settings  — app_settings.hcf (appearance / regional /
+                           notifications / system settings)
+          media_roots   — media_roots.hcf (extra media root directories)
+
+        The resulting file can be re-imported via the restore action or via
+        the factory-reset flow (reset_everything with backup_first=true).
         """
         import json as _json
         from hc.constants import BASE_DIR, CONFIG_DIR
@@ -2519,6 +2743,8 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                         raise ValueError("app_settings must be an object")
                     save_settings(payload["app_settings"])
                     restored.append("app_settings")
+                    log.info("restore: app_settings written (%d key(s))",
+                             len(payload["app_settings"]))
                 except Exception as exc:
                     failed.append(f"app_settings: {exc}")
                     log.error("restore: app_settings section failed: %s", exc)
