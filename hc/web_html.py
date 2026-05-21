@@ -1154,7 +1154,7 @@ select option{background:var(--bg3)}
         HC
       </span>
     </div>
-    __APP_NAME__
+    <span id="topbar-app-name">__APP_NAME__</span>
     <sub id="ver-badge">v__APP_VER__</sub>
   </div>
 
@@ -1614,6 +1614,50 @@ select option{background:var(--bg3)}
         <div id="accent-status" style="font-size:11px;color:var(--text3)"></div>
       </div>
     </div>
+
+    <!-- Branding -->
+    <div class="setting-card">
+      <h3>Branding</h3>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+        Customise the app name and logo shown in the topbar. Logo can be uploaded as an image file or entered as a URL.
+      </div>
+
+      <div class="fg" style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:6px">App Name</label>
+        <input id="brand-name" type="text" placeholder="HydraCast"
+               style="width:100%;box-sizing:border-box"
+               title="Custom name shown in the topbar. Leave blank to use the server default.">
+      </div>
+
+      <div class="fg" style="margin-bottom:12px">
+        <label style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:6px">Logo Image</label>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div id="brand-logo-preview"
+               style="width:40px;height:40px;border-radius:8px;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+            <span style="font-size:9px;color:var(--text3)">HC</span>
+          </div>
+          <div style="flex:1;min-width:0">
+            <input id="brand-logo-url" type="text" placeholder="https://… or leave blank"
+                   style="width:100%;box-sizing:border-box;margin-bottom:6px"
+                   title="Direct URL to a logo image"
+                   oninput="brandLogoUrlPreview(this.value)">
+            <label class="btn" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;padding:4px 10px">
+              📁 Upload file
+              <input id="brand-logo-file" type="file" accept="image/*"
+                     style="display:none" onchange="brandLogoFileChosen(this)">
+            </label>
+            <button class="btn" style="font-size:11px;padding:4px 10px;margin-left:4px"
+                    onclick="clearBrandLogo()" title="Remove custom logo and revert to initials">✕ Clear</button>
+          </div>
+        </div>
+        <div id="brand-logo-size" style="font-size:10px;color:var(--text3)"></div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="btn g" onclick="saveBrandingSettings()" title="Save branding to server">📁 Save</button>
+        <div id="brand-status" style="font-size:11px;color:var(--text3)"></div>
+      </div>
+    </div>
   </div>
 
   <!-- end settings-grid -->
@@ -1698,7 +1742,11 @@ select option{background:var(--bg3)}
             <option value="ZW">ZW — Zimbabwe</option>
           </select>
         </div>
-
+        <div class="fg">
+          <label>State / Province <span style="font-weight:400;color:var(--text3)">optional</span></label>
+          <input id="hol-subdiv" placeholder="e.g. CA, NSW, ON…"
+            title="Optional subdivision code for regional holidays. Leave blank for national-only.">
+        </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:20px">
         <button class="btn g" onclick="saveHolidaySettings()" title="Save holiday country to disk">📁 Save</button>
@@ -1967,11 +2015,12 @@ select option{background:var(--bg3)}
 <!-- ══ FOOTER ══ -->
 <footer class="app-footer">
   <span id="ft-app-name" style="display:inline-flex;align-items:center;gap:6px;">
-    <img src="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg"
+    <img id="ft-brand-logo"
+         src="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg"
          alt="HydraCast logo"
          style="width:16px;height:16px;flex-shrink:0;opacity:0.85;"
          onerror="this.style.display='none'">
-    HydraCast
+    <span id="ft-brand-name">HydraCast</span>
   </span>
   <span class="footer-sep">·</span>
   <span id="ft-ver">—</span>
@@ -2149,7 +2198,7 @@ function _doSwitchTab(name,btn){
   else if(name==='events'){if(!_hdLoaded)loadHolidays();}
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
-  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolidaySettings();loadCustomHolidays();loadMediaRoots();}
+  else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolidaySettings();loadCustomHolidays();loadMediaRoots();loadBrandingSettings();}
 }
 
 // ═══════════════════════════════════
@@ -2868,6 +2917,7 @@ async function loadHolidays(){
     // Fetch current country from settings first
     const settings = await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
     const country  = (settings.holiday_country||'US').toUpperCase();
+    const subdiv   = settings.holiday_subdiv||null;
     const countryName = _COUNTRY_NAMES[country]||country;
     const flag     = _countryFlag(country);
     const yr       = new Date().getFullYear();
@@ -2880,6 +2930,7 @@ async function loadHolidays(){
 
     // Build query
     let url = `/api/holidays?year=${yr}&country=${country}`;
+    if(subdiv) url += `&subdiv=${encodeURIComponent(subdiv)}`;
 
     const data = await fetch(url).then(r=>r.json());
     if(!Array.isArray(data)){ throw new Error(data.error||'bad response'); }
@@ -2982,8 +3033,10 @@ async function hdRefresh(){
   try{
     const settings=await fetch('/api/settings').then(r=>r.json()).catch(()=>({}));
     const country=(settings.holiday_country||'US').toUpperCase();
+    const subdiv=settings.holiday_subdiv||null;
     const yr=new Date().getFullYear();
     let url=`/api/holidays?year=${yr}&country=${country}&refresh=1`;
+    if(subdiv) url+=`&subdiv=${encodeURIComponent(subdiv)}`;
     await fetch(url);
   }catch(e){}
   loadHolidays();
@@ -4680,6 +4733,153 @@ async function saveAccentColor(){
 })();
 
 // ═══════════════════════════════════
+// BRANDING (name + logo)
+// ═══════════════════════════════════
+
+/** Apply brand_name and brand_logo from a settings object to the live UI. */
+function applyBranding(s){
+  const name = (s.brand_name||'').trim();
+  const logo = (s.brand_logo||'').trim();
+
+  // Topbar name
+  const nameEl = document.getElementById('topbar-app-name');
+  if(nameEl) nameEl.textContent = name || nameEl.dataset.default || nameEl.textContent;
+  // Store the server default on first call so clearing restores it
+  if(nameEl && !nameEl.dataset.default) nameEl.dataset.default = nameEl.textContent;
+  if(nameEl) nameEl.textContent = name || nameEl.dataset.default;
+
+  // Topbar logo
+  const img  = document.getElementById('logo-img');
+  const lttr = document.getElementById('logo-letter');
+  if(img){
+    if(logo){
+      img.src = logo;
+      // onload/onerror handlers on the element already toggle visibility
+    } else {
+      img.src = '/resources/logo.png'; // revert to server asset (may 404 → shows initials)
+    }
+  }
+
+  // Footer name
+  const ftName = document.getElementById('ft-brand-name');
+  if(ftName) ftName.textContent = name || 'HydraCast';
+
+  // Footer logo
+  const ftImg = document.getElementById('ft-brand-logo');
+  if(ftImg){
+    if(logo){ ftImg.src = logo; ftImg.style.display = ''; }
+    else { ftImg.src = 'https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg'; }
+  }
+
+  // Page title
+  if(name) document.title = name;
+
+  // Update settings card preview
+  _brandLogoSetPreview(logo);
+}
+
+function _brandLogoSetPreview(src){
+  const wrap = document.getElementById('brand-logo-preview');
+  if(!wrap) return;
+  if(src){
+    wrap.innerHTML = `<img src="${src}" alt="logo"
+      style="width:100%;height:100%;object-fit:cover;border-radius:7px"
+      onerror="this.parentElement.innerHTML='<span style=\'font-size:9px;color:var(--red)\'>✕ Bad URL</span>'">`;
+  } else {
+    wrap.innerHTML = '<span style="font-size:9px;color:var(--text3)">HC</span>';
+  }
+}
+
+function brandLogoUrlPreview(val){
+  _brandLogoSetPreview(val.trim());
+  document.getElementById('brand-logo-size').textContent = '';
+}
+
+function brandLogoFileChosen(input){
+  const file = input.files[0];
+  if(!file) return;
+  if(file.size > 512*1024){
+    document.getElementById('brand-logo-size').textContent =
+      '⚠ File is '+Math.round(file.size/1024)+' KB — consider using a smaller image (< 512 KB)';
+    document.getElementById('brand-logo-size').style.color = 'var(--yellow)';
+  } else {
+    document.getElementById('brand-logo-size').textContent =
+      file.name+' ('+Math.round(file.size/1024)+' KB)';
+    document.getElementById('brand-logo-size').style.color = 'var(--text3)';
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const dataUrl = e.target.result;
+    const urlInput = document.getElementById('brand-logo-url');
+    if(urlInput) urlInput.value = '';       // clear URL field — file takes precedence
+    _brandLogoSetPreview(dataUrl);
+    // Stash temporarily on the preview so saveBrandingSettings() can read it
+    const wrap = document.getElementById('brand-logo-preview');
+    if(wrap) wrap.dataset.pending = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearBrandLogo(){
+  const urlInput = document.getElementById('brand-logo-url');
+  if(urlInput) urlInput.value = '';
+  const wrap = document.getElementById('brand-logo-preview');
+  if(wrap){ wrap.dataset.pending = ''; wrap.innerHTML = '<span style="font-size:9px;color:var(--text3)">HC</span>'; }
+  document.getElementById('brand-logo-size').textContent = '';
+  const fileInput = document.getElementById('brand-logo-file');
+  if(fileInput) fileInput.value = '';
+}
+
+async function loadBrandingSettings(){
+  try{
+    const s = await fetch('/api/settings').then(r=>r.json());
+    const nameInput = document.getElementById('brand-name');
+    const urlInput  = document.getElementById('brand-logo-url');
+    const wrap      = document.getElementById('brand-logo-preview');
+    if(nameInput) nameInput.value = s.brand_name||'';
+    const logo = s.brand_logo||'';
+    if(urlInput) urlInput.value = logo.startsWith('data:') ? '' : logo;
+    if(wrap) wrap.dataset.pending = '';
+    _brandLogoSetPreview(logo);
+  }catch(e){}
+}
+
+async function saveBrandingSettings(){
+  const name = (document.getElementById('brand-name')?.value||'').trim();
+  const wrap  = document.getElementById('brand-logo-preview');
+  // Pending data-URL from file upload wins; otherwise use the URL text field
+  const pendingDataUrl = wrap?.dataset.pending||'';
+  const urlFieldVal    = (document.getElementById('brand-logo-url')?.value||'').trim();
+  const logo = pendingDataUrl || urlFieldVal;
+
+  const st = document.getElementById('brand-status');
+  st.textContent='Saving…';st.style.color='var(--yellow)';
+  try{
+    const r = await fetch('/api/settings',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ brand_name:name, brand_logo:logo })
+    });
+    const j = await r.json();
+    if(j.error) throw new Error(j.error);
+    applyBranding({ brand_name:name, brand_logo:logo });
+    if(wrap) wrap.dataset.pending = '';  // clear pending after successful save
+    st.textContent='✓ Saved';st.style.color='var(--green)';
+    toast('Branding saved','ok');
+  }catch(e){
+    st.textContent='✕ '+e.message;st.style.color='var(--red)';
+    toast('Save failed','err');
+  }
+}
+
+// Apply saved branding on page load
+(async function initBranding(){
+  try{
+    const s = await fetch('/api/settings').then(r=>r.json());
+    applyBranding(s);
+  }catch(e){}
+})();
+
+// ═══════════════════════════════════
 // MEDIA ROOT DIRECTORIES
 // ═══════════════════════════════════
 
@@ -4998,12 +5198,15 @@ async function loadHolidaySettings(){
   try{
     const s=await fetch('/api/settings').then(r=>r.json());
     const ci=document.getElementById('hol-country');
+    const si=document.getElementById('hol-subdiv');
     if(ci) ci.value=s.holiday_country||'US';
+    if(si) si.value=s.holiday_subdiv||'';
   }catch(e){}
 }
 
 async function saveHolidaySettings(){
   const country=(document.getElementById('hol-country')?.value||'').trim();
+  const subdiv=(document.getElementById('hol-subdiv')?.value||'').trim()||null;
   const st=document.getElementById('hol-status');
   if(!country){
     st.textContent='✕ Select a country';st.style.color='var(--red)';return;
@@ -5012,11 +5215,11 @@ async function saveHolidaySettings(){
   try{
     const r=await fetch('/api/settings',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({holiday_country:country})
+      body:JSON.stringify({holiday_country:country,holiday_subdiv:subdiv})
     });
     const j=await r.json();
     if(j.error) throw new Error(j.error);
-    st.textContent='✓ Saved — '+country;
+    st.textContent='✓ Saved — '+country+(subdiv?' / '+subdiv:'');
     st.style.color='var(--green)';
     toast('Holiday settings saved','ok');
     // Invalidate holidays cache so pill + popup update to the new country
@@ -6517,7 +6720,7 @@ function EventsCalendar() {
   const [streams,    setStreams]     = useState([]);
   const [library,    setLibrary]    = useState([]);
   const [libLoading, setLibLoading] = useState(false);
-  const [settings,   setSettings]   = useState({ holiday_country:"US" });
+  const [settings,   setSettings]   = useState({ holiday_country:"US", holiday_subdiv:null });
   const [holidays,   setHolidays]   = useState({});
   const [holKey,     setHolKey]     = useState("");
   const [loading,    setLoading]    = useState(true);
@@ -6564,9 +6767,11 @@ function EventsCalendar() {
   useEffect(() => {
     if (loading) return;
     const country = settings.holiday_country || "US";
-    const key = `${year}:${country}`;
+    const subdiv  = settings.holiday_subdiv  || "";
+    const key = `${year}:${country}:${subdiv}`;
     if (key === holKey) return;
     const qs = new URLSearchParams({ year, country });
+    if (subdiv) qs.set("subdiv", subdiv);
     fetch(`/api/holidays?${qs}`)
       .then(r=>r.json())
       .then(data => {
