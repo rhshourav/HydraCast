@@ -781,19 +781,23 @@ class _PostHandlersMixin:
         POST /api/reset  –  Hard factory reset.
 
         Steps (in order):
-          1. Stop every running stream.
-          2. Delete every file inside config/ (streams.hcf, events.hcf,
-             mail_config.hcf, app_settings.hcf, resume_positions.hcf,
-             media_roots.hcf, holiday caches, …).
-          3. Clear in-memory state (manager streams, events, settings).
-          4. Flush the HTTP response so the browser gets a reply.
-          5. Wait 400 ms then os.execv to restart the whole process fresh.
+          1. Force-stop every running stream (SIGKILL via manager stop + worker kill).
+          2. Sleep briefly so OS reclaims resources.
+          3. Delete EVERYTHING inside config/ — files AND subdirectories
+             (streams.hcf, events.hcf, mail_config.hcf, app_settings.hcf,
+             resume_positions.hcf, media_roots.hcf, holiday caches,
+             backups/ subdir, …).
+          4. Clear in-memory state (manager streams, events, settings).
+          5. Flush the HTTP response so the browser gets a reply.
+          6. Wait 400 ms then os.execv to restart the whole process fresh.
 
         Body: { "confirm": true }   ← required safety gate
         """
         import os as _os
         import sys as _sys
+        import shutil as _shutil
         import threading as _thr
+        import time as _time
 
         from hc.web import _WEB_MANAGER, _invalidate_lib_cache  # type: ignore
 
@@ -805,27 +809,44 @@ class _PostHandlersMixin:
         stopped: list = []
         errors:  list = []
 
-        # ── 1. Stop all streams ───────────────────────────────────────────────
+        # ── 1. Force-stop all streams ─────────────────────────────────────────
         if mgr is not None:
             for st in list(getattr(mgr, "states", [])):
                 try:
+                    # Try graceful stop first; also attempt to kill the worker
+                    # process directly so FFmpeg is guaranteed dead.
+                    try:
+                        worker = mgr.get_worker(st.config.name)
+                        if worker is not None:
+                            try:
+                                worker.kill()   # force-kill FFmpeg subprocess
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     mgr.stop(st.config.name)
                     stopped.append(st.config.name)
                 except Exception as exc:
                     errors.append(f"stop {st.config.name}: {exc}")
 
-        # ── 2. Wipe every file in config/ ────────────────────────────────────
+        # Brief pause so OS resources are released before we wipe the config
+        _time.sleep(0.4)
+
+        # ── 2. Wipe EVERYTHING in config/ (files + subdirectories) ───────────
         cfg_dir = CONFIG_DIR()
         wiped:   list = []
         try:
             for p in cfg_dir.iterdir():
-                if p.is_file():
-                    try:
+                try:
+                    if p.is_file() or p.is_symlink():
                         p.unlink()
                         wiped.append(p.name)
-                    except Exception as exc:
-                        errors.append(f"delete {p.name}: {exc}")
-                        log.error("reset: could not delete '%s': %s", p.name, exc)
+                    elif p.is_dir():
+                        _shutil.rmtree(p, ignore_errors=False)
+                        wiped.append(p.name + "/")
+                except Exception as exc:
+                    errors.append(f"delete {p.name}: {exc}")
+                    log.error("reset: could not delete '%s': %s", p.name, exc)
         except Exception as exc:
             errors.append(f"config dir scan: {exc}")
             log.error("reset: config dir error: %s", exc)
@@ -854,7 +875,7 @@ class _PostHandlersMixin:
             except Exception:
                 pass
 
-        log.info("reset: wiped %d file(s): %s | stopped: %s%s",
+        log.info("reset: wiped %d item(s): %s | stopped: %s%s",
                  len(wiped), ", ".join(wiped),
                  ", ".join(stopped) or "none",
                  f" | errors: {'; '.join(errors)}" if errors else "")
@@ -870,8 +891,7 @@ class _PostHandlersMixin:
 
         # ── 5. Restart the whole process after a short flush delay ────────────
         def _restart():
-            import time as _t
-            _t.sleep(0.5)
+            _time.sleep(0.5)
             try:
                 _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
             except Exception as exc:
