@@ -1471,100 +1471,18 @@ select option{background:var(--bg3)}
 
 <!-- ══ SETTINGS TAB ══ -->
 <div id="tab-settings" class="tab-panel">
-  <div class="section-hdr"><h2>Application Settings</h2><span class="sep"></span></div>
+  <div class="section-hdr">
+    <h2>Application Settings</h2><span class="sep"></span>
+    <button class="btn" onclick="resetAppSettings()"
+      title="Reset ALL server-persisted settings (accent colour, branding, holiday country, notifications, system) back to factory defaults. UI-only toggles are not affected."
+      style="color:var(--red);border-color:var(--red)">↺ Reset to Defaults</button>
+  </div>
+  <div id="settings-reset-status" style="font-size:11px;padding:0 2px 10px;display:none"></div>
+  <!-- ── Server-persisted settings (appearance + notifications + system) ── -->
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">Server Settings — saved across sessions</div>
   <div class="settings-grid">
-    <!-- UI Preferences -->
-    <div class="setting-card">
-      <h3>UI Preferences</h3>
-      <div class="setting-row">
-        <div><div class="setting-label">Auto-refresh streams</div><div class="setting-desc">Poll for stream status updates</div></div>
-        <div class="toggle on" id="st-autoref" onclick="toggleSetting('autoref',this)" title="Automatically poll stream status at the configured interval"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Auto-scroll logs</div><div class="setting-desc">Jump to newest log entry</div></div>
-        <div class="toggle on" id="st-autoscroll" onclick="toggleSetting('autoscroll',this)" title="Automatically scroll the log view to the newest entry"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Compact stream table</div><div class="setting-desc">Reduce row padding</div></div>
-        <div class="toggle" id="st-compact" onclick="toggleSetting('compact',this)" title="Use smaller row padding to fit more streams on screen"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Show RTSP chip</div><div class="setting-desc">Display URL in stream table</div></div>
-        <div class="toggle on" id="st-showrtsp" onclick="toggleSetting('showrtsp',this)" title="Show the RTSP URL column in the Streams table"></div>
-      </div>
-    </div>
-
-    <!-- Notifications -->
-    <div class="setting-card">
-      <h3>Notifications</h3>
-      <div class="setting-row">
-        <div><div class="setting-label">Toast on stream start</div><div class="setting-desc">Show notification when stream goes LIVE</div></div>
-        <div class="toggle on" id="st-notif-start" onclick="toggleSetting('notifStart',this)" title="Show a toast notification when a stream goes LIVE"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Toast on stream error</div><div class="setting-desc">Alert when ERROR status detected</div></div>
-        <div class="toggle on" id="st-notif-err" onclick="toggleSetting('notifErr',this)" title="Show a toast notification when a stream enters an ERROR state"></div>
-      </div>
-      <div class="setting-row">
-        <div><div class="setting-label">Event countdown alerts</div><div class="setting-desc">Warn 1 min before scheduled event</div></div>
-        <div class="toggle" id="st-notif-event" onclick="toggleSetting('notifEvent',this)" title="Show a warning notification 1 minute before a scheduled event fires"></div>
-      </div>
-    </div>
-
-    <!-- Refresh Intervals -->
-    <div class="setting-card">
-      <h3>Refresh Intervals</h3>
-      <div class="setting-row">
-        <div class="setting-label">Stream poll interval</div>
-        <select id="st-poll-interval" onchange="applyPollInterval()" style="width:100px" title="How often to poll the server for stream status updates">
-          <option value="1500">1.5 s</option>
-          <option value="2500" selected>2.5 s</option>
-          <option value="5000">5 s</option>
-          <option value="10000">10 s</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">System stats interval</div>
-        <select id="st-stats-interval" onchange="applyStatsInterval()" style="width:100px" title="How often to refresh CPU and RAM stats in the header">
-          <option value="5000">5 s</option>
-          <option value="8000" selected>8 s</option>
-          <option value="15000">15 s</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">Log auto-refresh</div>
-        <select id="st-log-interval" onchange="applyLogInterval()" style="width:100px" title="How often to reload the log view when it is open">
-          <option value="2000">2 s</option>
-          <option value="4000" selected>4 s</option>
-          <option value="8000">8 s</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- System Info -->
-    <div class="setting-card">
-      <h3>System Info</h3>
-      <div class="setting-row">
-        <div class="setting-label">Version</div>
-        <code id="sys-ver" style="font-size:11px;color:var(--accent-light)">—</code>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">CPU Usage</div>
-        <b id="sys-cpu" style="color:var(--text)">—</b>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">RAM Usage</div>
-        <b id="sys-ram" style="color:var(--text)">—</b>
-      </div>
-      <div class="setting-row">
-        <div class="setting-label">Active Streams</div>
-        <b id="sys-live" style="color:var(--green)">—</b>
-      </div>
-      <div class="setting-row" style="border:none;padding-top:12px">
-        <button class="btn b" onclick="updateSysInfo()" style="width:100%;justify-content:center" title="Refresh CPU, RAM and active stream count">↻ Refresh Info</button>
-      </div>
-    </div>
     <!-- Accent Color -->
+    <div class="setting-card">
     <div class="setting-card">
       <h3>Accent Color</h3>
       <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
@@ -1659,8 +1577,105 @@ select option{background:var(--bg3)}
       </div>
     </div>
   </div>
+  <!-- end server settings-grid -->
 
-  <!-- end settings-grid -->
+  <!-- ── UI-only settings (not persisted to server) ── -->
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--text3);margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)">Browser Settings — stored locally in this browser only</div>
+  <div class="settings-grid">
+    <!-- UI Preferences -->
+    <div class="setting-card">
+      <h3>UI Preferences</h3>
+      <div class="setting-row">
+        <div><div class="setting-label">Auto-refresh streams</div><div class="setting-desc">Poll for stream status updates</div></div>
+        <div class="toggle on" id="st-autoref" onclick="toggleSetting('autoref',this)" title="Automatically poll stream status at the configured interval"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Auto-scroll logs</div><div class="setting-desc">Jump to newest log entry</div></div>
+        <div class="toggle on" id="st-autoscroll" onclick="toggleSetting('autoscroll',this)" title="Automatically scroll the log view to the newest entry"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Compact stream table</div><div class="setting-desc">Reduce row padding</div></div>
+        <div class="toggle" id="st-compact" onclick="toggleSetting('compact',this)" title="Use smaller row padding to fit more streams on screen"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Show RTSP chip</div><div class="setting-desc">Display URL in stream table</div></div>
+        <div class="toggle on" id="st-showrtsp" onclick="toggleSetting('showrtsp',this)" title="Show the RTSP URL column in the Streams table"></div>
+      </div>
+    </div>
+
+    <!-- Notifications (browser-only) -->
+    <div class="setting-card">
+      <h3>Browser Notifications</h3>
+      <div class="setting-row">
+        <div><div class="setting-label">Toast on stream start</div><div class="setting-desc">Show notification when stream goes LIVE</div></div>
+        <div class="toggle on" id="st-notif-start" onclick="toggleSetting('notifStart',this)" title="Show a toast notification when a stream goes LIVE"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Toast on stream error</div><div class="setting-desc">Alert when ERROR status detected</div></div>
+        <div class="toggle on" id="st-notif-err" onclick="toggleSetting('notifErr',this)" title="Show a toast notification when a stream enters an ERROR state"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Event countdown alerts</div><div class="setting-desc">Warn 1 min before scheduled event</div></div>
+        <div class="toggle" id="st-notif-event" onclick="toggleSetting('notifEvent',this)" title="Show a warning notification 1 minute before a scheduled event fires"></div>
+      </div>
+    </div>
+
+    <!-- Refresh Intervals -->
+    <div class="setting-card">
+      <h3>Refresh Intervals</h3>
+      <div class="setting-row">
+        <div class="setting-label">Stream poll interval</div>
+        <select id="st-poll-interval" onchange="applyPollInterval()" style="width:100px" title="How often to poll the server for stream status updates">
+          <option value="1500">1.5 s</option>
+          <option value="2500" selected>2.5 s</option>
+          <option value="5000">5 s</option>
+          <option value="10000">10 s</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">System stats interval</div>
+        <select id="st-stats-interval" onchange="applyStatsInterval()" style="width:100px" title="How often to refresh CPU and RAM stats in the header">
+          <option value="5000">5 s</option>
+          <option value="8000" selected>8 s</option>
+          <option value="15000">15 s</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Log auto-refresh</div>
+        <select id="st-log-interval" onchange="applyLogInterval()" style="width:100px" title="How often to reload the log view when it is open">
+          <option value="2000">2 s</option>
+          <option value="4000" selected>4 s</option>
+          <option value="8000">8 s</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="setting-card">
+      <h3>System Info</h3>
+      <div class="setting-row">
+        <div class="setting-label">Version</div>
+        <code id="sys-ver" style="font-size:11px;color:var(--accent-light)">—</code>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">CPU Usage</div>
+        <b id="sys-cpu" style="color:var(--text)">—</b>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">RAM Usage</div>
+        <b id="sys-ram" style="color:var(--text)">—</b>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Active Streams</div>
+        <b id="sys-live" style="color:var(--green)">—</b>
+      </div>
+      <div class="setting-row" style="border:none;padding-top:12px">
+        <button class="btn b" onclick="updateSysInfo()" style="width:100%;justify-content:center" title="Refresh CPU, RAM and active stream count">↻ Refresh Info</button>
+      </div>
+    </div>
+  </div>
+  <!-- end browser settings-grid -->
+
   <div style="margin-top:4px">
     <div class="section-hdr"><h2>Holidays</h2><span class="sep"></span>
       <button class="btn b" onclick="loadHolidaySettings();loadCustomHolidays();" title="Reload holiday settings from server">↻ Load</button>
@@ -5230,6 +5245,55 @@ async function saveHolidaySettings(){
   }catch(e){
     st.textContent='✕ '+e.message;st.style.color='var(--red)';
     toast('Save failed: '+e.message,'err');
+  }
+}
+
+// ─── Reset ALL server-persisted settings to factory defaults ────────────────
+async function resetAppSettings(){
+  if(!confirm(
+    'Reset ALL server settings to factory defaults?\n\n' +
+    'This will clear:\n  • Accent colour\n  • Brand name & logo\n  • Date/time format\n' +
+    '  • Holiday country & subdivision\n  • Server notification defaults\n  • System settings\n\n' +
+    'Browser-only settings (toggles, poll intervals) are NOT affected.\n\n' +
+    'Continue?'
+  )) return;
+  const statusEl=document.getElementById('settings-reset-status');
+  if(statusEl){statusEl.style.display='';statusEl.textContent='Resetting…';statusEl.style.color='var(--yellow)';}
+  try{
+    const r=await fetch('/api/reset_settings',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:'{}'
+    });
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.msg||'Reset failed');
+    // Re-apply all settings to the live UI
+    const defaults=j.values||{};
+    // Accent colour
+    const hex=(defaults.accent_color||'#b87333').trim();
+    if(/^#[0-9a-fA-F]{6}$/.test(hex)){
+      accentPreview(hex);
+      const picker=document.getElementById('accent-color-picker');
+      const hexIn=document.getElementById('accent-color-hex');
+      if(picker) picker.value=hex;
+      if(hexIn) hexIn.value=hex.toUpperCase();
+    }
+    // Branding
+    if(typeof applyBranding==='function') applyBranding(defaults);
+    if(typeof loadBrandingSettings==='function') loadBrandingSettings();
+    // Holiday country
+    const ci=document.getElementById('hol-country');
+    const si=document.getElementById('hol-subdiv');
+    if(ci) ci.value=defaults.holiday_country||'US';
+    if(si) si.value=defaults.holiday_subdiv||'';
+    // Invalidate holiday cache
+    _hdLoaded=false; _hdData=[];
+    const lbl=document.getElementById('hd-next-label');
+    if(lbl) lbl.textContent='Holidays';
+    if(statusEl){statusEl.textContent='✓ Settings reset to factory defaults.';statusEl.style.color='var(--green)';}
+    toast('Settings reset to factory defaults','ok');
+    setTimeout(()=>{if(statusEl)statusEl.style.display='none';},6000);
+  }catch(e){
+    if(statusEl){statusEl.textContent='✕ Reset failed: '+e.message;statusEl.style.color='var(--red)';}
+    toast('Reset failed: '+e.message,'err');
   }
 }
 
