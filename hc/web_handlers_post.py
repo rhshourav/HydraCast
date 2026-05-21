@@ -799,6 +799,7 @@ class _PostHandlersMixin:
         import threading as _thr
         import time as _time
 
+        from hc.constants import CONFIG_DIR               # ← required for wipe step
         from hc.web import _WEB_MANAGER, _invalidate_lib_cache  # type: ignore
 
         if not data.get("confirm"):
