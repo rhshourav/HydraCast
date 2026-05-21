@@ -70,6 +70,13 @@ if sys.version_info < (3, 8):
 
 # ── Bootstrap: install runtime deps if missing ────────────────────────────────
 def _bootstrap() -> None:
+    # When running as a PyInstaller frozen executable all dependencies are
+    # already bundled — skip pip and the os.execv restart entirely.
+    # os.execv would relaunch the .exe itself rather than python.exe, causing
+    # an infinite restart loop, so this guard is critical.
+    if getattr(sys, "frozen", False):
+        return
+
     import importlib.util as _ilu
     needed = {
         "rich":                  "rich>=13.0",
@@ -126,7 +133,13 @@ from hc.constants import (
 )
 
 # Initialise all directory paths relative to this script's folder.
-set_base_dir(Path(__file__))
+# When frozen by PyInstaller, __file__ points inside the unpacked temp dir;
+# we want the directory that contains the .exe instead so that config/,
+# logs/, media/ etc. are created next to the executable, not in the temp dir.
+if getattr(sys, "frozen", False):
+    set_base_dir(Path(sys.executable))
+else:
+    set_base_dir(Path(__file__))
 
 # Now it is safe to import everything else.
 from hc import web as _web_module          # noqa: E402
@@ -240,8 +253,15 @@ def _daemonize_windows(console: Console) -> None:
     CREATE_NO_WINDOW    = 0x08000000
     CREATE_NEW_PG       = 0x00000200
 
+    # When frozen, sys.executable IS the .exe — relaunch it directly without
+    # prepending it again as a script argument.
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable] + args[1:]  # args[0] would be the exe path itself
+    else:
+        cmd = [sys.executable] + args
+
     proc = subprocess.Popen(
-        [sys.executable] + args,
+        cmd,
         creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW | CREATE_NEW_PG,
         close_fds=True,
         stdin=subprocess.DEVNULL,
