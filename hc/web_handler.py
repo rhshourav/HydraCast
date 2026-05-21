@@ -357,15 +357,11 @@ def _active_event_name(st, cfg, mgr) -> Optional[str]:
             # current_file is already shown -- active_event not needed
             return None
         # current_file is None: worker doesn't expose the oneshot path.
-        # Find the event that is currently in-flight.
-        # Try unplayed first (played flag set only when event finishes).
-        in_flight = next(
-            (ev.file_path.name for ev in stream_events if not ev.played),
-            None,
-        )
-        if in_flight:
-            return in_flight
-        # Fallback: played flag was set on trigger -- take most recently fired.
+        # The worker sets ev.played=True at the moment it fires the event
+        # (not when it finishes), so the currently-playing event already has
+        # played=True.  Do NOT use not-played events here -- those are future
+        # scheduled events, not the one running right now.
+        # Take the most recently fired event (highest play_at, played=True).
         played_events = sorted(
             (ev for ev in stream_events if ev.played),
             key=lambda e: e.play_at,
