@@ -7056,6 +7056,14 @@ function EventsCalendar() {
   const refreshEvents = useCallback(() =>
     fetch("/api/events").then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setEvents(d); }).catch(()=>{}), []);
 
+  // Keep the stream list current so the CreateModal never shows stale data.
+  // Streams can become available after the initial mount (manager init race),
+  // so we refresh on the same cadence as events.
+  const refreshStreams = useCallback(() =>
+    fetch("/api/streams").then(r=>r.json()).then(d=>{
+      if(Array.isArray(d)) setStreams([...d].sort((a,b)=>a.name.localeCompare(b.name)));
+    }).catch(()=>{}), []);
+
   // Initial load
   useEffect(() => {
     Promise.all([
@@ -7103,11 +7111,19 @@ function EventsCalendar() {
     }
   }, [modal]);
 
-  // Poll events every 15s
+  // Poll events + streams every 15s.
+  // Polling streams ensures the CreateModal always reflects reality even when
+  // the manager wasn't fully initialised at the time the calendar tab mounted.
   useEffect(() => {
-    const t = setInterval(refreshEvents, 15_000);
+    const t = setInterval(() => { refreshEvents(); refreshStreams(); }, 15_000);
     return () => clearInterval(t);
-  }, [refreshEvents]);
+  }, [refreshEvents, refreshStreams]);
+
+  // Also refresh streams immediately when the create modal opens so the list
+  // is always fresh regardless of where we are in the 15-second poll cycle.
+  useEffect(() => {
+    if (modal === "create") refreshStreams();
+  }, [modal, refreshStreams]);
 
   // Calendar grid
   const firstDay    = new Date(year, month, 1).getDay();
