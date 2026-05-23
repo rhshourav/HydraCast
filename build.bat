@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-echo [HydraCast] Standalone build (no Google Auth)
+echo [HydraCast] Standalone build
 
 REM ── Virtual environment ───────────────────────────────────────────────────
 if exist ".build_env\Scripts\activate.bat" (
@@ -40,35 +40,47 @@ if "!CUR_HASH!" == "!PREV_HASH!" (
     echo !CUR_HASH!>"%REQ_HASH_FILE%"
 )
 
-REM ── Tray dependencies (pystray + Pillow) ─────────────────────────────────
-echo [HydraCast] Ensuring tray dependencies (pystray, Pillow) ...
-pip install pystray Pillow -q
+REM ── Tray + SSL dependencies ───────────────────────────────────────────────
+echo [HydraCast] Ensuring tray and SSL dependencies ...
+pip install pystray Pillow cryptography -q
 if errorlevel 1 (
-    echo [HydraCast] WARNING: pystray/Pillow install failed -- tray icon will be disabled.
+    echo [HydraCast] WARNING: optional dependency install had errors -- continuing.
 )
 
-REM ── Build hydracast.exe (console / TUI) ──────────────────────────────────
+REM ── Build hydracast.exe (console TUI) ────────────────────────────────────
 echo.
-echo [HydraCast] Building hydracast.exe (TUI) ...
+echo [HydraCast] Building hydracast.exe (TUI + console) ...
 pyinstaller hydracast.spec --clean --noconfirm
 if errorlevel 1 (
     echo [HydraCast] ERROR: hydracast.spec build failed.
     pause & exit /b 1
 )
 
-REM ── Build hydracast_bg.exe (no console / tray) ───────────────────────────
+REM ── Build hydracast_bg.exe (no console, system tray) ─────────────────────
 echo.
 echo [HydraCast] Building hydracast_bg.exe (background + tray) ...
-pyinstaller hydracast_bg.spec --noconfirm
+pyinstaller hydracast_bg.spec --clean --noconfirm
 if errorlevel 1 (
     echo [HydraCast] ERROR: hydracast_bg.spec build failed.
     pause & exit /b 1
 )
 
+REM ── Merge hydracast_bg.exe into the main HydraCast folder ─────────────────
 echo.
-echo [HydraCast] Done!
-echo   TUI mode : dist\HydraCast\hydracast.exe
-echo   BG  mode : dist\HydraCast\hydracast_bg.exe  (system tray)
+echo [HydraCast] Copying hydracast_bg.exe into dist\HydraCast\ ...
+copy /Y "dist\HydraCast_BG\hydracast_bg.exe" "dist\HydraCast\hydracast_bg.exe"
+if errorlevel 1 (
+    echo [HydraCast] ERROR: Could not copy hydracast_bg.exe.
+    pause & exit /b 1
+)
+REM Clean up the temporary BG build folder.
+rmdir /S /Q "dist\HydraCast_BG"
+
 echo.
-echo [HydraCast] Copy your bin\ folder into dist\HydraCast\bin\ if not already there.
+echo [HydraCast] Build complete!
+echo.
+echo   dist\HydraCast\hydracast.exe     -- TUI / interactive mode
+echo   dist\HydraCast\hydracast_bg.exe  -- background mode (system tray)
+echo.
+echo [HydraCast] Both EXEs share the same bin\, config\, media\, logs\ folders.
 pause
