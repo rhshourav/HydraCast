@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-echo [HydraCast] Standalone build (no Google Auth)
+echo [HydraCast] Standalone build
 
 REM ── Virtual environment ───────────────────────────────────────────────────
 if exist ".build_env\Scripts\activate.bat" (
