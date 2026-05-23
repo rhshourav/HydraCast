@@ -149,6 +149,7 @@ from hc.tui import run_tui_loop            # noqa: E402
 from hc.utils import _local_ip             # noqa: E402
 from hc.web import WebServer               # noqa: E402
 from hc.worker import LogBuffer            # noqa: E402
+from hc.ssl_bootstrap import ensure_ssl    # noqa: E402
 
 
 # =============================================================================
@@ -398,6 +399,13 @@ def _preflight(console: Console) -> List[StreamConfig]:
         set_ffprobe(ffprobe_path)
     else:
         console.print(f"[{CY}]⚠  FFprobe not available (optional — some probing features disabled).[/]")
+
+    # ── SSL certificate ───────────────────────────────────────────────────────
+    try:
+        ensure_ssl(console)
+    except RuntimeError as exc:
+        console.print(f"[{CR}]✘  SSL error: {exc}[/]")
+        sys.exit(1)
 
     # ── config/streams.json ───────────────────────────────────────────────────
     try:
