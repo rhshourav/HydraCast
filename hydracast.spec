@@ -1,28 +1,29 @@
-# hydracast_bg.spec  —  Background + system tray build (no Google Auth)
+# hydracast.spec  —  Standalone build (no Google Auth)
 import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
+# Only collect holidays data; Google Auth is excluded entirely.
 holidays_datas = collect_data_files('holidays')
 
-# pystray uses pkg_resources / data files on some backends
-pystray_datas  = collect_data_files('pystray')
-
 a = Analysis(
-    ['hydracast_bg.py'],
+    ['hydracast.py'],
     pathex=['.'],
     binaries=[],
     datas=[
+        # hc package non-py files
         ('hc', 'hc'),
+        # resources folder (icon, SVG, etc.)
         ('resources', 'resources'),
+        # bin folder — mediamtx.exe + bin/bin/ffmpeg.exe etc. included as-is
         ('bin', 'bin'),
+        # holidays locale/data files
         *holidays_datas,
-        *pystray_datas,
     ],
     hiddenimports=[
-        # ── hc submodules ─────────────────────────────────────────────────────
+        # ── hc submodules (dynamically imported) ─────────────────────────────
         'hc.compliance',
         'hc.constants',
         'hc.dependency',
@@ -54,23 +55,22 @@ a = Analysis(
         'hc.web_settings_manager',
         'hc.web_upload',
         'hc.worker',
-        # ── tray dependencies ─────────────────────────────────────────────────
-        'pystray',
-        'pystray._win32',           # Windows tray backend
-        'PIL',
-        'PIL.Image',
-        'PIL.IcoImagePlugin',       # needed to open .ico files
-        'PIL.PngImagePlugin',
-        # ── stdlib / other ────────────────────────────────────────────────────
+        # ── stdlib / third-party ─────────────────────────────────────────────
         'holidays',
         'rich.console',
         'psutil',
         'ctypes',
         'ctypes.wintypes',
         'email.mime.multipart',
+        'hc.ssl_bootstrap',
+        'cryptography',
+        'cryptography.x509',
+        'cryptography.hazmat.primitives.hashes',
+        'cryptography.hazmat.primitives.serialization',
+        'cryptography.hazmat.primitives.asymmetric.rsa',
         'email.mime.text',
-        'webbrowser',
     ],
+    # Explicitly exclude Google Auth packages to keep the EXE small.
     excludes=[
         'google',
         'google.auth',
@@ -95,14 +95,14 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
-    exclude_binaries=True,
-    name='hydracast_bg',
+    exclude_binaries=True,           # one-dir mode (dist/HydraCast/)
+    name='hydracast',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    console=False,               # no console window — tray only
-    icon='resources/HydraCast.ico',
+    upx=True,                        # compress if UPX is installed
+    console=True,                    # TUI needs a visible console
+    icon='resources/HydraCast.ico',  # corrected icon filename
 )
 
 coll = COLLECT(
@@ -113,9 +113,11 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[
+        # Do not UPX-compress native binaries — they are already compressed
+        # and double-compression often breaks them.
         'ffmpeg.exe',
         'ffprobe.exe',
         'mediamtx.exe',
     ],
-    name='HydraCast',            # same dist folder as hydracast.exe
+    name='HydraCast',                # output folder: dist/HydraCast/
 )
