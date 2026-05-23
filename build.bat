@@ -40,12 +40,17 @@ if "!CUR_HASH!" == "!PREV_HASH!" (
     echo !CUR_HASH!>"%REQ_HASH_FILE%"
 )
 
-REM ── Tray + SSL dependencies ───────────────────────────────────────────────
-echo [HydraCast] Ensuring tray and SSL dependencies ...
-pip install pystray Pillow cryptography -q
+REM ── Tray + SSL + pywin32 dependencies ────────────────────────────────────
+REM   pywin32 is required by pystray's _win32 backend.
+REM   Without it the tray icon import fails silently and the process exits.
+echo [HydraCast] Ensuring tray, SSL and win32 dependencies ...
+pip install pystray Pillow cryptography pywin32 -q
 if errorlevel 1 (
     echo [HydraCast] WARNING: optional dependency install had errors -- continuing.
 )
+
+REM ── Run pywin32 post-install script (registers DLLs) ─────────────────────
+python .build_env\Scripts\pywin32_postinstall.py -install 2>nul
 
 REM ── Build hydracast.exe (console TUI) ────────────────────────────────────
 echo.
@@ -83,4 +88,6 @@ echo   dist\HydraCast\hydracast.exe     -- TUI / interactive mode
 echo   dist\HydraCast\hydracast_bg.exe  -- background mode (system tray)
 echo.
 echo [HydraCast] Both EXEs share the same bin\, config\, media\, logs\ folders.
+echo [HydraCast] Crash logs: dist\HydraCast\logs\hydracast_bg.log
+echo.
 pause
