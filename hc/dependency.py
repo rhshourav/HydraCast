@@ -72,28 +72,48 @@ def _internal_bin_dir() -> Path:
 
 def _copy_from_internal(bin_name: str) -> Optional[Path]:
     """
-    Look for *bin_name* in HydraCast_internal/bin/.
-    If found, copy it into BIN_DIR() and return the destination path.
-    Returns None when the binary is absent from the internal folder or
-    when the copy fails.
+    Look for *bin_name* in HydraCast_internal/bin/ (and its bin/ sub-folder
+    for Gyan-style bundles where ffmpeg ships as bin/bin/ffmpeg.exe).
+
+    Search order:
+      1. HydraCast_internal/bin/<bin_name>          — flat layout
+      2. HydraCast_internal/bin/bin/<bin_name>       — Gyan nested layout
+
+    If found, copy into BIN_DIR() and return the destination path.
+    Returns None when the binary is absent or the copy fails.
     """
-    src = _internal_bin_dir() / bin_name
-    if not src.exists():
+    internal = _internal_bin_dir()
+
+    # Candidate locations inside HydraCast_internal/bin/
+    candidates = [
+        internal / bin_name,           # flat:   HydraCast_internal/bin/ffmpeg.exe
+        internal / "bin" / bin_name,   # nested: HydraCast_internal/bin/bin/ffmpeg.exe
+    ]
+
+    src: Optional[Path] = None
+    for candidate in candidates:
+        log.debug("[dep] Checking internal candidate: %s (exists=%s)", candidate, candidate.exists())
+        if candidate.exists():
+            src = candidate
+            break
+
+    if src is None:
+        log.debug(
+            "[dep] %s not found in HydraCast_internal/bin/ (checked: %s)",
+            bin_name, [str(c) for c in candidates],
+        )
         return None
+
     dest = BIN_DIR() / bin_name
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         if not IS_WIN:
             dest.chmod(dest.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-        log.info(
-            "[dep] Copied %s from HydraCast_internal/bin/ → %s", bin_name, dest
-        )
+        log.info("[dep] Copied %s  %s  →  %s", bin_name, src, dest)
         return dest
     except Exception as exc:
-        log.warning(
-            "[dep] Could not copy %s from HydraCast_internal/bin/: %s", bin_name, exc
-        )
+        log.warning("[dep] Could not copy %s from %s: %s", bin_name, src, exc)
         return None
 
 # ---------------------------------------------------------------------------
@@ -525,9 +545,15 @@ class DependencyManager:
             console.print(f"[{CG}]✔  FFmpeg  : {path}[/]")
             return path
 
+        # Show the operator exactly which paths were checked so they can
+        # diagnose placement issues without digging into logs.
+        internal = _internal_bin_dir()
         console.print(
-            f"[{CY}]⚠  FFmpeg not found in bin/ or HydraCast_internal/bin/ — "
-            f"attempting automatic download …[/]"
+            f"[{CY}]⚠  FFmpeg not found — checked:[/]\n"
+            f"[{CY}]     bin/           : {BIN_DIR() / FFMPEG_BIN_NAME}[/]\n"
+            f"[{CY}]     internal/bin/  : {internal / FFMPEG_BIN_NAME}[/]\n"
+            f"[{CY}]     internal/bin/bin/: {internal / 'bin' / FFMPEG_BIN_NAME}[/]\n"
+            f"[{CY}]   Attempting automatic download …[/]"
         )
         if cls.download_ffmpeg(console):
             return cls.check_ffmpeg()
