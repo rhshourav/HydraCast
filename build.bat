@@ -2,6 +2,7 @@
 setlocal EnableDelayedExpansion
 
 echo [HydraCast] Standalone build
+echo.
 
 REM ── Virtual environment ───────────────────────────────────────────────────
 if exist ".build_env\Scripts\activate.bat" (
@@ -41,15 +42,11 @@ if "!CUR_HASH!" == "!PREV_HASH!" (
 )
 
 REM ── Tray + SSL + pywin32 dependencies ────────────────────────────────────
-REM   pywin32 is required by pystray's _win32 backend.
-REM   Without it the tray icon import fails silently and the process exits.
 echo [HydraCast] Ensuring tray, SSL and win32 dependencies ...
 pip install pystray Pillow cryptography pywin32 -q
 if errorlevel 1 (
     echo [HydraCast] WARNING: optional dependency install had errors -- continuing.
 )
-
-REM ── Run pywin32 post-install script (registers DLLs) ─────────────────────
 python .build_env\Scripts\pywin32_postinstall.py -install 2>nul
 
 REM ── Build hydracast.exe (console TUI) ────────────────────────────────────
@@ -72,22 +69,56 @@ if errorlevel 1 (
 
 REM ── Merge hydracast_bg.exe into the main HydraCast folder ─────────────────
 echo.
-echo [HydraCast] Copying hydracast_bg.exe into dist\HydraCast\ ...
+echo [HydraCast] Merging hydracast_bg.exe into dist\HydraCast\ ...
 copy /Y "dist\HydraCast_BG\hydracast_bg.exe" "dist\HydraCast\hydracast_bg.exe"
 if errorlevel 1 (
     echo [HydraCast] ERROR: Could not copy hydracast_bg.exe.
     pause & exit /b 1
 )
-REM Clean up the temporary BG build folder.
 rmdir /S /Q "dist\HydraCast_BG"
 
 echo.
-echo [HydraCast] Build complete!
+echo [HydraCast] dist\HydraCast\ is ready.
 echo.
-echo   dist\HydraCast\hydracast.exe     -- TUI / interactive mode
-echo   dist\HydraCast\hydracast_bg.exe  -- background mode (system tray)
+echo   hydracast.exe     -- TUI / interactive mode
+echo   hydracast_bg.exe  -- background mode (system tray)
 echo.
-echo [HydraCast] Both EXEs share the same bin\, config\, media\, logs\ folders.
-echo [HydraCast] Crash logs: dist\HydraCast\logs\hydracast_bg.log
+
+REM ── NSIS Installer ───────────────────────────────────────────────────────
+echo [HydraCast] Looking for NSIS to build installer ...
+
+REM Check common NSIS locations
+set MAKENSIS=
+if exist "C:\Program Files (x86)\NSIS\makensis.exe" set MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe
+if exist "C:\Program Files\NSIS\makensis.exe"       set MAKENSIS=C:\Program Files\NSIS\makensis.exe
+
+REM Also check PATH
+if "!MAKENSIS!"=="" (
+    where makensis >nul 2>&1
+    if not errorlevel 1 set MAKENSIS=makensis
+)
+
+if "!MAKENSIS!"=="" (
+    echo [HydraCast] WARNING: NSIS not found -- skipping installer build.
+    echo             Download NSIS from https://nsis.sourceforge.io/
+    echo             Then re-run:  makensis HydraCast_Installer.nsi
+    echo.
+    goto :done
+)
+
+echo [HydraCast] Building installer with NSIS ...
+"!MAKENSIS!" /V2 HydraCast_Installer.nsi
+if errorlevel 1 (
+    echo [HydraCast] ERROR: NSIS build failed.
+    pause & exit /b 1
+)
+
+echo.
+echo [HydraCast] ============================================================
+echo [HydraCast]  Installer ready:
+for %%F in (HydraCast-*-Setup.exe) do echo    %%~fF
+echo [HydraCast] ============================================================
+
+:done
 echo.
 pause
