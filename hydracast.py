@@ -349,7 +349,7 @@ def _parse_args() -> argparse.Namespace:
 # PRE-FLIGHT CHECKS
 # =============================================================================
 def _preflight(console: Console) -> List[StreamConfig]:
-    from hc.constants import LISTEN_ADDR, BASE_DIR, MEDIA_DIR
+    from hc.constants import LISTEN_ADDR, BASE_DIR, MEDIA_DIR, WRITABLE_BASE_DIR
 
     console.rule(f"[{CC}]{APP_NAME} v{APP_VER}[/]  Pre-flight checks")
     console.print()
@@ -370,6 +370,8 @@ def _preflight(console: Console) -> List[StreamConfig]:
     console.print(f"[{CD}]  LAN IP    : {_local_ip()}[/]")
     console.print(f"[{CD}]  Bind addr : {LISTEN_ADDR()}[/]")
     console.print(f"[{CD}]  Base dir  : {BASE_DIR()}[/]")
+    if WRITABLE_BASE_DIR() != BASE_DIR():
+        console.print(f"[{CD}]  Data dir  : {WRITABLE_BASE_DIR()}  (redirected — install dir is read-only)[/]")
     console.print(f"[{CD}]  Media dir : {MEDIA_DIR()}[/]")
     console.print(f"[{CD}]  Config dir: {CONFIG_DIR()}[/]")
     console.print()
@@ -446,9 +448,61 @@ def _preflight(console: Console) -> List[StreamConfig]:
 
 
 # =============================================================================
+# UAC ELEVATION (Windows)
+# =============================================================================
+def _request_admin_if_needed() -> bool:
+    """
+    Re-launch the current process with administrator privileges via UAC if:
+      • We are running on Windows, AND
+      • The current process is NOT already elevated.
+
+    Returns True  → already admin (or non-Windows): continue normally.
+    Returns False → an elevated process was spawned: caller should exit.
+
+    HydraCast needs elevation to:
+      • Create subdirectories inside C:\\Program Files\\HydraCast\\
+      • Bind to privileged ports (80, 443)
+      • Add Windows Firewall rules
+
+    If the user declines the UAC prompt, the function returns True and the app
+    continues — constants.py will silently redirect all writable dirs to
+    %%APPDATA%%\\HydraCast so the startup never fails with PermissionError.
+    """
+    if not IS_WIN:
+        return True
+
+    try:
+        import ctypes
+        if ctypes.windll.shell32.IsUserAnAdmin():
+            return True   # already elevated
+    except Exception:
+        return True       # can't check; assume OK
+
+    try:
+        import ctypes
+        params = " ".join(f'"{a}"' for a in sys.argv[1:])
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, params, None, 1
+        )
+        if ret > 32:
+            return False  # elevated copy launched; exit un-elevated one
+    except Exception:
+        pass
+
+    return True   # elevation declined or failed — continue without it
+
+
+# =============================================================================
 # MAIN
 # =============================================================================
 def main() -> None:
+    # ── UAC elevation (Windows) ───────────────────────────────────────────────
+    # Request admin rights before any I/O so we can write to the install dir
+    # and bind to privileged ports (80/443).  If the user declines, constants.py
+    # falls back to %APPDATA%\HydraCast silently.
+    if not _request_admin_if_needed():
+        sys.exit(0)   # elevated copy is running; exit the un-elevated one
+
     assert_licensed()                # [LG] exit if locked
     start_checker("hydracast")       # [LG] background validator
     args = _parse_args()
