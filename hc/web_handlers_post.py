@@ -788,20 +788,17 @@ class _PostHandlersMixin:
         """
         POST /api/action  { action: "restart_process" }
 
-        Gracefully stops all streams, flushes an HTTP 200 response so the
-        browser's polling loop can detect the server going down, then spawns
-        a fresh detached process and exits.
+        Gracefully stops all streams, flushes HTTP 200, then spawns a fresh
+        detached copy of this process and calls sys.exit(0).
 
-        os.execv() is unreliable on Windows with a PyInstaller .exe — it
-        launches a child and immediately exits the parent, racing daemon
-        threads that haven't finished flushing the socket yet.  Using
-        subprocess.Popen (detached) + sys.exit(0) is the correct pattern.
-        The thread is non-daemon so the runtime cannot kill it early.
-
-        No config is wiped — this is a clean restart, not a factory reset.
+        os.execv() is NOT used here — it is unreliable with a frozen PyInstaller
+        .exe on Windows (replaces the process image but inherits locked file
+        handles and bound ports, causing the new instance to fail silently).
+        subprocess.Popen (DETACHED_PROCESS) + sys.exit(0) is the correct pattern.
         """
         import os as _os
         import sys as _sys
+        import subprocess as _sp
         import time as _time
         import threading as _thr
 
@@ -809,8 +806,8 @@ class _PostHandlersMixin:
 
         mgr = _WEB_MANAGER
 
-        # Stop all running streams so FFmpeg/MediaMTX release their ports
-        # before the new process tries to bind them.
+        # Stop all streams so FFmpeg/MediaMTX release their ports before the
+        # new process tries to bind them.
         if mgr is not None:
             for st in list(getattr(mgr, "states", [])):
                 try:
@@ -821,11 +818,25 @@ class _PostHandlersMixin:
         self._json({"ok": True, "msg": "Restarting…"})
 
         def _do_restart() -> None:
-            _time.sleep(0.6)
+            _time.sleep(0.8)   # let the HTTP response flush
             try:
-                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+                kw: dict = dict(
+                    stdout=_sp.DEVNULL,
+                    stderr=_sp.DEVNULL,
+                    stdin=_sp.DEVNULL,
+                )
+                if _sys.platform == "win32":
+                    DETACHED_PROCESS         = 0x00000008
+                    CREATE_NEW_PROCESS_GROUP = 0x00000200
+                    kw["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                    kw["close_fds"]     = True
+                else:
+                    kw["start_new_session"] = True
+                _sp.Popen([_sys.executable] + _sys.argv, **kw)
             except Exception as exc:
-                log.error("restart_process: execv failed: %s", exc)
+                log.error("restart_process: Popen failed: %s", exc)
+                return
+            _sys.exit(0)
 
         _thr.Thread(target=_do_restart, daemon=False,
                     name="hc-restart-process").start()
@@ -836,26 +847,23 @@ class _PostHandlersMixin:
         """
         POST /api/reset  –  Hard factory reset.
 
-        Steps (in order):
-          1. Force-stop every running stream (SIGKILL via manager stop + worker kill).
-          2. Sleep briefly so OS reclaims resources.
-          3. Delete EVERYTHING inside config/ — files AND subdirectories
-             (streams.hcf, events.hcf, mail_config.hcf, app_settings.hcf,
-             resume_positions.hcf, media_roots.hcf, holiday caches,
-             backups/ subdir, …).
-          4. Clear in-memory state (manager streams, events, settings).
-          5. Flush the HTTP response so the browser gets a reply.
-          6. Wait 400 ms then os.execv to restart the whole process fresh.
-
-        Body: { "confirm": true }   ← required safety gate
+        Steps:
+          1. Force-stop every running stream.
+          2. Sleep briefly so the OS reclaims resources.
+          3. Delete EVERYTHING inside config/.
+          4. Clear in-memory state.
+          5. Flush the HTTP response.
+          6. Spawn fresh detached process + sys.exit(0).
+             (NOT os.execv — see _handle_restart_process for the reasoning.)
         """
         import os as _os
         import sys as _sys
+        import subprocess as _sp
         import shutil as _shutil
         import threading as _thr
         import time as _time
 
-        from hc.constants import CONFIG_DIR               # ← required for wipe step
+        from hc.constants import CONFIG_DIR
         from hc.web import _WEB_MANAGER, _invalidate_lib_cache  # type: ignore
 
         if not data.get("confirm"):
@@ -870,28 +878,22 @@ class _PostHandlersMixin:
         if mgr is not None:
             for st in list(getattr(mgr, "states", [])):
                 try:
-                    # Try graceful stop first; also attempt to kill the worker
-                    # process directly so FFmpeg is guaranteed dead.
-                    try:
-                        worker = mgr.get_worker(st.config.name)
-                        if worker is not None:
-                            try:
-                                worker.kill()   # force-kill FFmpeg subprocess
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
+                    worker = mgr.get_worker(st.config.name)
+                    if worker is not None:
+                        try:
+                            worker.kill()
+                        except Exception:
+                            pass
                     mgr.stop(st.config.name)
                     stopped.append(st.config.name)
                 except Exception as exc:
                     errors.append(f"stop {st.config.name}: {exc}")
 
-        # Brief pause so OS resources are released before we wipe the config
         _time.sleep(0.4)
 
-        # ── 2. Wipe EVERYTHING in config/ (files + subdirectories) ───────────
+        # ── 2. Wipe config/ ───────────────────────────────────────────────────
         cfg_dir = CONFIG_DIR()
-        wiped:   list = []
+        wiped: list = []
         try:
             for p in cfg_dir.iterdir():
                 try:
@@ -937,7 +939,7 @@ class _PostHandlersMixin:
                  ", ".join(stopped) or "none",
                  f" | errors: {'; '.join(errors)}" if errors else "")
 
-        # ── 4. Send response now, before execv kills the process ──────────────
+        # ── 4. Send response before the process exits ─────────────────────────
         self._json({
             "ok":      True,
             "msg":     "Reset complete — restarting…",
@@ -946,12 +948,26 @@ class _PostHandlersMixin:
             "errors":  errors,
         })
 
-        # ── 5. Restart the whole process after a short flush delay ────────────
-        def _restart():
-            _time.sleep(0.5)
+        # ── 5. Restart via detached Popen + sys.exit(0) ───────────────────────
+        def _restart() -> None:
+            _time.sleep(0.8)
             try:
-                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+                kw: dict = dict(
+                    stdout=_sp.DEVNULL,
+                    stderr=_sp.DEVNULL,
+                    stdin=_sp.DEVNULL,
+                )
+                if _sys.platform == "win32":
+                    DETACHED_PROCESS         = 0x00000008
+                    CREATE_NEW_PROCESS_GROUP = 0x00000200
+                    kw["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                    kw["close_fds"]     = True
+                else:
+                    kw["start_new_session"] = True
+                _sp.Popen([_sys.executable] + _sys.argv, **kw)
             except Exception as exc:
-                log.error("reset: execv failed: %s", exc)
+                log.error("reset: Popen failed: %s", exc)
+                return
+            _sys.exit(0)
 
         _thr.Thread(target=_restart, daemon=False, name="hc-reset-restart").start()
