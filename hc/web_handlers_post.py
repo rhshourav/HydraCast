@@ -789,24 +789,28 @@ class _PostHandlersMixin:
         POST /api/action  { action: "restart_process" }
 
         Gracefully stops all streams, flushes an HTTP 200 response so the
-        browser's polling loop can detect the connection drop, then calls
-        os.execv() to replace the current process with a fresh copy.
+        browser's polling loop can detect the server going down, then spawns
+        a fresh detached process and exits.
+
+        os.execv() is unreliable on Windows with a PyInstaller .exe — it
+        launches a child and immediately exits the parent, racing daemon
+        threads that haven't finished flushing the socket yet.  Using
+        subprocess.Popen (detached) + sys.exit(0) is the correct pattern.
+        The thread is non-daemon so the runtime cannot kill it early.
 
         No config is wiped — this is a clean restart, not a factory reset.
-        The browser-side poll in restartApp() will reload the page once
-        /api/streams responds again.
         """
-        import os as _os
         import sys as _sys
         import time as _time
         import threading as _thr
+        import subprocess as _sub
 
         from hc.web import _WEB_MANAGER  # type: ignore
 
         mgr = _WEB_MANAGER
 
-        # Stop all running streams gracefully so MediaMTX and FFmpeg
-        # release their ports before the new process starts binding them.
+        # Stop all running streams so FFmpeg/MediaMTX release their ports
+        # before the new process tries to bind them.
         if mgr is not None:
             for st in list(getattr(mgr, "states", [])):
                 try:
@@ -814,19 +818,24 @@ class _PostHandlersMixin:
                 except Exception:
                     pass
 
-        # Send the success response now — once execv() fires the socket
-        # closes and the browser will see a connection error, which is
-        # exactly what the JS polling loop expects.
         self._json({"ok": True, "msg": "Restarting…"})
 
         def _do_restart() -> None:
             _time.sleep(0.6)   # give wfile.write() time to flush
             try:
-                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+                kwargs: dict = {"close_fds": True}
+                if _sys.platform == "win32":
+                    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                    kwargs["creationflags"] = 0x00000008 | 0x00000200
+                else:
+                    kwargs["start_new_session"] = True
+                _sub.Popen([_sys.executable] + _sys.argv[1:], **kwargs)
             except Exception as exc:
-                log.error("restart_process: execv failed: %s", exc)
+                log.error("restart_process: failed to spawn fresh process: %s", exc)
+            finally:
+                _sys.exit(0)
 
-        _thr.Thread(target=_do_restart, daemon=True,
+        _thr.Thread(target=_do_restart, daemon=False,
                     name="hc-restart-process").start()
 
     # ── Factory Reset ─────────────────────────────────────────────────────────
@@ -946,11 +955,20 @@ class _PostHandlersMixin:
         })
 
         # ── 5. Restart the whole process after a short flush delay ────────────
-        def _restart():
-            _time.sleep(0.5)
-            try:
-                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
-            except Exception as exc:
-                log.error("reset: execv failed: %s", exc)
+        import subprocess as _sub
 
-        _thr.Thread(target=_restart, daemon=True, name="hc-reset-restart").start()
+        def _restart():
+            _time.sleep(0.6)
+            try:
+                kwargs: dict = {"close_fds": True}
+                if _sys.platform == "win32":
+                    kwargs["creationflags"] = 0x00000008 | 0x00000200
+                else:
+                    kwargs["start_new_session"] = True
+                _sub.Popen([_sys.executable] + _sys.argv[1:], **kwargs)
+            except Exception as exc:
+                log.error("reset: failed to spawn fresh process: %s", exc)
+            finally:
+                _sys.exit(0)
+
+        _thr.Thread(target=_restart, daemon=False, name="hc-reset-restart").start()
