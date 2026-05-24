@@ -551,6 +551,9 @@ class _PostHandlersMixin:
         elif action == "reset":
             self._handle_reset(data)
 
+        elif action == "restart_process":
+            self._handle_restart_process()
+
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
 
@@ -778,6 +781,53 @@ class _PostHandlersMixin:
         except Exception as exc:
             log.error("Restore error: %s", exc)
             self._json({"ok": False, "msg": f"Restore error: {exc}"}, 500)
+
+    # ── App Restart (Settings → Restart Application) ──────────────────────────
+
+    def _handle_restart_process(self) -> None:
+        """
+        POST /api/action  { action: "restart_process" }
+
+        Gracefully stops all streams, flushes an HTTP 200 response so the
+        browser's polling loop can detect the connection drop, then calls
+        os.execv() to replace the current process with a fresh copy.
+
+        No config is wiped — this is a clean restart, not a factory reset.
+        The browser-side poll in restartApp() will reload the page once
+        /api/streams responds again.
+        """
+        import os as _os
+        import sys as _sys
+        import time as _time
+        import threading as _thr
+
+        from hc.web import _WEB_MANAGER  # type: ignore
+
+        mgr = _WEB_MANAGER
+
+        # Stop all running streams gracefully so MediaMTX and FFmpeg
+        # release their ports before the new process starts binding them.
+        if mgr is not None:
+            for st in list(getattr(mgr, "states", [])):
+                try:
+                    mgr.stop(st.config.name)
+                except Exception:
+                    pass
+
+        # Send the success response now — once execv() fires the socket
+        # closes and the browser will see a connection error, which is
+        # exactly what the JS polling loop expects.
+        self._json({"ok": True, "msg": "Restarting…"})
+
+        def _do_restart() -> None:
+            _time.sleep(0.6)   # give wfile.write() time to flush
+            try:
+                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
+            except Exception as exc:
+                log.error("restart_process: execv failed: %s", exc)
+
+        _thr.Thread(target=_do_restart, daemon=True,
+                    name="hc-restart-process").start()
 
     # ── Factory Reset ─────────────────────────────────────────────────────────
 
