@@ -181,7 +181,7 @@ Section "HydraCast (required)" SecMain
             SW_SHOWNORMAL "" "HydraCast - background / system tray mode"
     ${EndIf}
 
-    ; Startup registry entry — written to HKLM (machine-wide) AND HKCU (user).
+    ; Startup registry entry - written to HKLM (machine-wide) AND HKCU (user).
     ; HKCU survives factory resets and reinstalls without needing admin rights.
     ; The tray icon menu manages HKCU at runtime after install.
     ${If} $DoStartup = ${BST_CHECKED}
