@@ -161,6 +161,68 @@ def _show_error_box(title: str, message: str) -> None:
         pass   # non-Windows or ctypes missing — already logged
 
 
+# ── UAC elevation ─────────────────────────────────────────────────────────────
+def _request_admin_if_needed() -> bool:
+    """
+    Re-launch the current process with administrator privileges via UAC if:
+      • We are running on Windows, AND
+      • The current process is NOT already elevated.
+
+    Returns True  → caller is already admin (or non-Windows): continue normally.
+    Returns False → a new elevated process was spawned: the caller should exit.
+
+    Why this is needed
+    ──────────────────
+    When HydraCast is installed under C:\\Program Files the install directory
+    is protected by Windows ACLs.  Creating sub-directories (bin/, config/,
+    logs/, media/, ssl/) raises PermissionError: [WinError 5] unless the
+    process holds SeBackupPrivilege / admin token.  Binding to ports 80 and
+    443 also requires elevation.
+
+    Fallback
+    ────────
+    If the user clicks "No" on the UAC prompt (ret ≤ 32), this function
+    returns True and lets the app continue; constants.py will redirect all
+    writable dirs to %%APPDATA%%\\HydraCast as a silent fallback, so the app
+    still works — just without the ability to bind privileged ports.
+    """
+    try:
+        import ctypes
+        is_admin: bool = bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return True   # can't check elevation state — assume OK
+
+    if is_admin:
+        return True   # already running as administrator
+
+    log.info("Not running as administrator — requesting UAC elevation.")
+    try:
+        import ctypes
+        # Build the command-line string for the re-launched process.
+        params = " ".join(f'"{a}"' for a in sys.argv[1:])
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None,           # hwnd
+            "runas",        # verb — triggers UAC prompt
+            sys.executable, # file
+            params,         # parameters
+            None,           # directory (inherit)
+            1,              # nShowCmd: SW_SHOWNORMAL
+        )
+        if ret > 32:
+            log.info("Elevated process launched (ShellExecute ret=%d) — exiting current instance.", ret)
+            return False    # elevated copy is now running; exit the un-elevated one
+        # ret ≤ 32 means the user declined or an error occurred.
+        log.warning(
+            "UAC elevation failed or was declined (ShellExecute ret=%d). "
+            "Continuing without admin rights — writable dirs will fall back to %%APPDATA%%.",
+            ret,
+        )
+    except Exception as exc:
+        log.warning("Could not request UAC elevation: %s — continuing without admin.", exc)
+
+    return True   # proceed without elevation
+
+
 # ── signal.signal patch ───────────────────────────────────────────────────────
 # Python raises ValueError("signal only works in main thread") when
 # signal.signal() is called from any non-main thread.  hydracast.main()
@@ -442,6 +504,14 @@ def _build_and_run_tray(state: _WorkerState) -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 def main() -> None:
+    # ── UAC elevation (Windows) ───────────────────────────────────────────────
+    # Must happen before any file I/O so we either have admin rights or have
+    # already redirected writable dirs to %APPDATA%.  The helper is called
+    # before _setup_logging because logging itself may need to create dirs.
+    if not _request_admin_if_needed():
+        # An elevated copy has been spawned.  Exit the un-elevated instance.
+        sys.exit(0)
+
     # ── Ensure package root is on sys.path ────────────────────────────────────
     _here = _exe_dir()
     if str(_here) not in sys.path:
