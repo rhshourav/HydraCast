@@ -788,17 +788,25 @@ class _PostHandlersMixin:
         """
         POST /api/action  { action: "restart_process" }
 
-        Gracefully stops all streams, flushes HTTP 200, then spawns a fresh
-        detached copy of this process and calls sys.exit(0).
+        Gracefully stops all streams, flushes HTTP 200, then terminates the
+        entire process with os._exit(0) so the Guardian detects the exit and
+        relaunches hydracast_bg.exe automatically.
 
-        os.execv() is NOT used here — it is unreliable with a frozen PyInstaller
-        .exe on Windows (replaces the process image but inherits locked file
-        handles and bound ports, causing the new instance to fail silently).
-        subprocess.Popen (DETACHED_PROCESS) + sys.exit(0) is the correct pattern.
+        Why os._exit(0) instead of Popen + sys.exit:
+        ─────────────────────────────────────────────
+        When running inside hydracast_bg.exe the web handler runs on a worker
+        thread.  sys.exit(0) only raises SystemExit which hydracast_bg catches
+        and treats as a clean exit — the outer process stays alive and the
+        Guardian never sees a crash.  subprocess.Popen([sys.executable] +
+        sys.argv) doubles the exe path on a frozen build (e.g.
+        "hydracast_bg.exe hydracast_bg.exe ...") and fails silently.
+
+        os._exit(0) bypasses all Python cleanup and kills the process
+        immediately.  Exit code 0 tells the Guardian this was an intentional
+        restart (not a crash), and it relaunches the correct binary with the
+        original arguments within its normal restart window.
         """
         import os as _os
-        import sys as _sys
-        import subprocess as _sp
         import time as _time
         import threading as _thr
 
@@ -818,25 +826,9 @@ class _PostHandlersMixin:
         self._json({"ok": True, "msg": "Restarting…"})
 
         def _do_restart() -> None:
-            _time.sleep(0.8)   # let the HTTP response flush
-            try:
-                kw: dict = dict(
-                    stdout=_sp.DEVNULL,
-                    stderr=_sp.DEVNULL,
-                    stdin=_sp.DEVNULL,
-                )
-                if _sys.platform == "win32":
-                    DETACHED_PROCESS         = 0x00000008
-                    CREATE_NEW_PROCESS_GROUP = 0x00000200
-                    kw["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-                    kw["close_fds"]     = True
-                else:
-                    kw["start_new_session"] = True
-                _sp.Popen([_sys.executable] + _sys.argv, **kw)
-            except Exception as exc:
-                log.error("restart_process: Popen failed: %s", exc)
-                return
-            _sys.exit(0)
+            _time.sleep(0.8)   # let the HTTP response flush completely
+            log.info("restart_process: calling os._exit(0) — Guardian will relaunch.")
+            _os._exit(0)
 
         _thr.Thread(target=_do_restart, daemon=False,
                     name="hc-restart-process").start()
@@ -853,12 +845,22 @@ class _PostHandlersMixin:
           3. Delete EVERYTHING inside config/.
           4. Clear in-memory state.
           5. Flush the HTTP response.
-          6. Spawn fresh detached process + sys.exit(0).
-             (NOT os.execv — see _handle_restart_process for the reasoning.)
+          6. os._exit(0) — kills the whole process so the Guardian detects
+             the exit and relaunches hydracast_bg.exe cleanly.
+
+        Why os._exit(0) instead of Popen + sys.exit:
+        ─────────────────────────────────────────────
+        This handler runs on a web-handler thread inside hydracast_bg.exe.
+        sys.exit(0) raises SystemExit which hydracast_bg._run_hydracast_once()
+        catches — the outer process stays alive and the Guardian never fires.
+        subprocess.Popen([sys.executable] + sys.argv) doubles the exe path on
+        a frozen build, spawning "hydracast_bg.exe hydracast_bg.exe ..." which
+        fails silently.  os._exit(0) kills the process immediately; the
+        Guardian detects exit-code 0, treats it as an intentional restart, and
+        relaunches the correct binary with the original arguments.
         """
         import os as _os
         import sys as _sys
-        import subprocess as _sp
         import shutil as _shutil
         import threading as _thr
         import time as _time
@@ -948,26 +950,10 @@ class _PostHandlersMixin:
             "errors":  errors,
         })
 
-        # ── 5. Restart via detached Popen + sys.exit(0) ───────────────────────
-        def _restart() -> None:
-            _time.sleep(0.8)
-            try:
-                kw: dict = dict(
-                    stdout=_sp.DEVNULL,
-                    stderr=_sp.DEVNULL,
-                    stdin=_sp.DEVNULL,
-                )
-                if _sys.platform == "win32":
-                    DETACHED_PROCESS         = 0x00000008
-                    CREATE_NEW_PROCESS_GROUP = 0x00000200
-                    kw["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-                    kw["close_fds"]     = True
-                else:
-                    kw["start_new_session"] = True
-                _sp.Popen([_sys.executable] + _sys.argv, **kw)
-            except Exception as exc:
-                log.error("reset: Popen failed: %s", exc)
-                return
-            _sys.exit(0)
+        # ── 5. Kill process so Guardian detects exit and relaunches ───────────
+        def _exit() -> None:
+            _time.sleep(0.8)   # let the HTTP response flush completely
+            log.info("reset: calling os._exit(0) — Guardian will relaunch.")
+            _os._exit(0)
 
-        _thr.Thread(target=_restart, daemon=False, name="hc-reset-restart").start()
+        _thr.Thread(target=_exit, daemon=False, name="hc-reset-restart").start()
