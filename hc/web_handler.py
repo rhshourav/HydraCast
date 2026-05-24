@@ -2340,27 +2340,47 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         wiped:   List[str] = []
         errors:  List[str] = []
 
-        # ── 1. Stop all running streams ───────────────────────────────────────
+        # ── 1. Force-stop all running streams ────────────────────────────────
+        # worker.kill() sends SIGKILL to FFmpeg/MediaMTX immediately so they
+        # release their ports before the wipe and execv().  mgr.stop() alone
+        # is async (daemon thread) and returns before the processes are dead,
+        # which can leave orphaned subprocesses holding ports after restart.
+        import time as _time
         if mgr is not None:
             for st in list(getattr(mgr, "states", [])):
                 try:
+                    worker = mgr.get_worker(st.config.name)
+                    if worker is not None:
+                        try:
+                            worker.kill()
+                        except Exception:
+                            pass
                     mgr.stop(st.config.name)
                     stopped.append(st.config.name)
                 except Exception as exc:
                     errors.append(f"stop {st.config.name}: {exc}")
 
-        # ── 2. Wipe every file in config/ ────────────────────────────────────
+        # Brief pause so the OS reclaims port bindings before we wipe and
+        # execv().  Without this the fresh process may fail to bind ports
+        # that orphaned subprocesses still hold.
+        _time.sleep(0.4)
+
+        # ── 2. Wipe every file AND subdirectory in config/ ───────────────────
         from hc.constants import CONFIG_DIR as _CFG_DIR
+        import shutil as _shutil
         cfg_dir = _CFG_DIR()
         try:
             for p in sorted(cfg_dir.iterdir()):
-                if p.is_file():
-                    try:
+                try:
+                    if p.is_file() or p.is_symlink():
                         p.unlink()
                         wiped.append(p.name)
-                    except Exception as exc:
-                        errors.append(f"delete {p.name}: {exc}")
-                        log.error("reset: could not delete '%s': %s", p.name, exc)
+                    elif p.is_dir():
+                        _shutil.rmtree(p, ignore_errors=False)
+                        wiped.append(p.name + "/")
+                except Exception as exc:
+                    errors.append(f"delete {p.name}: {exc}")
+                    log.error("reset: could not delete '%s': %s", p.name, exc)
         except Exception as exc:
             errors.append(f"config dir: {exc}")
             log.error("reset: config dir error: %s", exc)
