@@ -378,6 +378,55 @@ def _send_stop_alert(stream_name: str, port: int, reason: str) -> None:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# OAUTH2 STATUS STUBS
+# ═════════════════════════════════════════════════════════════════════════════
+# This build uses the Microsoft Graph client-credentials flow (no interactive
+# OAuth2 consent required).  The functions below are stubs so that any module
+# that conditionally imports them (e.g. web_handlers_get.py) does not crash
+# with ImportError.  If a future build adds interactive OAuth2 flows these
+# stubs should be replaced with real implementations.
+
+def get_oauth2_flow_status() -> dict:
+    """
+    Return the status of a Gmail / generic OAuth2 device-code flow.
+    Not implemented in this (Graph client-credentials) build.
+    """
+    return {
+        "status":       "unsupported",
+        "token_exists": False,
+        "message":      "This build uses Microsoft Graph client credentials; "
+                        "interactive OAuth2 flows are not supported.",
+    }
+
+
+def get_microsoft_oauth2_status(cfg: dict) -> dict:
+    """
+    Return the status of the Microsoft Graph token for *cfg*.
+    Performs a lightweight token-acquisition probe to verify credentials.
+    """
+    required = ("tenant_id", "client_id", "client_secret")
+    if not all(cfg.get(k, "").strip() for k in required):
+        return {
+            "status":       "not_configured",
+            "token_exists": False,
+            "message":      "Microsoft Graph credentials are incomplete.",
+        }
+    try:
+        _acquire_token(
+            cfg["tenant_id"].strip(),
+            cfg["client_id"].strip(),
+            cfg["client_secret"].strip(),
+        )
+        return {"status": "ok", "token_exists": True, "message": "Credentials valid."}
+    except Exception as exc:
+        return {
+            "status":       "error",
+            "token_exists": False,
+            "message":      str(exc),
+        }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # TEST ALERT  (called from Web UI — returns True/False + error string)
 # ═════════════════════════════════════════════════════════════════════════════
 
