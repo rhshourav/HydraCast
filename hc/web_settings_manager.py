@@ -311,13 +311,13 @@ def reset_settings() -> Dict[str, Any]:
     # Prefer the holiday store's own path helpers; fall back to filename
     # convention inside CONFIG_DIR if those helpers don't exist.
     try:
-        from hc.web_holiday_store import _custom_path, _cache_dir  # type: ignore[attr-defined]
+        from hc.web_holiday_store import _custom_path, _holiday_dir
         try:
             _custom_path().unlink(missing_ok=True)
         except Exception as exc:
             log.warning("web_settings_manager: could not delete custom holidays — %s", exc)
         try:
-            _cd = _cache_dir()
+            _cd = _holiday_dir()
             if _cd.exists():
                 _shutil.rmtree(_cd, ignore_errors=True)
         except Exception as exc:
