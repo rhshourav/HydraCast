@@ -43,7 +43,7 @@ if "!CUR_HASH!" == "!PREV_HASH!" (
 
 REM ── Tray + SSL + pywin32 dependencies ────────────────────────────────────
 echo [HydraCast] Ensuring tray, SSL and win32 dependencies ...
-pip install pystray Pillow cryptography pywin32 -q
+pip install pystray Pillow cryptography pywin32 psutil -q
 if errorlevel 1 (
     echo [HydraCast] WARNING: optional dependency install had errors -- continuing.
 )
@@ -67,6 +67,15 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 
+REM ── Build hydracast_guardian.exe (headless supervisor process) ────────────
+echo.
+echo [HydraCast] Building hydracast_guardian.exe (guardian watchdog) ...
+pyinstaller hydracast_guardian.spec --clean --noconfirm
+if errorlevel 1 (
+    echo [HydraCast] ERROR: hydracast_guardian.spec build failed.
+    pause & exit /b 1
+)
+
 REM ── Merge hydracast_bg.exe into the main HydraCast folder ─────────────────
 echo.
 echo [HydraCast] Merging hydracast_bg.exe into dist\HydraCast\ ...
@@ -77,22 +86,31 @@ if errorlevel 1 (
 )
 rmdir /S /Q "dist\HydraCast_BG"
 
+REM ── Merge hydracast_guardian.exe into the main HydraCast folder ──────────
+echo.
+echo [HydraCast] Merging hydracast_guardian.exe into dist\HydraCast\ ...
+copy /Y "dist\HydraCast_Guardian\hydracast_guardian.exe" "dist\HydraCast\hydracast_guardian.exe"
+if errorlevel 1 (
+    echo [HydraCast] ERROR: Could not copy hydracast_guardian.exe.
+    pause & exit /b 1
+)
+rmdir /S /Q "dist\HydraCast_Guardian"
+
 echo.
 echo [HydraCast] dist\HydraCast\ is ready.
 echo.
-echo   hydracast.exe     -- TUI / interactive mode
-echo   hydracast_bg.exe  -- background mode (system tray)
+echo   hydracast.exe          -- TUI / interactive mode
+echo   hydracast_bg.exe       -- background mode (system tray)
+echo   hydracast_guardian.exe -- guardian watchdog (auto-launched by bg mode)
 echo.
 
 REM ── NSIS Installer ───────────────────────────────────────────────────────
 echo [HydraCast] Looking for NSIS to build installer ...
 
-REM Check common NSIS locations
 set MAKENSIS=
 if exist "C:\Program Files (x86)\NSIS\makensis.exe" set MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe
 if exist "C:\Program Files\NSIS\makensis.exe"       set MAKENSIS=C:\Program Files\NSIS\makensis.exe
 
-REM Also check PATH
 if "!MAKENSIS!"=="" (
     where makensis >nul 2>&1
     if not errorlevel 1 set MAKENSIS=makensis
