@@ -800,10 +800,10 @@ class _PostHandlersMixin:
 
         No config is wiped — this is a clean restart, not a factory reset.
         """
+        import os as _os
         import sys as _sys
         import time as _time
         import threading as _thr
-        import subprocess as _sub
 
         from hc.web import _WEB_MANAGER  # type: ignore
 
@@ -821,19 +821,11 @@ class _PostHandlersMixin:
         self._json({"ok": True, "msg": "Restarting…"})
 
         def _do_restart() -> None:
-            _time.sleep(0.6)   # give wfile.write() time to flush
+            _time.sleep(0.6)
             try:
-                kwargs: dict = {"close_fds": True}
-                if _sys.platform == "win32":
-                    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-                    kwargs["creationflags"] = 0x00000008 | 0x00000200
-                else:
-                    kwargs["start_new_session"] = True
-                _sub.Popen([_sys.executable] + _sys.argv[1:], **kwargs)
+                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
             except Exception as exc:
-                log.error("restart_process: failed to spawn fresh process: %s", exc)
-            finally:
-                _sys.exit(0)
+                log.error("restart_process: execv failed: %s", exc)
 
         _thr.Thread(target=_do_restart, daemon=False,
                     name="hc-restart-process").start()
@@ -955,20 +947,11 @@ class _PostHandlersMixin:
         })
 
         # ── 5. Restart the whole process after a short flush delay ────────────
-        import subprocess as _sub
-
         def _restart():
-            _time.sleep(0.6)
+            _time.sleep(0.5)
             try:
-                kwargs: dict = {"close_fds": True}
-                if _sys.platform == "win32":
-                    kwargs["creationflags"] = 0x00000008 | 0x00000200
-                else:
-                    kwargs["start_new_session"] = True
-                _sub.Popen([_sys.executable] + _sys.argv[1:], **kwargs)
+                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
             except Exception as exc:
-                log.error("reset: failed to spawn fresh process: %s", exc)
-            finally:
-                _sys.exit(0)
+                log.error("reset: execv failed: %s", exc)
 
         _thr.Thread(target=_restart, daemon=False, name="hc-reset-restart").start()
