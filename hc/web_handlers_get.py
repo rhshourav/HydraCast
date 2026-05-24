@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import psutil
 
-from hc.constants import APP_VER, BASE_DIR, MEDIA_DIR, SUPPORTED_EXTS, get_web_port
+from hc.constants import APP_VER, BASE_DIR, CONFIG_DIR, MEDIA_DIR, SUPPORTED_EXTS, get_web_port
 from hc.utils import _fmt_duration, _fmt_size, _local_ip
 
 log = logging.getLogger(__name__)
@@ -342,31 +342,37 @@ class _GetHandlersMixin:
 
     def _get_mail_config(self) -> None:
         import json as _json
-        path = BASE_DIR() / "mail_config.json"
+        # mail_config.hcf lives in CONFIG_DIR (which may be %APPDATA%\HydraCast\config
+        # when the exe is installed under Program Files).  Never use BASE_DIR here.
+        path = CONFIG_DIR() / "mail_config.hcf"
         try:
             if path.exists():
                 cfg = _json.loads(path.read_text(encoding="utf-8"))
+                # Mask secrets before sending to the browser
+                if "client_secret" in cfg and cfg["client_secret"]:
+                    cfg["client_secret"] = "••••••••"
                 if "password" in cfg and cfg["password"]:
                     cfg["password"] = "••••••••"
-                from hc.mailer import get_oauth2_flow_status
-                status = get_oauth2_flow_status()
-                cfg["oauth2_token_exists"] = status["token_exists"]
+                # Optional: OAuth2 status (functions may not exist in all builds)
+                try:
+                    from hc.mailer import get_oauth2_flow_status
+                    status = get_oauth2_flow_status()
+                    cfg["oauth2_token_exists"] = status["token_exists"]
+                except (ImportError, AttributeError):
+                    cfg["oauth2_token_exists"] = False
                 try:
                     from hc.mailer import get_microsoft_oauth2_status
                     ms_status = get_microsoft_oauth2_status(cfg)
                     cfg["ms_token_exists"] = ms_status.get("token_exists", False)
-                except Exception:
+                except (ImportError, AttributeError):
                     cfg["ms_token_exists"] = False
                 self._json(cfg)
             else:
                 self._json({
-                    "enabled": False, "mode": "smtp",
-                    "smtp_host": "smtp.gmail.com",
-                    "smtp_port": 587, "use_tls": True,
-                    "username": "", "password": "",
+                    "enabled": False,
+                    "tenant_id": "", "client_id": "", "client_secret": "",
                     "from_addr": "", "to_addrs": [],
                     "on_error": True, "on_stop": True, "cooldown_secs": 300,
-                    "ms_client_id": "", "ms_username": "",
                     "oauth2_token_exists": False, "ms_token_exists": False,
                 })
         except Exception as exc:
@@ -376,6 +382,8 @@ class _GetHandlersMixin:
         try:
             from hc.mailer import get_oauth2_flow_status
             self._json(get_oauth2_flow_status())
+        except (ImportError, AttributeError):
+            self._json({"status": "unsupported", "token_exists": False})
         except Exception as exc:
             self._json({"status": "error", "error": str(exc), "token_exists": False})
 
@@ -384,10 +392,15 @@ class _GetHandlersMixin:
             import json as _json
             cfg: dict = {}
             try:
-                cfg = _json.loads((BASE_DIR() / "mail_config.json").read_text(encoding="utf-8"))
+                # Use CONFIG_DIR — never BASE_DIR — so this works under Program Files.
+                cfg = _json.loads(
+                    (CONFIG_DIR() / "mail_config.hcf").read_text(encoding="utf-8")
+                )
             except Exception:
                 pass
             from hc.mailer import get_microsoft_oauth2_status
             self._json(get_microsoft_oauth2_status(cfg))
+        except (ImportError, AttributeError):
+            self._json({"status": "unsupported", "token_exists": False})
         except Exception as exc:
             self._json({"status": "error", "error": str(exc), "token_exists": False})
