@@ -26,6 +26,7 @@ v6.0 / v6.1 changes kept below.
 from __future__ import annotations
 
 import multiprocessing
+import os
 import platform
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -47,20 +48,66 @@ CPU_COUNT = max(1, multiprocessing.cpu_count())
 # ── Directory layout ──────────────────────────────────────────────────────────
 _dirs: Dict[str, Path] = {}
 
+
+def _resolve_writable_base(install_base: Path) -> Path:
+    """
+    Return the root that should hold all mutable runtime data.
+
+    Strategy (Windows only):
+      1. Try creating a sentinel file inside *install_base*.  If it succeeds
+         the directory is writable (e.g. a developer run or a portable install)
+         so we keep using it.
+      2. Otherwise fall back to %APPDATA%\\HydraCast so the app works
+         correctly when installed under C:\\Program Files without UAC every
+         single launch.
+
+    On Linux / macOS the install dir is always returned as-is; the OS
+    permission model (home-dir installs, venv, sudo) handles this naturally.
+    """
+    if not IS_WIN:
+        return install_base
+
+    sentinel = install_base / ".hc_write_test"
+    try:
+        sentinel.mkdir(parents=True, exist_ok=True)
+        probe = sentinel / "probe"
+        probe.touch()
+        probe.unlink()
+        sentinel.rmdir()
+        return install_base          # writable — use it directly
+    except PermissionError:
+        pass
+
+    # Install dir is read-only (typical Program Files scenario).
+    # Redirect to %APPDATA%\HydraCast which is always user-writable.
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return Path(appdata) / APP_NAME
+
+    # Absolute last resort — should never reach here on a normal Windows install.
+    return install_base
+
+
 def set_base_dir(script_path: Path) -> None:
     """Called once from main.py after __file__ is known."""
     base = script_path.parent.resolve()
-    _dirs["BASE"]    = base
-    _dirs["BIN"]     = base / "bin"
-    _dirs["CONFIG"]  = base / "config"
-    _dirs["LOGS"]    = base / "logs"
-    _dirs["MEDIA"]   = base / "media"
-    _dirs["SSL"]     = base / "ssl"
-    _dirs["STREAMS_JSON"] = base / "config" / "streams.hcf"
-    _dirs["EVENTS_JSON"]  = base / "config" / "events.hcf"
+    _dirs["BASE"] = base
+
+    # Writable base may differ from the install base when the exe lives in a
+    # protected directory such as C:\\Program Files\\HydraCast.
+    wb = _resolve_writable_base(base)
+    _dirs["WRITABLE_BASE"] = wb
+
+    _dirs["BIN"]    = wb / "bin"
+    _dirs["CONFIG"] = wb / "config"
+    _dirs["LOGS"]   = wb / "logs"
+    _dirs["MEDIA"]  = wb / "media"
+    _dirs["SSL"]    = wb / "ssl"
+    _dirs["STREAMS_JSON"] = wb / "config" / "streams.hcf"
+    _dirs["EVENTS_JSON"]  = wb / "config" / "events.hcf"
     # Legacy paths — migration helpers only
-    _dirs["CSV"]        = base / "streams.csv"
-    _dirs["EVENTS_CSV"] = base / "events.csv"
+    _dirs["CSV"]        = wb / "streams.csv"
+    _dirs["EVENTS_CSV"] = wb / "events.csv"
     for key in ("BIN", "CONFIG", "LOGS", "MEDIA", "SSL"):
         _dirs[key].mkdir(parents=True, exist_ok=True)
 
@@ -75,8 +122,9 @@ def _require(key: str) -> Path:
         )
     return _dirs[key]
 
-def BASE_DIR()       -> Path: return _require("BASE")
-def BIN_DIR()        -> Path: return _require("BIN")
+def BASE_DIR()          -> Path: return _require("BASE")
+def WRITABLE_BASE_DIR() -> Path: return _require("WRITABLE_BASE")
+def BIN_DIR()           -> Path: return _require("BIN")
 def CONFIG_DIR()     -> Path: return _require("CONFIG")
 def CONFIGS_DIR()    -> Path: return _require("CONFIG")
 def LOGS_DIR()       -> Path: return _require("LOGS")
