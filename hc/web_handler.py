@@ -1413,11 +1413,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             self._json({"ok": True, "msg": "Restarting all streams"})
 
         elif action == "restart_process":
-            # Stop all streams, flush the response, then spawn a fresh
-            # detached process and exit.  os.execv() is unreliable on
-            # Windows (PyInstaller .exe) — use subprocess.Popen + sys.exit
-            # instead.  Non-daemon thread so it cannot be killed early.
-            import os as _os, sys as _sys, threading as _thr, subprocess as _sub
+            import os as _os, sys as _sys, threading as _thr
             if mgr is not None:
                 for st in mgr.states:
                     try:
@@ -1426,19 +1422,12 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                         pass
             self._json({"ok": True, "msg": "Restarting process…"})
             def _do_exec():
-                import time as _time
-                _time.sleep(0.6)
+                import time as _t
+                _t.sleep(0.6)
                 try:
-                    kwargs: dict = {"close_fds": True}
-                    if _sys.platform == "win32":
-                        kwargs["creationflags"] = 0x00000008 | 0x00000200
-                    else:
-                        kwargs["start_new_session"] = True
-                    _sub.Popen([_sys.executable] + _sys.argv[1:], **kwargs)
+                    _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
                 except Exception as exc:
-                    log.error("restart_process: failed to spawn: %s", exc)
-                finally:
-                    _sys.exit(0)
+                    log.error("restart_process: execv failed: %s", exc)
             _thr.Thread(target=_do_exec, daemon=False,
                         name="hc-restart-process").start()
 
@@ -2436,29 +2425,13 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         })
 
         # ── 5. Restart the process after a short flush delay ──────────────────
-        # os.execv() is unreliable on Windows (PyInstaller .exe): it launches
-        # a child and immediately exits the parent, racing daemon threads that
-        # may not finish flushing the HTTP response.  Instead:
-        #   a) spawn a fresh detached process via subprocess.Popen, then
-        #   b) sys.exit(0) to cleanly shut this process down.
-        # Non-daemon so the runtime cannot kill the thread before it runs.
-        import subprocess as _sub
-
         def _do_reset_restart():
             import time as _t
-            _t.sleep(0.6)   # let wfile.write() flush over the socket
+            _t.sleep(0.6)
             try:
-                kwargs: dict = {"close_fds": True}
-                if _sys.platform == "win32":
-                    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-                    kwargs["creationflags"] = 0x00000008 | 0x00000200
-                else:
-                    kwargs["start_new_session"] = True
-                _sub.Popen([_sys.executable] + _sys.argv[1:], **kwargs)
+                _os.execv(_sys.executable, [_sys.executable] + _sys.argv)
             except Exception as exc:
-                log.error("reset: failed to spawn fresh process: %s", exc)
-            finally:
-                _sys.exit(0)
+                log.error("reset: execv failed: %s", exc)
 
         _thr.Thread(target=_do_reset_restart, daemon=False,
                     name="hc-factory-reset").start()
