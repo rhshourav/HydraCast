@@ -919,6 +919,21 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             cpu  = psutil.cpu_percent(interval=0.1)
             mem  = psutil.virtual_memory()
             disk = psutil.disk_usage(str(BASE_DIR()))
+
+            # ── Guardian status (non-blocking — 0.5 s timeout) ────────────────
+            from hc.watchdog import fetch_guardian_status
+            guardian = fetch_guardian_status(timeout=0.5) or {
+                "guardian_version": None,
+                "target_pid":       None,
+                "restart_count":    0,
+                "heartbeat_ok":     False,
+                "heartbeat_age_s":  None,
+                "last_crash_reason":"guardian not running",
+                "crash_log_tail":   [],
+                "file_warnings":    {},
+                "stopping":         False,
+            }
+
             self._json({
                 "cpu":          round(cpu, 1),
                 "mem_percent":  round(mem.percent, 1),
@@ -929,6 +944,8 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 "disk_total":   _fmt_size(disk.total),
                 "web_port":     get_web_port(),
                 "lan_ip":       _local_ip(),
+                # Guardian card — rendered by the Web UI
+                "guardian":     guardian,
             })
         except Exception as exc:
             self._json({"error": str(exc)}, 500)
