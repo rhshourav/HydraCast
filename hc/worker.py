@@ -891,6 +891,62 @@ class StreamWorker:
         self.state.duration = probe_duration(item.file_path)
         self._log(f"File duration: {_fmt_duration(self.state.duration)}")
 
+        # ── Compliance file pinning for static (non-folder) playlists ─────────
+        # The folder-scan block above handles this for folder sources.
+        # For static playlists, after an error restart playlist_index may still
+        # point at the wrong day's file (e.g. _FRI_ when today is _WED_).
+        # Re-run select_compliance_file() here so every restart — including
+        # auto-restart after an error — picks today's correct tagged file.
+        if cfg.compliance_enabled and folder_root is None and len(cfg.playlist) > 1:
+            try:
+                from hc.compliance import select_compliance_file
+                comp_item, comp_err = select_compliance_file(
+                    cfg.playlist,
+                    folder_source=None,
+                )
+                if comp_item is not None:
+                    comp_idx = next(
+                        (i for i, it in enumerate(cfg.playlist)
+                         if it.file_path == comp_item.file_path),
+                        0,
+                    )
+                    if comp_idx != self.state.playlist_index:
+                        self._log(
+                            f"Compliance static-playlist pin: switching from "
+                            f"'{item.file_path.name}' → '{comp_item.file_path.name}' "
+                            f"(index {self.state.playlist_index} → {comp_idx})"
+                        )
+                        self.state.playlist_order = list(range(len(cfg.playlist)))
+                        self.state.playlist_index = comp_idx
+                        # Re-resolve item and resolved_path to the correct file
+                        item = self._current_item()
+                        if item is None:
+                            self.state.status    = StreamStatus.ERROR
+                            self.state.error_msg = "Compliance file pin: could not resolve item"
+                            self._log(self.state.error_msg, "ERROR")
+                            return False
+                        resolved_path = item.file_path
+                        item = PlaylistItem(
+                            file_path=resolved_path,
+                            start_position=item.start_position,
+                            weight=item.weight,
+                            priority=item.priority,
+                        )
+                        # Re-probe duration for the newly selected file
+                        self.state.duration = probe_duration(resolved_path)
+                        self._log(
+                            f"Compliance static pin confirmed: '{resolved_path.name}' "
+                            f"duration={_fmt_duration(self.state.duration)}"
+                        )
+                    if comp_err:
+                        self.state.set_compliance_alert(comp_err)
+            except Exception as _static_comp_exc:
+                self._log(
+                    f"Compliance static-playlist file selection failed: {_static_comp_exc} "
+                    "— continuing with current playlist index",
+                    "WARN",
+                )
+
         # ── Determine seek position ───────────────────────────────────────────
         if seek_override is not None:
             seek_pos = float(seek_override)
