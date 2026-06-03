@@ -870,12 +870,12 @@ select option{background:var(--bg3)}
 /* The config tab must not scroll at the page level — the stream list
    sidebar scrolls internally.  We lock the tab to its viewport height
    and let the sidebar flex-child consume the leftover space. */
-#tab-config{overflow:hidden;padding-bottom:0}
-.config-layout{display:grid;grid-template-columns:235px 1fr;gap:18px;height:100%}
+#tab-config{overflow:hidden;padding-bottom:0;display:flex;flex-direction:column}
+.config-layout{display:grid;grid-template-columns:235px 1fr;gap:18px;flex:1;min-height:0}
 .config-sidebar{
   background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
   overflow:hidden;transition:background 0.35s,border-color 0.35s;
-  display:flex;flex-direction:column;
+  display:flex;flex-direction:column;min-height:0;
 }
 .config-sidebar-hdr{
   padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg3);
@@ -886,8 +886,8 @@ select option{background:var(--bg3)}
 #config-stream-list{
   flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;
 }
-#config-stream-list::-webkit-scrollbar{width:4px}
-#config-stream-list::-webkit-scrollbar-track{background:transparent}
+#config-stream-list::-webkit-scrollbar{width:5px}
+#config-stream-list::-webkit-scrollbar-track{background:var(--bg3)}
 #config-stream-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 #config-stream-list::-webkit-scrollbar-thumb:hover{background:var(--text3)}
 .config-stream-item{
