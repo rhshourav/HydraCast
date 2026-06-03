@@ -32,11 +32,15 @@ SetCompressorDictSize 64          ; 64 MB dictionary - best ratio for large dirs
 
 ; -- Product metadata ---------------------------------------------------------
 !define PRODUCT_NAME        "HydraCast"
-!define PRODUCT_VERSION     "6.5.0"
+!define PRODUCT_VERSION     "6.4.0"
 !define PRODUCT_PUBLISHER   "rhshourav"
 !define PRODUCT_URL         "https://github.com/rhshourav/HydraCast"
 !define PRODUCT_EXE         "hydracast.exe"
 !define PRODUCT_BG_EXE      "hydracast_bg.exe"
+!define PRODUCT_GUARDIAN_EXE "hydracast_guardian.exe"
+!define FFMPEG_EXE           "ffmpeg.exe"
+!define FFPROBE_EXE          "ffprobe.exe"
+!define MEDIAMTX_EXE         "mediamtx.exe"
 !define PRODUCT_ICON        "dist\HydraCast\_internal\resources\HydraCast.ico"
 !define UNINSTALLER_NAME    "Uninstall HydraCast.exe"
 !define REG_KEY             "Software\Microsoft\Windows\CurrentVersion\Uninstall\HydraCast"
@@ -199,12 +203,17 @@ SectionEnd
 ; -- Uninstaller --------------------------------------------------------------
 Section "Uninstall"
 
-    ; Kill ALL HydraCast processes -- including the detached guardian --
-    ; before attempting to remove any files.
+    ; Kill ALL HydraCast-related processes before removing files.
+    ; Order matters: kill child workers first, then supervisors.
+    ; ffmpeg and mediamtx are spawned per-stream and must be killed
+    ; explicitly — they are NOT children of the main EXE on Windows.
+    ExecWait 'taskkill /F /IM "${FFMPEG_EXE}"'          $0
+    ExecWait 'taskkill /F /IM "${FFPROBE_EXE}"'         $0
+    ExecWait 'taskkill /F /IM "${MEDIAMTX_EXE}"'        $0
     ExecWait 'taskkill /F /IM "${PRODUCT_EXE}"'         $0
     ExecWait 'taskkill /F /IM "${PRODUCT_BG_EXE}"'      $0
-    ExecWait 'taskkill /F /IM "hydracast_guardian.exe"'  $0
-    Sleep 1500   ; give OS time to release file handles
+    ExecWait 'taskkill /F /IM "${PRODUCT_GUARDIAN_EXE}"' $0
+    Sleep 2000   ; give OS time to release all file handles
 
     ; Always remove guardian PID/lock files regardless of user-data choice.
     ; These are internal runtime artefacts, not user data, and must be
