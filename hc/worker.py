@@ -802,10 +802,18 @@ class StreamWorker:
                             folder_source=cfg.folder_source,
                         )
                         if comp_item is not None:
-                            try:
-                                comp_idx = cfg.playlist.index(comp_item)
-                            except ValueError:
-                                comp_idx = 0
+                            # Search by file_path so a freshly-scanned playlist
+                            # (new PlaylistItem objects) is matched correctly.
+                            # list.index() uses __eq__ which may fail on object
+                            # identity mismatches after a folder re-scan, causing
+                            # a ValueError fallback to index 0 — which is the
+                            # alphabetically-first file (e.g. _FRI_), NOT today's
+                            # _WED_ file.  Path comparison is always reliable.
+                            comp_idx = next(
+                                (i for i, it in enumerate(cfg.playlist)
+                                 if it.file_path == comp_item.file_path),
+                                0,
+                            )
                             self.state.playlist_order = list(range(len(cfg.playlist)))
                             self.state.playlist_index = comp_idx
                             if comp_err:
