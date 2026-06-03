@@ -870,7 +870,8 @@ select option{background:var(--bg3)}
 /* The config tab must not scroll at the page level — the stream list
    sidebar scrolls internally.  We lock the tab to its viewport height
    and let the sidebar flex-child consume the leftover space. */
-#tab-config{overflow:hidden;padding-bottom:0;display:flex;flex-direction:column}
+#tab-config{overflow:hidden;padding-bottom:0}
+#tab-config.active{display:flex;flex-direction:column}
 .config-layout{display:grid;grid-template-columns:235px 1fr;gap:18px;flex:1;min-height:0}
 .config-sidebar{
   background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
