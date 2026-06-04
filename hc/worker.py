@@ -1181,6 +1181,33 @@ class StreamWorker:
 
         self._log(f"Start seek position: {_fmt_duration(seek_pos)}")
 
+        # ── Startup jitter (initial start only) ───────────────────────────────
+        # When HydraCast starts or the guardian relaunches it, all stream workers
+        # call _do_start() almost simultaneously.  Without jitter, 20+ MediaMTX
+        # processes are spawned within the same second and compete to bind their
+        # UDP RTP/RTCP sockets on Windows, causing most of them to exit with
+        # code 15 (Go runtime SIGTERM on bind failure).
+        #
+        # The _auto_restart() path already applies per-stream jitter; this block
+        # mirrors that logic for the very first start so the initial boot is
+        # equally staggered.  restart_count==0 identifies a first-time start.
+        # Seek-override callers (restart(), seek()) skip this delay because they
+        # are intentional single-stream operations, not a mass simultaneous boot.
+        if self.state.restart_count == 0 and seek_override is None:
+            _boot_jitter = (cfg.port % 20) * 0.25   # 0.0–4.75 s spread across 20 slots
+            _boot_jitter = min(_boot_jitter, 4.0)    # hard cap at 4 s
+            if _boot_jitter > 0.0:
+                self._log(
+                    f"Startup jitter: waiting {_boot_jitter:.2f}s to stagger "
+                    "MediaMTX launches across streams …"
+                )
+                _jitter_ticks = int(_boot_jitter * 10)
+                for _ in range(_jitter_ticks):
+                    if self._stop.is_set():
+                        self._log("Startup jitter interrupted by stop flag.", "WARN")
+                        return False
+                    time.sleep(0.1)
+
         # ── Port availability check ───────────────────────────────────────────
         self._log(f"Checking port {cfg.port} availability …")
         if _port_in_use(cfg.port):
