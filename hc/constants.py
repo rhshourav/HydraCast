@@ -12,21 +12,7 @@ v6.3 changes
   list survives restarts.
 • Backup/restore includes the roots list via the "media_roots" key.
 
-v6.2 changes
-────────────
-• apply_cli_args(args) helper: call it from main.py after argparse.parse_args()
-  to wire --web-port / --port, --listen, --ssl-cert, --ssl-key, --no-firewall
-  into the shared _flags dict in one place.
-• WEB_PORT default changed to 443 (HTTPS); WebServer auto-generates a
-  self-signed cert when ssl/cert.pem + ssl/key.pem are absent.
-• validate_port() utility used by both CLI and the TUI port-change prompt.
 
-v6.4 changes
-────────────
-• cameras.hcf path registered in set_base_dir() as CAMERAS_JSON.
-• CAMERAS_FILE() accessor added alongside STREAMS_JSON / EVENTS_FILE.
-
-v6.0 / v6.1 changes kept below.
 """
 from __future__ import annotations
 
