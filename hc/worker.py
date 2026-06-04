@@ -1,6 +1,26 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
+FIXES (v5.3.4):
+  • _monitor() same-file loop path: added a MediaMTX liveness check before
+    deciding to skip _cycle_mediamtx().
+
+    Root cause: the same-file loop optimisation (skip the kill+restart cycle
+    when the file hasn't changed) assumed MediaMTX was still alive.  If
+    MediaMTX had crashed — which is often what caused FFmpeg's broken-pipe
+    exit in the first place — the code skipped the cycle and sent FFmpeg
+    straight into _start_ffmpeg_with_retry against a dead MediaMTX process.
+    Every retry got broken-pipe immediately, all 6 attempts failed, and the
+    stream fell through to _auto_restart().  _auto_restart() ran _do_start()
+    which correctly cycled MediaMTX, the stream recovered, but after 7–8
+    minutes of live streaming MediaMTX crashed again, triggering the same
+    cascade repeatedly.
+
+    Fix: check self.state.mtx_proc.poll() before the same-file branch.
+    If MediaMTX is dead, always run _cycle_mediamtx() (the else branch)
+    even for same-file loops.  A new log line "Same-file loop — MediaMTX
+    is not running; cycling to restore it" makes this visible in the log.
+
 FIXES (v5.3.3):
   • _monitor() same-file loop path: replaced flat time.sleep(1.5) with a
     per-stream jittered sleep of 1.5 s + (port % 20) × 0.15 s (range
@@ -2001,21 +2021,21 @@ class StreamWorker:
                 #
                 # When compliance pins back to the *same file* (the normal
                 # same-day loop: _THU_.mp4 → _THU_.mp4), the codec parameters
-                # are identical.  Cycling MediaMTX is unnecessary and harmful:
-                # with 20+ streams all hitting their loop boundary within a few
-                # seconds of each other, the simultaneous kill+restart storm
-                # exhausts the 8-second UDP-port-release window on Windows,
-                # producing an endless cascade of "Port still in use after 8 s"
-                # warnings and back-to-back MediaMTX restarts every ~10 s.
-                #
-                # Guard: skip the cycle when the file path hasn't changed.
-                # A true file change (e.g. midnight rollover _THU_ → _FRI_)
-                # still cycles normally.
+                # are identical, so cycling is unnecessary.  HOWEVER: we must
+                # first verify that MediaMTX is still alive.  If MediaMTX
+                # crashed (which is what caused FFmpeg's broken-pipe exit in
+                # the first place), skipping the cycle and trying to reconnect
+                # to a dead MediaMTX produces broken-pipe on every retry,
+                # exhausting all 6 attempts and cascading into _auto_restart().
                 _same_file = (
                     _prev_file is not None
                     and next_item.file_path == _prev_file
                 )
-                if _same_file:
+                _mtx_alive = (
+                    self.state.mtx_proc is not None
+                    and self.state.mtx_proc.poll() is None
+                )
+                if _same_file and _mtx_alive:
                     self._log(
                         "Same-file loop — skipping MediaMTX cycle "
                         "(codec parameters unchanged)."
@@ -2051,7 +2071,13 @@ class StreamWorker:
                         self._auto_restart()
                         return
                 else:
-                    # File changed: cycle MediaMTX to clear old publisher state.
+                    # File changed OR MediaMTX died: cycle to restore a clean state.
+                    if _same_file and not _mtx_alive:
+                        self._log(
+                            "Same-file loop — MediaMTX is not running; "
+                            "cycling to restore it before reconnecting.",
+                            "WARN",
+                        )
                     if not self._cycle_mediamtx():
                         self._log(
                             "Playlist advance: MediaMTX cycle failed — "
