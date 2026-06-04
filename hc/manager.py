@@ -21,26 +21,7 @@ v6.2 changes
 • start_all() staggers stream launches in groups of 4 with a 400 ms pause
   between groups (superseded in v6.3 — see above).
 
-v6.1 changes (compliance v2)
-─────────────────────────────
-• _event_loop: after firing a one-shot event the loop watches for its
-  completion, then calls _resume_compliance() which:
-    – selects the correct day-tagged compliance file
-    – calculates an accurate seek offset (post-event resume)
-    – injects seek_target into the StreamState so the worker picks it up
-    – sets or clears compliance_alert on the state (Web UI banner)
 
-• compliance_alert_enabled is respected: if False, no alert banner is set.
-
-• reload_csv now syncs compliance_alert_enabled.
-
-v6.0 changes (kept)
-────────────────────
-• Replaced csv_manager.CSVManager with json_manager.JSONManager.
-• Added start/stop/restart/get_worker/add_event/remove_event/remove_events/
-  fire_event_now/reload_from_configs methods.
-• add_stream / remove_stream for runtime Web UI management.
-• FolderWatcherRegistry for live folder monitoring.
 """
 from __future__ import annotations
 
