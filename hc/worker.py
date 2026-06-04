@@ -1,6 +1,41 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
+FIXES (v6.3 — quality + HLS/RTSP sync):
+  • _start_ffmpeg() playlist path: -preset changed from ultrafast → slow.
+    -tune zerolatency removed (it disables B-frames, hurting compression).
+    -g 50 replaced with -g 120 / -keyint_min 120 / -sc_threshold 0 and
+    -force_key_frames "expr:gte(t,n_forced*4)" (one IDR every 4 s).
+
+    ultrafast/zerolatency is optimised for live capture where encoding
+    latency is the constraint.  HydraCast serves pre-recorded files at
+    real-time rate (-re flag), so there is no latency pressure — slow
+    preset delivers visibly better quality for the same bitrate.
+
+  • _ffmpeg_cmd_camera() camera path: same quality changes applied.
+    Camera sources still benefit from better inter-frame prediction even
+    though they are live; the -re flag is already absent for cameras,
+    so the encoder has full CPU headroom.
+
+  • _play_black(): same keyframe interval for consistency (25 fps →
+    -g 100 / -keyint_min 100 / -force_key_frames every 4 s).
+
+  Root cause of HLS/RTSP desync:
+    HLS segment boundaries are only clean if the first frame of each
+    segment is an IDR (keyframe).  MediaMTX creates a new segment when
+    its segment duration clock expires — if the next incoming frame is
+    not an IDR, the segment starts mid-GOP, causing decoder glitches
+    (green frames, seeking artefacts) and a visible A/V offset between
+    the HLS player and any direct RTSP client.  The old -g 50 at 30 fps
+    produced a keyframe every ~1.67 s with no forced alignment to the
+    4 s HLS segment boundary, so some segments started mid-GOP.
+
+    Fix: -force_key_frames "expr:gte(t,n_forced*4)" forces an IDR exactly
+    at t=0, 4, 8, 12 … seconds regardless of the source frame rate.
+    -sc_threshold 0 prevents scene-change IDR frames from drifting the
+    grid.  MediaMTX hlsSegmentDuration: 4s (mediamtx_cfg.py) is kept in
+    sync with this interval — changing one requires changing the other.
+
 FIXES (v5.3.10):
   • Root cause of the "all streams restart simultaneously" bug at the 24-hour
     compliance loop boundary.
@@ -533,11 +568,27 @@ def _ffmpeg_cmd_camera(cam, cfg) -> List[str]:
         # rtmp, http, or any other network protocol
         input_args = ["-re", "-i", cam.url]
 
+    # ── Quality / sync note ───────────────────────────────────────────────────
+    # preset=slow gives noticeably better quality than ultrafast for the same
+    # bitrate (ultrafast may look blocky on fast motion).  zerolatency is
+    # removed because it disables B-frames and hurts compression efficiency.
+    #
+    # GOP / keyframe alignment for HLS sync (v6.3):
+    #   HLS segmentDuration = 4 s  (mediamtx_cfg.py hlsSegmentDuration: 4s).
+    #   A forced keyframe every 4 s ensures every HLS segment starts with an
+    #   IDR frame, so HLS and RTSP playback stay in lock-step at segment
+    #   boundaries.  -g 120 = 4 s at 30 fps (safety GOP cap).
+    #   -force_key_frames "expr:gte(t,n_forced*4)" pins the keyframe interval
+    #   exactly regardless of the source frame rate.
+    #   -sc_threshold 0 prevents scene-change IDR frames from drifting the
+    #   segment boundary alignment.
     cmd = [
         str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error",
         *input_args,
-        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-        "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p", "-g", "50",
+        "-c:v", "libx264", "-preset", "slow",
+        "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p",
+        "-g", "120", "-keyint_min", "120", "-sc_threshold", "0",
+        "-force_key_frames", "expr:gte(t,n_forced*4)",
         "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
         "-progress", "pipe:1", "-nostats",
         "-f", "rtsp", "-rtsp_transport", "tcp",
@@ -1833,14 +1884,25 @@ class StreamWorker:
         # 400 Bad Request. The YAML uses "~all" which accepts any named path.
         _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
         _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
+        # ── Quality / sync note ───────────────────────────────────────────────
+        # preset=slow gives better quality than ultrafast at the same bitrate.
+        # -tune zerolatency is removed: it disables B-frames and hurts quality.
+        #
+        # HLS/RTSP sync (v6.3): HLS segmentDuration = 4 s (mediamtx_cfg.py).
+        # -force_key_frames pins an IDR frame every 4 s so every HLS segment
+        # starts on a clean cut, keeping HLS and RTSP in lock-step.
+        # -g 120 is the safety GOP cap at 30 fps; -sc_threshold 0 prevents
+        # scene-change IDR frames from drifting the segment boundary.
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error",
             "-re",
             "-ss", str(int(seek_pos)),
             *loop_flag,
             "-i", str(item.file_path),
-            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-            "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p", "-g", "50",
+            "-c:v", "libx264", "-preset", "slow",
+            "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p",
+            "-g", "120", "-keyint_min", "120", "-sc_threshold", "0",
+            "-force_key_frames", "expr:gte(t,n_forced*4)",
             "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
             "-progress", "pipe:1", "-nostats",
             "-f", "rtsp", "-rtsp_transport", "tcp",
@@ -2060,8 +2122,10 @@ class StreamWorker:
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error", "-re",
             "-f", "lavfi", "-i", "color=black:size=1280x720:rate=25",
             "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
-            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-c:v", "libx264", "-preset", "slow",
             "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p",
+            "-g", "100", "-keyint_min", "100", "-sc_threshold", "0",
+            "-force_key_frames", "expr:gte(t,n_forced*4)",
             "-c:a", "aac", "-b:a", cfg.audio_bitrate,
             "-f", "rtsp", "-rtsp_transport", "tcp",
             _rtsp_target,
