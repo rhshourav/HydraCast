@@ -1024,6 +1024,12 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         with st._lock:
             log_snap = list(st.log[-80:])
         cur_real = st.playlist_order[st.playlist_index] if st.playlist_order else 0
+        # Build a mapping: real playlist index → 1-based play sequence number.
+        # playlist_order is a list whose positions are sequence slots (0, 1, 2…)
+        # and whose values are real cfg.playlist indices.
+        # Inverting it gives: real_index → sequence_position (1-based for the UI).
+        order = st.playlist_order if st.playlist_order else list(range(len(cfg.playlist)))
+        order_pos = {real_idx: seq + 1 for seq, real_idx in enumerate(order)}
         playlist = []
         for i, item in enumerate(cfg.playlist):
             playlist.append({
@@ -1031,6 +1037,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 "path":     str(item.file_path),
                 "start":    item.start_position,
                 "priority": item.priority,
+                "sequence": order_pos.get(i, i + 1),  # 1-based play position
                 "exists":   item.file_path.exists(),
                 "current":  (i == cur_real),
             })
