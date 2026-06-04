@@ -167,6 +167,9 @@ class _GetHandlersMixin:
                 "current_file":   cur_file,
                 # Compliance alert (non-None = show banner in UI)
                 "compliance_alert": st.compliance_alert,
+                # ── Hybrid source switching ───────────────────────────────
+                "source_mode":    cfg.source_mode,
+                "active_source":  st.active_source,
             })
         self._json(result)
 
@@ -195,6 +198,10 @@ class _GetHandlersMixin:
                 "compliance_enabled":   cfg.compliance_enabled,
                 "compliance_start":     cfg.compliance_start,
                 "compliance_loop":      cfg.compliance_loop,
+                # ── Hybrid source switching ───────────────────────────────
+                "source_mode":     cfg.source_mode,
+                "camera_id":       cfg.camera_id,
+                "camera_windows":  cfg.camera_windows,
             })
         self._json(result)
 
@@ -330,15 +337,47 @@ class _GetHandlersMixin:
             self._json({"error": "not found"}, 404)
             return
         cfg = st.config
+        # RTSP-first: when HLS is not enabled, viewer URL should default to RTSP
+        hls_url = cfg.hls_url if cfg.hls_enabled else ""
         self._json({
-            "name":        cfg.name,
-            "status":      st.status.label,
-            "rtsp_url":    cfg.rtsp_url_external,
-            "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
-            "current_pos": st.current_pos,
-            "duration":    st.duration,
-            "progress":    st.progress,
+            "name":          cfg.name,
+            "status":        st.status.label,
+            "rtsp_url":      cfg.rtsp_url_external,
+            "hls_url":       hls_url,
+            "current_pos":   st.current_pos,
+            "duration":      st.duration,
+            "progress":      st.progress,
+            # ── Hybrid source switching ───────────────────────────────────
+            "source_mode":   cfg.source_mode,
+            "active_source": st.active_source,
         })
+
+    def _get_cameras(self) -> None:
+        """GET /api/cameras — returns the full camera registry (passwords masked)."""
+        try:
+            from hc.json_manager import JSONManager
+            cameras = JSONManager.load_cameras()
+            result = []
+            for cam in cameras:
+                result.append({
+                    "camera_id":   cam.camera_id,
+                    "name":        cam.name,
+                    "protocol":    cam.protocol,
+                    "host":        cam.host,
+                    "port":        cam.port,
+                    "path":        cam.path,
+                    "username":    cam.username,
+                    # Never send the real password to the browser — mask it
+                    "password":    "••••••••" if cam.password else "",
+                    "source_type": cam.source_type,
+                    "enabled":     cam.enabled,
+                    "notes":       cam.notes,
+                    "url_masked":  cam.url_masked,
+                })
+            self._json(result)
+        except Exception as exc:
+            log.error("_get_cameras error: %s", exc)
+            self._json({"error": str(exc)}, 500)
 
     def _get_mail_config(self) -> None:
         import json as _json
