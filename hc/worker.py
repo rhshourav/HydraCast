@@ -1,6 +1,26 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
+FIXES (v5.3.1):
+  • _monitor() same-file loop path: added a 1.5-second settle sleep BEFORE
+    calling _start_ffmpeg_with_retry so MediaMTX has time to release the
+    previous publisher session.  This eliminates the broken-pipe on attempt
+    1/6 that occurred every loop cycle on all compliance streams simultaneously.
+
+    Previously: _start_ffmpeg_with_retry was called immediately after the
+    broken-pipe exit was detected.  MediaMTX was still mid-teardown, causing
+    every attempt-1 to fail with EPIPE and a 2-second retry stall.  With
+    1.5 s of breathing room, attempt 1 succeeds and no WRN is logged.
+
+  • _monitor() same-file AND file-change paths: _start_ffmpeg_with_retry
+    return value was silently discarded.  If all 6 retry attempts failed
+    (e.g. MediaMTX crashed or port conflict), the monitor spawned a new
+    monitor thread watching a dead process, which immediately saw a dead
+    process → _clean_exit → _auto_restart() → infinite restart loop burning
+    through MAX_AUTO_RESTARTS.  Now both paths check the return value and
+    call _auto_restart() directly if it returns False, which applies the
+    correct backoff and respects MAX_AUTO_RESTARTS.
+
 FIXES (v5.3.0):
   • _start_ffmpeg_with_retry(): broken-pipe (EPIPE, code -32 / 4294967264 on
     Windows) is now retried with the same exponential backoff already used for
@@ -1941,7 +1961,23 @@ class StreamWorker:
                         "Same-file loop — skipping MediaMTX cycle "
                         "(codec parameters unchanged)."
                     )
-                    self._start_ffmpeg_with_retry(next_item, spos)
+                    # Brief settle: give MediaMTX ~1.5 s to release the previous
+                    # publisher session before FFmpeg reconnects.  Without this,
+                    # the new FFmpeg ANNOUNCE races the session teardown and gets
+                    # EPIPE (broken-pipe) on attempt 1 every single loop, causing
+                    # a noisy WRN log and an unnecessary 2-second retry stall.
+                    # 1.5 s is short enough to be imperceptible to viewers yet
+                    # long enough for MediaMTX to flush its buffers on a loaded
+                    # Windows host with 20+ simultaneous streams.
+                    time.sleep(1.5)
+                    if not self._start_ffmpeg_with_retry(next_item, spos):
+                        self._log(
+                            "Same-file loop: FFmpeg failed to connect after all "
+                            "retries — triggering auto-restart.",
+                            "ERROR",
+                        )
+                        self._auto_restart()
+                        return
                 else:
                     # File changed: cycle MediaMTX to clear old publisher state.
                     if not self._cycle_mediamtx():
@@ -1952,7 +1988,14 @@ class StreamWorker:
                         )
                         self._auto_restart()
                         return
-                    self._start_ffmpeg_with_retry(next_item, spos)
+                    if not self._start_ffmpeg_with_retry(next_item, spos):
+                        self._log(
+                            "Playlist advance: FFmpeg failed to connect after all "
+                            "retries — triggering auto-restart.",
+                            "ERROR",
+                        )
+                        self._auto_restart()
+                        return
                 threading.Thread(target=self._monitor, daemon=True,
                                  name=f"mon-{self.state.config.port}").start()
                 return
