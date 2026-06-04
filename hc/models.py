@@ -1,6 +1,22 @@
 """
 hc/models.py  —  Core dataclasses and enums.
 
+v6.2.1 patch (bug fixes)
+─────────────────────────
+• StreamConfig gains a __post_init__ that enforces compliance_resync_interval
+  ≥ 60.0 s at construction time (Bug 4 fix).  Previously only _monitor()
+  clamped this at runtime via max(60.0, cfg.compliance_resync_interval).
+
+• StreamState gains four new properly-declared dataclass fields (Bug 7 fix):
+    seek_start_pos        float          = 0.0
+    buffering             bool           = False
+    restarting            bool           = False
+    active_oneshot_event  Optional[object] = None
+  These were previously injected dynamically by StreamWorker.__init__ via
+  hasattr guards.  Declaring them as fields makes them visible to type
+  checkers, introspection, and code that reads StreamState before a worker
+  is attached.  The hasattr guards in StreamWorker.__init__ remain harmless.
+
 v6.2 changes vs v6.1
 ─────────────────────
 • New module-level constant CAMERA_PROTOCOL_DEFAULTS: default ports per
@@ -179,6 +195,19 @@ class StreamConfig:
 
     # ── Weekday helpers ───────────────────────────────────────────────────────
 
+    def __post_init__(self) -> None:
+        # Bug 4 fix: enforce the documented 60 s minimum for
+        # compliance_resync_interval at the data layer.  The comment on the
+        # field says "Minimum enforced at 60 s" but previously only _monitor()
+        # clamped the value at runtime (max(60.0, cfg.compliance_resync_interval)).
+        # A user who sets 0 or a very small value via the JSON/UI would see the
+        # monitor clamp it, but code that reads the field directly (tests,
+        # introspection, API serialisation) would see the unvalidated value.
+        # Enforcing it here makes the constraint visible at construction time
+        # and removes the footgun for future callers.
+        if self.compliance_resync_interval < 60.0:
+            self.compliance_resync_interval = 60.0
+
     def _int_weekdays(self) -> List[int]:
         result: List[int] = []
         for d in self.weekdays:
@@ -288,6 +317,17 @@ class StreamState:
     # persisted to disk — resets to None (follow schedule) on server restart.
     active_source:   str           = "playlist"  # "playlist" | "camera"
     source_override: Optional[str] = None        # manual override; None = follow schedule
+
+    # ── Bug 7 fix: fields that were previously injected dynamically by ────────
+    # StreamWorker.__init__ via hasattr guards.  Declaring them here as proper
+    # dataclass fields makes them visible to type checkers, introspection, and
+    # any code that reads StreamState before a StreamWorker is constructed.
+    # The hasattr guards in StreamWorker.__init__ remain harmless (they now
+    # always find the attribute already set to the default value).
+    seek_start_pos:       float          = 0.0   # absolute position when FFmpeg was last seeked
+    buffering:            bool           = False  # True while retrying transient EPIPE/400
+    restarting:           bool           = False  # True during _auto_restart() countdown
+    active_oneshot_event: Optional[object] = None  # currently playing OneShotEvent or None
 
     def set_compliance_alert(self, msg: Optional[str]) -> None:
         """Set (or clear) the compliance alert. Thread-safe."""
