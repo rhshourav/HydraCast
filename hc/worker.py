@@ -2,16 +2,26 @@
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
 FIXES (v5.3.0):
-  • _start_ffmpeg_with_retry(): broken-pipe exit (code 4294967264 on Windows,
-    -32 on Linux/macOS) is now treated as a clean/recoverable exit, not a
-    fatal error.  Previously, when a single-file compliance stream looped via
-    _auto_restart (playlist length == 1, bypassing the multi-file same-file-
-    loop path), the first FFmpeg reconnect attempt got EPIPE from MediaMTX
-    mid-settle and exited immediately with code 4294967264.  The non-400
-    else-branch classified this as a hard error, set StreamStatus.ERROR, and
-    returned False — causing _auto_restart to fire again, burning through
-    MAX_AUTO_RESTARTS in seconds and permanently silencing the stream.  The
-    fix mirrors the broken-pipe classification already present in _monitor().
+  • _start_ffmpeg_with_retry(): broken-pipe (EPIPE, code -32 / 4294967264 on
+    Windows) is now retried with the same exponential backoff already used for
+    400 Bad Request, instead of being passed back to the caller.
+
+    Root cause: when a compliance stream hits its 24-hour loop boundary,
+    FFmpeg exits with broken-pipe (MediaMTX closed the session cleanly at the
+    loop point).  _monitor detects this as a clean exit, runs the
+    playlist-advance / compliance-pin logic, then immediately calls
+    _start_ffmpeg_with_retry for the new loop.  MediaMTX is still flushing
+    the previous publisher's buffers — it accepts the RTSP ANNOUNCE but
+    closes the write channel a fraction of a second later, giving the new
+    FFmpeg an EPIPE.  This broke-pipe is structurally identical to 400 Bad
+    Request: both mean "the session slot is not free yet, come back shortly".
+
+    The v5.3 fix retries on both conditions inside _start_ffmpeg_with_retry
+    (the only correct place to absorb transient MediaMTX races).  Returning
+    True to _monitor with a dead process — as done in the previous attempt —
+    just shifted the problem: the newly-spawned monitor thread would see a
+    dead process, classify it as a clean exit, and call _auto_restart(),
+    producing an unbounded retry cascade that burned through MAX_AUTO_RESTARTS.
 
 FIXES (v5.2.0):
   • _monitor(): clean (code 0) exit now always calls _auto_restart() when
@@ -1537,12 +1547,22 @@ class StreamWorker:
         oneshot: bool = False, loop_count: int = -1,
     ) -> bool:
         """
-        Launch FFmpeg and retry if MediaMTX returns 400 Bad Request.
+        Launch FFmpeg and retry on transient MediaMTX rejection (400 Bad
+        Request or broken-pipe) using exponential backoff.
 
-        On Windows, MediaMTX's path handler registration is async and can lag
-        behind the RTSP OPTIONS probe by 1-3 seconds.  We detect the 400 and
-        retry with exponential backoff (2 s, 3 s, 4 s …) rather than a fixed
-        delay, which self-corrects in 1-2 retries on Linux and 2-3 on Windows.
+        Both error types have the same root cause: MediaMTX's previous
+        publisher session is still being torn down when the new FFmpeg process
+        connects.  The session teardown races the new connection.
+
+        • 400 Bad Request — MediaMTX's path handler isn't registered yet.
+        • Broken-pipe (EPIPE, code -32 / 4294967264) — the path handler
+          accepted the RTSP ANNOUNCE but closed the write channel while
+          MediaMTX was flushing buffers from the previous publisher.
+
+        Both are retried here with the same backoff (2 s → 3 s → 4.5 s …,
+        capped at 10 s).  This is the ONLY correct place to absorb these
+        transient failures — pushing them up to _monitor/_auto_restart causes
+        an unbounded retry loop that burns through MAX_AUTO_RESTARTS.
 
         stderr is captured by the drain thread in _start_ffmpeg into a deque
         attached to the process; we read from there instead of the pipe.
@@ -1556,9 +1576,7 @@ class StreamWorker:
             if proc is None:
                 return False
 
-            # Give FFmpeg up to 4 s to either stabilise or fail fast with 400.
-            # Using 4 s (up from 3) gives the path handler a bit more room on
-            # slower Windows systems before we declare it failed.
+            # Give FFmpeg up to 4 s to either stabilise or fail fast.
             deadline = time.time() + 4.0
             while time.time() < deadline:
                 if proc.poll() is not None:
@@ -1574,76 +1592,65 @@ class StreamWorker:
             if drain is not None:
                 drain.join(timeout=1.0)
 
-            # Read from the attached buffer filled by the drain thread.
             buf = getattr(proc, "_stderr_buf", None)
             stderr_txt = "\n".join(buf) if buf else ""
+            rc = proc.returncode
 
             self._log(
                 f"FFmpeg exited early (attempt {attempt}/{max_retries}, "
-                f"code={proc.returncode})"
+                f"code={rc})"
                 + (f": {stderr_txt[:200]}" if stderr_txt else ""),
                 "WARN",
             )
 
+            # ── Classify the early exit ───────────────────────────────────────
             is_400 = (
                 "400 Bad Request" in stderr_txt
                 or "400 bad request" in stderr_txt.lower()
             )
+            # Broken-pipe: Windows returns -32 as unsigned 32-bit 4294967264;
+            # Linux/macOS return -32 signed.  MediaMTX closes the RTSP write
+            # channel when flushing a previous publisher's buffers — EPIPE.
+            is_broken_pipe = (
+                (rc == 4294967264 or rc == -32)
+                and ("broken pipe" in stderr_txt.lower() or not stderr_txt)
+            )
 
-            if is_400:
+            if is_400 or is_broken_pipe:
+                # Transient MediaMTX session conflict — retry with backoff.
                 if attempt < max_retries:
+                    reason = "400 Bad Request" if is_400 else "broken pipe"
                     self._log(
-                        f"FFmpeg got 400 Bad Request from MediaMTX "
+                        f"FFmpeg got {reason} from MediaMTX "
                         f"(attempt {attempt}/{max_retries}) — "
                         f"retrying in {backoff:.1f}s …",
                         "WARN",
                     )
                     time.sleep(backoff)
-                    backoff = min(backoff * 1.5, 10.0)   # exponential, cap at 10 s
+                    backoff = min(backoff * 1.5, 10.0)
                     continue
                 else:
+                    reason = "400 Bad Request" if is_400 else "broken pipe"
                     self._log(
-                        f"FFmpeg got 400 Bad Request after {max_retries} attempts — "
-                        "MediaMTX path still not ready. Triggering auto-restart.",
+                        f"FFmpeg got {reason} after {max_retries} attempts — "
+                        "MediaMTX session still not ready. Triggering auto-restart.",
                         "ERROR",
                     )
                     self.state.status    = StreamStatus.ERROR
-                    self.state.error_msg = "MediaMTX 400 Bad Request (path not ready)"
+                    self.state.error_msg = f"MediaMTX {reason} (session not ready)"
                     return False
             else:
-                # Non-400 error: capture it and let the caller decide.
-                #
-                # Broken-pipe (4294967264 on Windows = -32 signed, or -32 on
-                # Linux/macOS) means FFmpeg connected but the MediaMTX session
-                # closed before it could push any frames.  This happens on the
-                # very first reconnect after _auto_restart kills and relaunches
-                # MediaMTX: the RTSP path handler accepts the OPTIONS probe but
-                # hasn't fully published yet, so FFmpeg pushes a frame and
-                # immediately gets EPIPE back.  Treating this as a fatal error
-                # burns through MAX_AUTO_RESTARTS within seconds and permanently
-                # silences the stream.
-                #
-                # Treat broken-pipe exactly like code 0/255 (a clean, immediate
-                # exit).  The caller (_auto_restart → _do_start, or the
-                # same-file-loop path in _monitor) will spawn a fresh monitor
-                # thread which will call _auto_restart() again with a short
-                # backoff, giving MediaMTX the time it needs to settle.
-                _rc = proc.returncode
-                _is_bp = (
-                    (_rc == 4294967264 or _rc == -32)
-                    and ("broken pipe" in stderr_txt.lower() or not stderr_txt)
-                )
-                if not _is_bp and _rc not in (None, 0, 255):
+                # Any other early exit (non-transient).
+                if rc not in (None, 0, 255):
                     self.state.status    = StreamStatus.ERROR
                     self.state.error_msg = (
                         stderr_txt[:300].strip()
-                        or f"FFmpeg exited with code {_rc}"
+                        or f"FFmpeg exited with code {rc}"
                     )
                     self._log(self.state.error_msg, "ERROR")
                     return False
-                # Code 0 / 255 / broken-pipe on a fresh start means the file
-                # ended instantly (e.g. seek beyond end) or the RTSP session
-                # closed cleanly.  Return True so the monitor can advance.
+                # Code 0 or 255: file ended immediately (e.g. seek beyond end).
+                # Return True so the monitor can handle advancing the playlist.
                 return True
 
         return False
