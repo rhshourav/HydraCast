@@ -1,6 +1,18 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
+FIXES (v5.3.2):
+  • _auto_restart(): added per-stream jitter derived from (port % 20) × 0.2 s
+    (range 0.0–3.8 s, capped at half the backoff delay).  Without jitter,
+    20+ compliance streams hitting their loop boundary simultaneously all
+    complete their BACKOFF[0]=5 s countdown at the exact same instant and
+    call _cycle_mediamtx() concurrently.  On Windows, 14+ MediaMTX processes
+    spawned in parallel compete for UDP RTP/RTCP sockets; those that lose
+    the race exit immediately with code 15 (Go runtime SIGTERM on bind
+    failure), triggering another _auto_restart cascade.  The jitter spreads
+    20 streams across a ~4 s window so each MediaMTX has time to bind and
+    stabilise before the next one starts.
+
 FIXES (v5.3.1):
   • _monitor() same-file loop path: added a 1.5-second settle sleep BEFORE
     calling _start_ffmpeg_with_retry so MediaMTX has time to release the
@@ -2088,8 +2100,21 @@ class StreamWorker:
             )
             return
         delay = self.BACKOFF[min(n, len(self.BACKOFF) - 1)]
-        self._log(f"Auto-restart #{n+1} scheduled in {delay}s …", "WARN")
-        for _ in range(delay * 10):
+
+        # Per-stream jitter: spread simultaneous auto-restarts across streams
+        # so that 20+ streams triggered at the same instant don't all call
+        # _cycle_mediamtx() → spawn MediaMTX at the exact same second.
+        # Without jitter, 14+ MediaMTX processes launching in parallel on
+        # Windows compete for UDP RTP/RTCP sockets and exit immediately with
+        # code 15 (SIGTERM from the Go runtime when bind() fails).
+        # Jitter = (port mod 20) × 0.2 s → 0.0–3.8 s spread, capped at
+        # half the backoff so it never doubles the wait for fast restarts.
+        jitter = (self.state.config.port % 20) * 0.2
+        jitter = min(jitter, delay / 2.0)
+
+        self._log(f"Auto-restart #{n+1} scheduled in {delay:.0f}s (jitter +{jitter:.1f}s) …", "WARN")
+        total_ticks = int((delay + jitter) * 10)
+        for _ in range(total_ticks):
             # Abort countdown if stop is requested during the wait
             if self._stop.is_set() or self._seeking.is_set():
                 self._log("Auto-restart cancelled during countdown.")
