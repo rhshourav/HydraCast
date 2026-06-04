@@ -754,6 +754,10 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 "compliance_enabled":       cfg.compliance_enabled,
                 "compliance_alert":         getattr(st, "compliance_alert", None),
                 "compliance_alert_enabled": getattr(cfg, "compliance_alert_enabled", True),
+                # True while _start_ffmpeg_with_retry is absorbing transient broken-pipe
+                # / 400 Bad Request failures.  Web UI renders a BUFFERING badge instead
+                # of STARTING during the retry window (v5.3.7).
+                "buffering":      getattr(st, "buffering", False),
             })
         self._json(result)
 
