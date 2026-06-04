@@ -169,6 +169,81 @@ def grab_thumbnail(file_path: Path, seek_secs: float = 5.0) -> Optional[bytes]:
 
 
 # =============================================================================
+# CAMERA SOURCE HELPERS
+# =============================================================================
+
+def _resolve_camera(camera_id: str):
+    """
+    Look up a CameraConfig by ID from cameras.hcf.
+    Returns the CameraConfig, or None if not found / file missing.
+    """
+    try:
+        from hc.json_manager import JSONManager
+        for c in JSONManager.load_cameras():
+            if c.camera_id == camera_id:
+                return c
+    except Exception as exc:
+        log.warning("_resolve_camera: failed to load cameras: %s", exc)
+    return None
+
+
+def _ffmpeg_cmd_camera(cam, cfg) -> List[str]:
+    """
+    Build an FFmpeg command that reads from a camera source and pushes to the
+    local MediaMTX RTSP endpoint.  The output side is identical to the playlist
+    push; only the input arguments change.
+
+    Always logs cam.url_masked — never cam.url — so passwords never appear in
+    logs.
+
+    Supported source_type / protocol combinations:
+      source_type "rtsp"   → -rtsp_transport tcp -i <url>
+      source_type "usb"    → -f v4l2 -i <host>   (Linux /dev/videoN)
+      source_type "dshow"  → -f dshow -i video="<host>"  (Windows)
+      protocol    "rtmp"   → -i <url>
+      protocol    "http"   → -i <url>  (MJPEG / HLS source)
+      protocol    "srt"    → -i srt://host:port?streamid=path
+      protocol    "udp"    → -i udp://host:port
+    """
+    _push_path   = cfg.rtsp_path if cfg.rtsp_path else "stream"
+    _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
+
+    # ── Build input arguments ─────────────────────────────────────────────────
+    if cam.source_type == "usb":
+        # Linux V4L2 device, e.g. /dev/video0
+        input_args = ["-f", "v4l2", "-i", cam.host]
+    elif cam.source_type == "dshow":
+        # Windows DirectShow device name
+        input_args = ["-f", "dshow", "-i", f"video={cam.host}"]
+    elif cam.protocol == "srt":
+        # SRT uses query-string format for stream ID
+        path = cam.path.lstrip("/")
+        srt_url = f"srt://{cam.host}:{cam.port}?streamid={path}" if path else \
+                  f"srt://{cam.host}:{cam.port}"
+        input_args = ["-re", "-i", srt_url]
+    elif cam.protocol == "udp":
+        # UDP has no auth; ignore username/password even if populated
+        input_args = ["-re", "-i", f"udp://{cam.host}:{cam.port}"]
+    elif cam.source_type == "rtsp" or cam.protocol == "rtsp":
+        input_args = ["-re", "-rtsp_transport", "tcp", "-i", cam.url]
+    else:
+        # rtmp, http, or any other network protocol
+        input_args = ["-re", "-i", cam.url]
+
+    cmd = [
+        str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error",
+        *input_args,
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p", "-g", "50",
+        "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
+        "-progress", "pipe:1", "-nostats",
+        "-f", "rtsp", "-rtsp_transport", "tcp",
+        _rtsp_target,
+    ]
+    return cmd
+
+
+# =============================================================================
 # STREAM WORKER
 # =============================================================================
 class StreamWorker:
@@ -179,19 +254,6 @@ class StreamWorker:
     MTX_READY_TIMEOUT = 40.0 if IS_WIN else 20.0
 
     _FFMPEG_PROGRESS_RE = re.compile(r"^(\w+)=(.+)$")
-
-    def __init__(self, state: StreamState, glog: LogBuffer) -> None:
-        self.state       = state
-        self.glog        = glog
-        self._stop       = threading.Event()
-        self._seeking    = threading.Event()
-        self._start_lock = threading.Lock()
-        # Ensure seek_start_pos always exists to prevent AttributeError
-        if not hasattr(self.state, "seek_start_pos"):
-            self.state.seek_start_pos = 0.0  # type: ignore[attr-defined]
-        # Track the currently-playing one-shot event (for API exposure)
-        if not hasattr(self.state, "active_oneshot_event"):
-            self.state.active_oneshot_event = None  # type: ignore[attr-defined]
 
     # ── Internal logging ───────────────────────────────────────────────────────
     def _log(self, msg: str, level: str = "INFO") -> None:
@@ -258,10 +320,15 @@ class StreamWorker:
         self._stop       = threading.Event()
         self._seeking    = threading.Event()
         self._start_lock = threading.Lock()
+        # Ensure seek_start_pos always exists to prevent AttributeError
         if not hasattr(self.state, "seek_start_pos"):
-            self.state.seek_start_pos = 0.0
+            self.state.seek_start_pos = 0.0  # type: ignore[attr-defined]
+        # Track the currently-playing one-shot event (for API exposure)
         if not hasattr(self.state, "active_oneshot_event"):
-            self.state.active_oneshot_event = None
+            self.state.active_oneshot_event = None  # type: ignore[attr-defined]
+        # Ensure active_source exists for hybrid/camera source switching
+        if not hasattr(self.state, "active_source"):
+            self.state.active_source = "playlist"  # type: ignore[attr-defined]
         start_checker("worker")          # [LG] background validator
 
 
@@ -1294,6 +1361,38 @@ class StreamWorker:
     def _start_ffmpeg(self, item: PlaylistItem, seek_pos: float,
                       oneshot: bool = False, loop_count: int = -1) -> bool:
         cfg = self.state.config
+
+        # ── Camera source branch ──────────────────────────────────────────────
+        # When active_source is "camera", bypass the playlist input entirely
+        # and use the camera-specific FFmpeg command instead.  Camera streams
+        # never loop (-stream_loop is meaningless for a live source) and never
+        # seek (seek_pos is ignored; the camera is always "live").
+        _active_source = getattr(self.state, "active_source", "playlist")
+        if _active_source == "camera" and cfg.camera_id:
+            cam = _resolve_camera(cfg.camera_id)
+            if cam is not None:
+                self._log(
+                    f"Launching FFmpeg | source=CAMERA | name={cam.name} | "
+                    f"url={cam.url_masked} | "
+                    f"vbr={cfg.video_bitrate} abr={cfg.audio_bitrate}"
+                )
+                cmd = _ffmpeg_cmd_camera(cam, cfg)
+                # Camera sources use seek_pos=0 in progress tracking; reset
+                # seek_start_pos so the progress bar does not drift.
+                self.state.seek_start_pos = 0.0  # type: ignore[attr-defined]
+                log.debug("[%s] FFmpeg camera command: %s", cfg.name,
+                          " ".join(cmd).replace(cam.url, cam.url_masked))
+                # Jump directly to Popen — skip all playlist-specific setup below.
+                return self._launch_ffmpeg_proc(cmd, cfg)
+            else:
+                self._log(
+                    f"Assigned camera (id={cfg.camera_id}) not found in registry "
+                    "— falling back to playlist source.",
+                    "WARN",
+                )
+                self.state.active_source = "playlist"  # type: ignore[attr-defined]
+
+        # ── Playlist source (existing logic) ──────────────────────────────────
         # One-shot events must NEVER loop — the _after() thread waits for proc.poll()
         # and relies on FFmpeg exiting naturally after the file ends.
         # loop_count=-1 means infinite; 0 means play once (no loop); N>0 means N extra loops.
@@ -1332,6 +1431,15 @@ class StreamWorker:
         )
         log.debug("[%s] FFmpeg command: %s", cfg.name, " ".join(cmd))
 
+        return self._launch_ffmpeg_proc(cmd, cfg)
+
+    def _launch_ffmpeg_proc(self, cmd: List[str], cfg) -> bool:
+        """
+        Shared Popen launcher used by both the playlist path and the camera
+        path in _start_ffmpeg.  Handles stderr draining, CPU affinity, and
+        error classification so neither caller duplicates this logic.
+        """
+        import collections
         try:
             kw: Dict[str, Any] = dict(
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1347,7 +1455,6 @@ class StreamWorker:
             # and FFmpeg blocks waiting to write its error output, causing hangs.
             # We store the last 2 KB so _start_ffmpeg_with_retry and _monitor
             # can both read it after the process exits.
-            import collections
             stderr_buf: "collections.deque[str]" = collections.deque(maxlen=50)
 
             def _drain_stderr(p: subprocess.Popen, buf: "collections.deque[str]") -> None:
@@ -1367,7 +1474,7 @@ class StreamWorker:
             drain_t.start()
             # Attach buffer to proc so _start_ffmpeg_with_retry and _monitor
             # can retrieve the captured stderr text.
-            proc._stderr_buf  = stderr_buf   # type: ignore[attr-defined]
+            proc._stderr_buf   = stderr_buf  # type: ignore[attr-defined]
             proc._stderr_drain = drain_t     # type: ignore[attr-defined]
 
             if IS_LINUX and CPU_COUNT > 1:
