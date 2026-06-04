@@ -1763,7 +1763,47 @@ class StreamWorker:
         if (_clean_exit
                 and not self.state.oneshot_active
                 and len(self.state.config.playlist) > 1):
-            self._advance_playlist()
+            # ── Compliance: pin to today's day-tagged file on every clean exit ──
+            # Without this guard, compliance streams cycle through all playlist
+            # files in order (e.g. _MON_ → _TUE_ → _WED_) because _advance_playlist
+            # only increments the index.  With compliance enabled the correct
+            # behaviour is to stay on (or return to) today's file every time the
+            # current file ends — never advance into a different day's file.
+            _comp_cfg = self.state.config
+            if _comp_cfg.compliance_enabled:
+                try:
+                    from hc.compliance import select_compliance_file
+                    _comp_today, _comp_err = select_compliance_file(
+                        _comp_cfg.playlist,
+                        folder_source=_comp_cfg.folder_source,
+                    )
+                    if _comp_today is not None:
+                        _comp_idx = next(
+                            (i for i, it in enumerate(_comp_cfg.playlist)
+                             if it.file_path == _comp_today.file_path),
+                            0,
+                        )
+                        self.state.playlist_order = list(range(len(_comp_cfg.playlist)))
+                        self.state.playlist_index = _comp_idx
+                        self._log(
+                            f"Compliance clean-exit pin: staying on today's file "
+                            f"'{_comp_today.file_path.name}' (index {_comp_idx})"
+                        )
+                        if _comp_err:
+                            self.state.set_compliance_alert(_comp_err)
+                    else:
+                        self._advance_playlist()
+                        if _comp_err:
+                            self.state.set_compliance_alert(_comp_err)
+                except Exception as _comp_adv_exc:
+                    self._log(
+                        f"Compliance clean-exit file pin failed: {_comp_adv_exc} "
+                        "— falling back to sequential advance",
+                        "WARN",
+                    )
+                    self._advance_playlist()
+            else:
+                self._advance_playlist()
             next_item = self._current_item()
 
             if next_item and not next_item.file_path.exists():
