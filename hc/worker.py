@@ -1,21 +1,32 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
+FIXES (v5.3.8):
+  • _do_start() port availability check: replaced the TCP-only 0.8 s settle
+    with the same TCP + UDP dual-probe strategy used by _cycle_mediamtx().
+
+    Root cause: _port_in_use() is a TCP connect-probe.  After killing an
+    orphan MediaMTX the TCP RTSP port (e.g. :30179) releases within ~200 ms,
+    so _port_in_use() returns False and _do_start() immediately writes the
+    config and launches a new MediaMTX.  However, the companion UDP RTP port
+    (port + 2, e.g. :30181) is still held by the dead process's socket for
+    1–3 s on Windows (asynchronous OS release).  The new MediaMTX binds TCP
+    successfully, passes the 2 s stability check, but crashes on the UDP bind:
+    "listen udp4 0.0.0.0:30181: bind: Only one usage of each socket address."
+    This produces the "Port NNNNN is in use — attempting to kill orphan" /
+    crash cycle visible in the logs.
+
+    Fix: after killing any TCP orphan, apply a 3 s floor wait (Windows) then
+    poll both TCP (_port_in_use) and UDP (_udp_free_pc bind probe) until both
+    are confirmed free, up to an 8 s deadline.  This matches the strategy in
+    _cycle_mediamtx() which already solved the identical problem for the
+    kill+restart path.
+
 FIXES (v5.3.7):
   • _start_ffmpeg_with_retry(): added `state.buffering` flag that is raised
     on the first transient broken-pipe / 400 Bad Request failure and cleared
-    on success or terminal exit.
-
-    The flag is read by the Web UI to show a BUFFERING badge in place of
-    STARTING while the retry loop is absorbing transient MediaMTX session-
-    teardown failures.  Without it the UI showed STARTING for the full
-    ~2–36 s retry window (attempt 1/6 → 6/6), with no indication that the
-    stream was retrying rather than starting from scratch.
-
-    The flag is stored as `state.buffering` (injected in __init__ so it is
-    always present regardless of StreamState dataclass version).  It is
-    exposed by web_handler._get_streams() as `"buffering"` and consumed by
-    the status-badge renderer in web_html.
+    on success or terminal exit.  Web UI renders a BUFFERING badge during the
+    retry window instead of showing STARTING for up to 36 s with no feedback.
 
 FIXES (v5.3.6):
   • _monitor() same-file loop path: broken-pipe exits now always run
@@ -505,9 +516,9 @@ class StreamWorker:
         if not hasattr(self.state, "active_source"):
             self.state.active_source = "playlist"  # type: ignore[attr-defined]
         # buffering: True while _start_ffmpeg_with_retry is absorbing transient
-        # broken-pipe / 400 Bad Request failures between FFmpeg launch attempts.
-        # Exposed via the API so the Web UI can show a BUFFERING badge instead
-        # of STARTING during the brief session-teardown window.
+        # broken-pipe / 400 Bad Request failures.  Exposed via the API so the
+        # Web UI can show a BUFFERING badge instead of STARTING during the
+        # session-teardown retry window (v5.3.7).
         if not hasattr(self.state, "buffering"):
             self.state.buffering = False  # type: ignore[attr-defined]
         start_checker("worker")          # [LG] background validator
@@ -1322,17 +1333,80 @@ class StreamWorker:
                         return False
                     time.sleep(0.1)
 
-        # ── Port availability check ───────────────────────────────────────────
-        self._log(f"Checking port {cfg.port} availability …")
-        if _port_in_use(cfg.port):
-            self._log(f"Port {cfg.port} is in use — attempting to kill orphan process.", "WARN")
-            _kill_orphan_on_port(cfg.port)
-            time.sleep(0.8)
-            if _port_in_use(cfg.port):
-                self.state.status    = StreamStatus.ERROR
-                self.state.error_msg = f"Port {cfg.port} still in use after kill attempt"
-                self._log(self.state.error_msg, "ERROR")
+        # ── Port availability check (TCP + UDP) ──────────────────────────────
+        # MediaMTX binds three port families on startup:
+        #   TCP  cfg.port       — RTSP control
+        #   UDP  cfg.port + 2  — RTP  (must be even per RFC 3550)
+        #   UDP  cfg.port + 3  — RTCP
+        #
+        # _port_in_use() is a TCP connect-probe only.  On Windows, UDP sockets
+        # linger for 1–3 s after the process that owned them exits (the OS
+        # releases them asynchronously).  If we declare "free" based on TCP
+        # alone and launch MediaMTX immediately, it crashes on the UDP bind:
+        #   "listen udp4 0.0.0.0:<rtp>: bind: Only one usage of each socket"
+        #
+        # Fix: after killing any TCP orphan, probe the UDP RTP port with an
+        # actual bind attempt (no SO_REUSEADDR — same technique as
+        # _cycle_mediamtx).  Apply a 3 s floor wait on Windows before probing
+        # because the socket-release path is asynchronous.  Total poll window
+        # is 8 s to match _cycle_mediamtx; on timeout, warn and continue
+        # (MediaMTX may still crash, but the user gets a clear log message).
+        import socket as _socket_pc
+
+        _rtp_port = cfg.port + 2
+        if _rtp_port % 2 != 0:
+            _rtp_port += 1
+
+        def _udp_free_pc(port: int) -> bool:
+            """True if the UDP port can be bound (i.e. no process holds it)."""
+            try:
+                s = _socket_pc.socket(_socket_pc.AF_INET, _socket_pc.SOCK_DGRAM)
+                s.bind(("0.0.0.0", port))
+                s.close()
+                return True
+            except OSError:
                 return False
+
+        self._log(f"Checking port {cfg.port} availability …")
+        _killed_orphan = False
+        if _port_in_use(cfg.port):
+            self._log(
+                f"Port {cfg.port} is in use — attempting to kill orphan process.",
+                "WARN",
+            )
+            _kill_orphan_on_port(cfg.port)
+            _killed_orphan = True
+
+        if _killed_orphan:
+            # Windows: wait at least 3 s before probing — the OS releases
+            # sockets asynchronously after the process exits.
+            if IS_WIN:
+                time.sleep(3.0)
+            # Poll both TCP and UDP until they're both confirmed free.
+            _pc_deadline = time.time() + 8.0
+            while time.time() < _pc_deadline:
+                _tcp_ok = not _port_in_use(cfg.port)
+                _udp_ok = _udp_free_pc(_rtp_port)
+                if _tcp_ok and _udp_ok:
+                    if IS_WIN:
+                        time.sleep(0.3)   # brief extra settle for kernel state
+                    break
+                time.sleep(0.25)
+            else:
+                # Timeout — log what's still held and fail fast.
+                if _port_in_use(cfg.port):
+                    self.state.status    = StreamStatus.ERROR
+                    self.state.error_msg = (
+                        f"Port {cfg.port} still in use after kill attempt"
+                    )
+                    self._log(self.state.error_msg, "ERROR")
+                    return False
+                if not _udp_free_pc(_rtp_port):
+                    self._log(
+                        f"UDP RTP port {_rtp_port} still held after 8 s — "
+                        "MediaMTX may crash on bind. Proceeding anyway.",
+                        "WARN",
+                    )
             self._log(f"Port {cfg.port} is now free.")
         else:
             self._log(f"Port {cfg.port} is free.")
