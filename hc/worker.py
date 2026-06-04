@@ -1,6 +1,22 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
+FIXES (v5.3.7):
+  • _start_ffmpeg_with_retry(): added `state.buffering` flag that is raised
+    on the first transient broken-pipe / 400 Bad Request failure and cleared
+    on success or terminal exit.
+
+    The flag is read by the Web UI to show a BUFFERING badge in place of
+    STARTING while the retry loop is absorbing transient MediaMTX session-
+    teardown failures.  Without it the UI showed STARTING for the full
+    ~2–36 s retry window (attempt 1/6 → 6/6), with no indication that the
+    stream was retrying rather than starting from scratch.
+
+    The flag is stored as `state.buffering` (injected in __init__ so it is
+    always present regardless of StreamState dataclass version).  It is
+    exposed by web_handler._get_streams() as `"buffering"` and consumed by
+    the status-badge renderer in web_html.
+
 FIXES (v5.3.6):
   • _monitor() same-file loop path: broken-pipe exits now always run
     _cycle_mediamtx(), bypassing the skip-cycle optimisation.
@@ -488,6 +504,12 @@ class StreamWorker:
         # Ensure active_source exists for hybrid/camera source switching
         if not hasattr(self.state, "active_source"):
             self.state.active_source = "playlist"  # type: ignore[attr-defined]
+        # buffering: True while _start_ffmpeg_with_retry is absorbing transient
+        # broken-pipe / 400 Bad Request failures between FFmpeg launch attempts.
+        # Exposed via the API so the Web UI can show a BUFFERING badge instead
+        # of STARTING during the brief session-teardown window.
+        if not hasattr(self.state, "buffering"):
+            self.state.buffering = False  # type: ignore[attr-defined]
         start_checker("worker")          # [LG] background validator
 
 
@@ -1721,10 +1743,12 @@ class StreamWorker:
         backoff = retry_delay
         for attempt in range(1, max_retries + 1):
             if not self._start_ffmpeg(item, seek_pos, oneshot=oneshot, loop_count=loop_count):
+                self.state.buffering = False  # type: ignore[attr-defined]
                 return False  # binary/launch error — no point retrying
 
             proc = self.state.ffmpeg_proc
             if proc is None:
+                self.state.buffering = False  # type: ignore[attr-defined]
                 return False
 
             # Give FFmpeg up to 4 s to either stabilise or fail fast.
@@ -1736,6 +1760,7 @@ class StreamWorker:
 
             if proc.poll() is None:
                 # Still running after 4 s — MediaMTX accepted the push.
+                self.state.buffering = False  # type: ignore[attr-defined]
                 return True
 
             # FFmpeg exited — wait briefly for the drain thread to capture stderr.
@@ -1769,6 +1794,9 @@ class StreamWorker:
 
             if is_400 or is_broken_pipe:
                 # Transient MediaMTX session conflict — retry with backoff.
+                # Raise the buffering flag on the first transient failure so the
+                # Web UI can show BUFFERING instead of STARTING during the wait.
+                self.state.buffering = True  # type: ignore[attr-defined]
                 if attempt < max_retries:
                     reason = "400 Bad Request" if is_400 else "broken pipe"
                     self._log(
@@ -1787,11 +1815,13 @@ class StreamWorker:
                         "MediaMTX session still not ready. Triggering auto-restart.",
                         "ERROR",
                     )
+                    self.state.buffering = False  # type: ignore[attr-defined]
                     self.state.status    = StreamStatus.ERROR
                     self.state.error_msg = f"MediaMTX {reason} (session not ready)"
                     return False
             else:
                 # Any other early exit (non-transient).
+                self.state.buffering = False  # type: ignore[attr-defined]
                 if rc not in (None, 0, 255):
                     self.state.status    = StreamStatus.ERROR
                     self.state.error_msg = (
@@ -1804,6 +1834,7 @@ class StreamWorker:
                 # Return True so the monitor can handle advancing the playlist.
                 return True
 
+        self.state.buffering = False  # type: ignore[attr-defined]
         return False
 
     def _play_black(self) -> None:
