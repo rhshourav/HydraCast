@@ -102,6 +102,16 @@ class StreamManager:
         # calls start_stream(), which races _cycle_mediamtx and corrupts ports.
         if state.resuming:
             return
+        # Bug 9 fix: block while _auto_restart() is in its backoff countdown.
+        # _auto_restart() sets status = STOPPED/ERROR but restarting = True.
+        # The scheduler fires every 60 s and sees active=False, then calls
+        # start_stream() — which races the _auto_restart() thread's _do_start()
+        # call.  The _start_lock prevents two _do_start() calls from running
+        # simultaneously but the second one blocks for 20 s then proceeds,
+        # potentially starting a duplicate stream after _auto_restart() already
+        # succeeded.  Returning early here avoids that race entirely.
+        if getattr(state, "restarting", False):
+            return
         # Only reset playlist position on an explicit fresh start (e.g. manual
         # Start button press, first launch).  Auto-restarts triggered by the
         # scheduler, _auto_restart(), or a broken-pipe loop must NOT reset to
