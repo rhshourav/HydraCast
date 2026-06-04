@@ -15,6 +15,25 @@ PORT SCHEME (v6.2+)
     • all four derived ports (RTSP, HLS, RTP, RTCP) are free
     • no OS firewall rule blocks them
 
+FIX (v6.3 — quality + HLS/RTSP sync):
+  • hlsSegmentDuration: 4s  — aligns with FFmpeg -force_key_frames every 4 s.
+    Every HLS segment starts on an IDR frame so HLS and RTSP playback stay in
+    lock-step at every segment boundary.  Changing this value requires a
+    matching change to the FFmpeg -force_key_frames interval in worker.py.
+
+  • hlsSegmentCount: 10  — raised from 7 to 10.  More segments in the playlist
+    gives players a larger buffer window, reducing rebuffering during brief
+    network hiccups.  Memory cost is small (10 × 4 s = 40 s of media per
+    stream) and does not affect latency.
+
+  • hlsSegmentMaxSize: 20M  — caps individual segment file size to 20 MiB.
+    Prevents runaway segment growth at very high bitrates (e.g. 8 Mbps ×
+    4 s = 4 MB, well within the cap).
+
+  • readTimeout / writeTimeout: 30s  — raised from 15 s to 30 s to give
+    the high-quality slow preset encoder enough headroom to push frames
+    without triggering a session teardown under CPU load.
+
 FIX (v5.0.6 / v6.0):
   • spath = cfg.rtsp_path  (no "~all" fallback).
     The new version used  spath = cfg.rtsp_path if cfg.rtsp_path else "~all"
@@ -116,9 +135,16 @@ class MediaMTXConfig:
                 f"hlsAddress: {addr}:{cfg.hls_port}\n"
                 f"hlsAlwaysRemux: true\n"
                 f"hlsVariant: mpegts\n"
-                f"hlsSegmentCount: 7\n"
+                # ── HLS/RTSP sync (v6.3) ──────────────────────────────────────
+                # 4 s segments align exactly with FFmpeg -force_key_frames every
+                # 4 s (worker.py).  Each segment therefore starts on an IDR frame
+                # so HLS and RTSP playback stay in lock-step.  Changing this
+                # value requires a matching change to worker.py.
+                f"hlsSegmentCount: 10\n"
                 f"hlsSegmentDuration: 4s\n"
                 f"hlsPartDuration: 0s\n"
+                # 20 MiB cap prevents runaway file growth at very high bitrates.
+                f"hlsSegmentMaxSize: 20971520\n"
                 f"hlsAllowOrigin: '*'\n"
             )
         else:
@@ -146,9 +172,12 @@ class MediaMTXConfig:
             f"rtspAddress: {addr}:{port}\n"
             f"rtpAddress:  {rtp_addr}\n"
             f"rtcpAddress: {rtcp_addr}\n"
-            f"readTimeout: 15s\n"
-            f"writeTimeout: 15s\n"
-            f"writeQueueSize: 1024\n"
+            # readTimeout/writeTimeout raised to 30 s (v6.3): the high-quality
+            # slow preset encoder can briefly stall on CPU-heavy frames; 15 s
+            # was tight enough to trigger spurious RTSP session teardowns.
+            f"readTimeout: 30s\n"
+            f"writeTimeout: 30s\n"
+            f"writeQueueSize: 2048\n"
             f"udpMaxPayloadSize: 1472\n"
             f"\n"
             f"api: false\n"
