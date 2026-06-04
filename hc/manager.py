@@ -417,6 +417,28 @@ class StreamManager:
 
     # ── Scheduler loop ────────────────────────────────────────────────────────
     def _scheduler_loop(self) -> None:
+        # Cold-start race fix: the scheduler's first iteration must not fire
+        # until start_all() has finished launching all streams.  start_all()
+        # staggers 22 streams in groups of 4 × 400 ms ≈ 2.2 s, but _do_start()
+        # adds up to 4.75 s of per-stream boot jitter on top of that.  The
+        # worst-case time for the last stream to call _start_mediamtx() is
+        # approximately 4.75 s + the time to pass through the semaphore (up to
+        # 3 × 11 s ≈ 33 s in a fully-serialised cold start).  A 70 s initial
+        # sleep safely clears that window.  After the first tick the loop
+        # returns to its normal 60 s cadence.
+        #
+        # Without this delay the scheduler fires at t=0, sees every stream as
+        # status=STOPPED (threads are still inside _do_start()), and calls
+        # start_stream() for every stream simultaneously — completely bypassing
+        # the stagger in start_all() and the boot jitter in _do_start(), which
+        # is exactly the storm that produces the "listen udp4: bind: Only one
+        # usage of each socket address" errors at cold start.
+        _initial_delay_ticks = 700  # 70 s × 10 ticks/s
+        for _ in range(_initial_delay_ticks):
+            if not self._running:
+                return
+            time.sleep(0.1)
+
         while self._running:
             for s in self.states:
                 if not s.config.enabled:
