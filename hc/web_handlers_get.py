@@ -20,6 +20,24 @@ from hc.utils import _fmt_duration, _fmt_size, _local_ip
 log = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# HLS proxy URL helper (imported from web_handler to keep the definition DRY)
+# ---------------------------------------------------------------------------
+def _hls_proxy_url(cfg) -> str:
+    """
+    Return the proxied HLS URL for use in the Web UI.
+
+    Routes all HLS traffic through /hls/<port>/<stream_path>/index.m3u8 on
+    the Web UI's own HTTPS origin so the browser never makes a plain-HTTP
+    mixed-content request to MediaMTX's HLS port directly.
+    """
+    if not cfg.hls_enabled:
+        return ""
+    spath = (cfg.rtsp_path or cfg.stream_path or "stream").strip("/")
+    return f"/hls/{cfg.hls_port}/{spath}/index.m3u8"
+
+
+
 def _clean_error_msg(msg):
     """Convert raw FFmpeg stderr into a short human-readable string."""
     if not msg:
@@ -151,7 +169,7 @@ class _GetHandlersMixin:
                 "time_remaining": st.time_remaining(),
                 "fps":            st.fps,
                 "rtsp_url":       cfg.rtsp_url_external,
-                "hls_url":        cfg.hls_url if cfg.hls_enabled else "",
+                "hls_url":        _hls_proxy_url(cfg),
                 "shuffle":        cfg.shuffle,
                 "playlist_count": len(cfg.playlist),
                 "enabled":        cfg.enabled,
@@ -309,7 +327,7 @@ class _GetHandlersMixin:
             "name":          cfg.name,
             "port":          cfg.port,
             "rtsp_url":      cfg.rtsp_url_external,
-            "hls_url":       cfg.hls_url if cfg.hls_enabled else "",
+            "hls_url":       _hls_proxy_url(cfg),
             "weekdays":      cfg.weekdays_display(),
             "status":        st.status.label,
             "progress":      st.progress,
@@ -338,7 +356,7 @@ class _GetHandlersMixin:
             return
         cfg = st.config
         # RTSP-first: when HLS is not enabled, viewer URL should default to RTSP
-        hls_url = cfg.hls_url if cfg.hls_enabled else ""
+        hls_url = _hls_proxy_url(cfg)
         self._json({
             "name":          cfg.name,
             "status":        st.status.label,
