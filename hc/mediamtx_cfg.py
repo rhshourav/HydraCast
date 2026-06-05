@@ -73,6 +73,16 @@ class MediaMTXConfig:
         rtp_addr  = f"{addr}:{rtp_base}"
         rtcp_addr = f"{addr}:{rtp_base + 1}"
 
+        # ── HLS bind address (v6.5.2 fix) ────────────────────────────────────
+        # The HLS reverse-proxy in _proxy_hls() always connects to
+        # http://127.0.0.1:<hls_port>/... regardless of the configured
+        # LISTEN_ADDR.  If hlsAddress were bound to a specific external IP
+        # (e.g. "192.168.20.10:30162" when --listen 192.168.20.10 is set),
+        # the loopback connection would be refused → 502 → manifestLoadError.
+        # Binding HLS to 0.0.0.0 lets the loopback proxy always reach it
+        # while still accepting external connections on the network interface.
+        hls_bind_addr = f"0.0.0.0:{cfg.hls_port}"
+
         log.info(
             "[%s] Port assignment: RTSP=%d (odd✓)  HLS=%d  RTP=%d (even✓)  RTCP=%d",
             cfg.name, port, cfg.hls_port, rtp_base, rtp_base + 1,
@@ -102,7 +112,7 @@ class MediaMTXConfig:
                 f"webrtc: false\n"
                 f"\n"
                 f"hls: true\n"
-                f"hlsAddress: {addr}:{cfg.hls_port}\n"
+                f"hlsAddress: {hls_bind_addr}\n"
                 f"hlsAlwaysRemux: true\n"
                 f"hlsVariant: mpegts\n"
                 # ── HLS/RTSP sync (v6.3) ──────────────────────────────────────
@@ -137,7 +147,7 @@ class MediaMTXConfig:
         yaml_text = (
             f"# HydraCast v{APP_VER} — {cfg.name} (:{port})\n"
             f"# Stream path: /{spath}   RTSP push → rtsp://127.0.0.1:{port}/{spath}\n"
-            f"# RTSP={port} (odd✓)  HLS={cfg.hls_port}  RTP={rtp_base} (even✓)  RTCP={rtp_base+1}\n"
+            f"# RTSP={port} (odd✓)  HLS={cfg.hls_port} (0.0.0.0, proxy via 127.0.0.1)  RTP={rtp_base} (even✓)  RTCP={rtp_base+1}\n"
             f"# rtmp/srt/webrtc: false prevents port-1935/8890/8889 collisions\n"
             f"logLevel: error\n"
             f"logDestinations: [file]\n"
