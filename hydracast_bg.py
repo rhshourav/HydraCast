@@ -492,7 +492,7 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
                             conn = _http.HTTPConnection(
                                 "127.0.0.1", _probe_port, timeout=1.0
                             )
-                        conn.request("GET", "/api/health")
+                        conn.request("GET", "/health")
                         resp = conn.getresponse()
                         resp.read()   # drain so the connection closes cleanly
                         conn.close()
