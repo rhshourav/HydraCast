@@ -796,10 +796,16 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
             self._json({"ok": False, "msg": "Invalid JSON"}, 400)
             return
 
-        # The calendar React component posts to /api/action with the real
-        # action name inside the JSON body ({"action": "delete_event", ...}).
-        # All other callers post to /api/<action_name> directly.
-        if path == "/api/action":
+        # Determine the action name from either:
+        #   /api/action    -- body contains {"action": "<name>", ...}
+        #   /api/<name>    -- action is the path segment after /api/
+        #   /api or /api/  -- bare path; fall back to body's "action" key
+        #
+        # Bug fix: POST to /api (no trailing slash) previously yielded
+        # action="api" because path.replace("/api/", "") left "/api" untouched
+        # (the needle requires a trailing slash).  /api and /api/ now behave
+        # identically to /api/action -- the action is read from the JSON body.
+        if path in ("/api/action", "/api", "/api/"):
             action = str(data.pop("action", "")).strip()
         else:
             action = path.replace("/api/", "").strip("/")
@@ -2551,6 +2557,20 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
 
         elif action == "reset":
             self._handle_reset(data)
+
+        # Camera registry
+        elif action == "add_camera":
+            self._camera_add(data)
+
+        elif action == "edit_camera":
+            self._camera_edit(data)
+
+        elif action == "delete_camera":
+            self._camera_delete(data)
+
+        # Source switching
+        elif action == "source_switch":
+            self._source_switch(data)
 
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
