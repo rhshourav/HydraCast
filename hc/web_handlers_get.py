@@ -128,6 +128,57 @@ def _invalidate_lib_cache() -> None:
         _LIB_CACHE = None; _LIB_CACHE_TS = 0.0
 
 
+
+# ---------------------------------------------------------------------------
+# Next-in-queue helper (mirrors _get_next_in_queue in web_handler.py)
+# ---------------------------------------------------------------------------
+def _next_in_queue(st, cfg, n: int = 2):
+    """
+    Return the next *n* playlist file names after the currently playing item.
+
+    Mirrors web_handler._get_next_in_queue exactly so the viewer tab gets
+    identical queue information to the main streams panel.  Kept here rather
+    than imported from web_handler to avoid a circular-import between the two
+    modules (web_handler imports _GetHandlersMixin from this file).
+    """
+    import re as _re
+    from datetime import datetime as _dt
+
+    playlist = cfg.playlist
+    if not playlist:
+        return []
+    order = getattr(st, "playlist_order", None) or list(range(len(playlist)))
+    idx   = getattr(st, "playlist_index", 0) or 0
+
+    remaining = []
+    for offset in range(1, len(order)):
+        next_ord_idx = (idx + offset) % len(order)
+        pl_idx = order[next_ord_idx]
+        try:
+            remaining.append(playlist[pl_idx].file_path.name)
+        except (IndexError, AttributeError):
+            pass
+
+    _DAY_TAG = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
+    _DAY_RE  = _re.compile(r'_(MON|TUE|WED|THU|FRI|SAT|SUN)_', _re.IGNORECASE)
+    _is_shuffled = getattr(cfg, "shuffle", False)
+
+    if not _is_shuffled and len(remaining) > 1:
+        if any(_DAY_RE.search(f) for f in remaining):
+            today = _dt.now().weekday()
+
+            def _day_distance(filename: str) -> int:
+                m = _DAY_RE.search(filename)
+                if not m:
+                    return 7 + len(remaining)
+                file_day = _DAY_TAG.get(m.group(1).upper(), 7)
+                dist = (file_day - today) % 7
+                return dist if dist > 0 else 7
+
+            remaining.sort(key=_day_distance)
+
+    return remaining[:n]
+
 # ---------------------------------------------------------------------------
 # Mixin
 # ---------------------------------------------------------------------------
@@ -192,17 +243,30 @@ class _GetHandlersMixin:
                 "loop_count":     st.loop_count,
                 "restart_count":  st.restart_count,
                 "bitrate":        st.bitrate,
+                "video_bitrate":  cfg.video_bitrate,
+                "audio_bitrate":  cfg.audio_bitrate,
                 "speed":          st.speed,
                 "app_ver":        APP_VER,
                 # ── Oneshot / event state ─────────────────────────────────
                 "oneshot_active": st.oneshot_active,
                 "active_event":   active_event_name,
                 "current_file":   cur_file,
-                # Compliance alert (non-None = show banner in UI)
-                "compliance_alert": st.compliance_alert,
-                # ── Hybrid source switching (graceful fallback for older models) ──
-                "source_mode":    getattr(cfg, "source_mode",   "file"),
-                "active_source":  getattr(st,  "active_source", "file"),
+                # ── Compliance (non-None alert = show banner in UI) ───────
+                "compliance_enabled":       cfg.compliance_enabled,
+                "compliance_alert":         st.compliance_alert,
+                "compliance_alert_enabled": getattr(cfg, "compliance_alert_enabled", True),
+                # ── Next-in-queue (viewer card queue display) ─────────────
+                # Show up to 2 upcoming playlist filenames so the viewer card
+                # can render the queue chips below the progress bar.
+                "next_in_queue": _next_in_queue(st, cfg, n=2),
+                # ── Buffering badge (v5.3.7+) ─────────────────────────────
+                # True while _start_ffmpeg_with_retry absorbs transient
+                # broken-pipe / 400 Bad Request failures; viewer renders
+                # BUFFERING instead of STARTING during this window.
+                "buffering":      getattr(st, "buffering", False),
+                # ── Hybrid source switching ───────────────────────────────
+                "source_mode":    getattr(cfg, "source_mode",   "playlist"),
+                "active_source":  getattr(st,  "active_source", "playlist"),
             })
         self._json(result)
 
