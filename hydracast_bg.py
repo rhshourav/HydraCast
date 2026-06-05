@@ -446,8 +446,8 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
             def _hooked_start():
                 result = _bound_start()
                 # ── Read the real port AFTER start() has called set_web_port() ──
-                # web_server.WebServer.start() now calls set_web_port(real_port)
-                # before returning, so get_web_port() is authoritative here.
+                # web_server.WebServer.start() calls set_web_port(real_port) so
+                # get_web_port() is now authoritative (e.g. 8080 after 443 fallback).
                 try:
                     from hc.constants import get_web_port
                     state.port = get_web_port()
@@ -455,23 +455,18 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
                     pass
 
                 # ── Read the SSL flag set by WebServer.start() ────────────────
-                # ws_self._use_ssl is set by the patched start() in web_server.py.
-                # Fall back to False (plain HTTP) if the attribute is absent so
-                # older builds don't break.
+                # ws_self._use_ssl is set by start() after the cert check.
+                # Falls back to False (plain HTTP) if absent (older build).
                 _use_ssl    = getattr(ws_self, "_use_ssl", False)
                 _probe_port = state.port
                 _scheme     = "https" if _use_ssl else "http"
 
                 # ── Wait until the server actually responds to an HTTP request ──
-                # WebServer.start() spawns a daemon thread and returns before
-                # serve_forever() is fully running.  A bare TCP connect would
-                # succeed immediately on an SSL server (the TCP layer opens) but
-                # the server then drops the connection waiting for a TLS
-                # ClientHello that never comes — so the browser gets
-                # ERR_EMPTY_RESPONSE.  Instead we send a real HTTP GET to
-                # /api/health (which WebHandler serves in <1 ms) and only signal
-                # ready once we receive any HTTP response (any status code counts;
-                # a 503 "manager not ready yet" is still proof the socket works).
+                # A bare socket.create_connection() would succeed immediately on
+                # a TLS socket (TCP layer opens) but the server then drops it
+                # waiting for a ClientHello — so the browser gets ERR_EMPTY_RESPONSE.
+                # Instead we send a real HTTP GET to /health and only signal ready
+                # once we receive any HTTP response (even 503 proves the socket works).
                 import http.client as _http
                 import ssl as _ssl_mod
                 _deadline  = time.time() + 15.0
@@ -494,7 +489,7 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
                             )
                         conn.request("GET", "/health")
                         resp = conn.getresponse()
-                        resp.read()   # drain so the connection closes cleanly
+                        resp.read()
                         conn.close()
                         log.info(
                             "WebServer %s://127.0.0.1:%d responded HTTP %d — "
@@ -508,8 +503,7 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
                 if not _signalled:
                     log.warning(
                         "WebServer %s://127.0.0.1:%d did not respond within "
-                        "15 s — signalling ready anyway.",
-                        _scheme, _probe_port,
+                        "15 s — signalling ready anyway.", _scheme, _probe_port,
                     )
                     state.ready_event.set()
                 return result
@@ -676,7 +670,21 @@ def _build_and_run_tray(state: _WorkerState) -> None:
         return
 
     port = state.port
-    log.info("HydraCast ready on port %d — showing tray icon.", port)
+    # Derive the URL scheme from the server instance's _use_ssl flag (set by
+    # the fixed web_server.py).  Fall back: https only on port 443, http otherwise.
+    try:
+        import gc as _gc
+        _server_ssl: "Optional[bool]" = None
+        for _obj in _gc.get_objects():
+            if type(_obj).__name__ == "WebServer" and hasattr(_obj, "_use_ssl"):
+                _server_ssl = _obj._use_ssl
+                break
+        _scheme = "https" if (_server_ssl is True or (
+            _server_ssl is None and port == 443)) else "http"
+    except Exception:
+        _scheme = "https" if port == 443 else "http"
+
+    log.info("HydraCast ready — %s://localhost:%d — showing tray icon.", _scheme, port)
 
     # ── Menu actions ──────────────────────────────────────────────────────────
     def _open_web(icon, item):
@@ -685,7 +693,7 @@ def _build_and_run_tray(state: _WorkerState) -> None:
             ip = _local_ip()
         except Exception:
             ip = "localhost"
-        url = f"https://{ip}:{state.port}"
+        url = f"{_scheme}://{ip}:{state.port}"
         log.info("Opening %s", url)
         webbrowser.open(url)
 
@@ -711,7 +719,7 @@ def _build_and_run_tray(state: _WorkerState) -> None:
         startup_on = _get_startup_enabled()
         startup_label = "✔  Run at Windows startup" if startup_on else "     Run at Windows startup"
         return pystray.Menu(
-            Item(f"Open Web UI  (https://{_ip}:{port})", _open_web, default=True),
+            Item(f"Open Web UI  ({_scheme}://{_ip}:{port})", _open_web, default=True),
             pystray.Menu.SEPARATOR,
             Item("Restart HydraCast",   _restart_worker),
             pystray.Menu.SEPARATOR,
@@ -763,7 +771,7 @@ def _build_and_run_tray(state: _WorkerState) -> None:
     image = _load_image()
     icon = pystray.Icon(
         "HydraCast", image,
-        f"HydraCast  https://{_ip}:{port}  [Guardian Active]",
+        f"HydraCast  {_scheme}://{_ip}:{port}  [Guardian Active]",
         _build_menu(),
     )
 
