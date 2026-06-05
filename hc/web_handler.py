@@ -182,21 +182,33 @@ _SEC_HEADERS: Dict[str, str] = {
 }
 
 
-def _hls_proxy_url(cfg) -> str:
+def _hls_proxy_url(cfg, full: bool = False) -> str:
     """
     Return the proxied HLS URL for use in the Web UI.
 
-    The browser must never contact MediaMTX's plain-HTTP HLS port directly
-    from an HTTPS page — that is a mixed-content block.  Instead, all HLS
-    traffic is routed through the Web UI's own HTTPS origin via the
-    /hls/<port>/<path>/index.m3u8 reverse proxy added in web_handler.py.
+    When full=False (default): returns a relative path like
+      /hls/<port>/<path>/index.m3u8
+    used by the in-browser video player (same HTTPS origin, no mixed-content).
+
+    When full=True: returns the full absolute URL like
+      https://<server_ip>/hls/<port>/<path>/index.m3u8
+    used in the UI copy-to-clipboard fields so external players (VLC etc) work.
 
     Returns "" when HLS is not enabled for this stream.
     """
     if not cfg.hls_enabled:
         return ""
     spath = (cfg.rtsp_path or cfg.stream_path or "stream").strip("/")
-    return f"/hls/{cfg.hls_port}/{spath}/index.m3u8"
+    rel = f"/hls/{cfg.hls_port}/{spath}/index.m3u8"
+    if not full:
+        return rel
+    from hc.utils import _local_ip
+    from hc.constants import get_web_port, LISTEN_ADDR
+    ip   = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
+    port = get_web_port()
+    scheme = "https" if port == 443 else "https"
+    port_sfx = f":{port}" if port not in (443, 80) else ""
+    return f"{scheme}://{ip}{port_sfx}{rel}"
 
 
 # =============================================================================
@@ -848,7 +860,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
                 "time_remaining": st.time_remaining(),
                 "fps":            st.fps,
                 "rtsp_url":       cfg.rtsp_url_external,
-                "hls_url":        _hls_proxy_url(cfg),
+                "hls_url":        _hls_proxy_url(cfg, full=True),
                 "shuffle":        cfg.shuffle,
                 "playlist_count": len(cfg.playlist),
                 "enabled":        cfg.enabled,
@@ -978,7 +990,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
                     "port":        cfg.port,
                     "stream_path": cfg.stream_path or "",
                     "rtsp_url":    cfg.rtsp_url_external,
-                    "hls_url":     _hls_proxy_url(cfg),
+                    "hls_url":     _hls_proxy_url(cfg, full=True),
                     "status":      st.status.label,
                     "enabled":     "yes" if cfg.enabled else "no",
                 }
@@ -1206,7 +1218,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
             "name":          cfg.name,
             "port":          cfg.port,
             "rtsp_url":      cfg.rtsp_url_external,
-            "hls_url":       _hls_proxy_url(cfg),
+            "hls_url":       _hls_proxy_url(cfg, full=True),
             "weekdays":      cfg.weekdays_display(),
             "status":        st.status.label,
             "progress":      st.progress,
@@ -1247,7 +1259,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
             "name":           cfg.name,
             "status":         st.status.label,
             "rtsp_url":       cfg.rtsp_url_external,
-            "hls_url":        _hls_proxy_url(cfg),
+            "hls_url":        _hls_proxy_url(cfg, full=True),
             "current_pos":    st.current_pos,
             "duration":       st.duration,
             "progress":       st.progress,
