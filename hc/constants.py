@@ -323,6 +323,10 @@ _flags: Dict[str, object] = {
     "http_port":   HTTP_REDIRECT_PORT,
     "ssl_cert":    None,
     "ssl_key":     None,
+    # When False: streams are NOT started automatically at launch or by the
+    # scheduler.  The user must press Start in the Web UI.  One-shot events
+    # will still auto-start a stopped stream so they can fire on time.
+    "auto_start":  True,
 }
 
 def NO_FIREWALL()    -> bool: return bool(_flags["no_firewall"])
@@ -337,6 +341,8 @@ def set_web_port(v: int)      -> None: _flags["web_port"]    = int(v)
 def set_http_port(v: int)     -> None: _flags["http_port"]   = int(v)
 def set_ssl_cert(v: str)      -> None: _flags["ssl_cert"]    = v
 def set_ssl_key(v: str)       -> None: _flags["ssl_key"]     = v
+def get_auto_start() -> bool:  return bool(_flags["auto_start"])
+def set_auto_start(v: bool)  -> None: _flags["auto_start"] = bool(v)
 
 
 # ── Port validation ───────────────────────────────────────────────────────────
@@ -443,6 +449,17 @@ def build_arg_parser():
         default=False,
         help="Skip automatic OS firewall rule setup.",
     )
+    parser.add_argument(
+        "--no-auto-start",
+        dest="no_auto_start",
+        action="store_true",
+        default=False,
+        help=(
+            "Do not start streams automatically at launch or via the scheduler. "
+            "Streams must be started manually from the Web UI. "
+            "One-shot events will still auto-start a stopped stream so they fire on time."
+        ),
+    )
     return parser
 
 
@@ -466,6 +483,8 @@ def apply_cli_args(args) -> None:
     if args.ssl_key:
         set_ssl_key(args.ssl_key)
     set_no_firewall(args.no_firewall)
+    if getattr(args, "no_auto_start", False):
+        set_auto_start(False)
 
 
 # ── Weekdays ──────────────────────────────────────────────────────────────────
