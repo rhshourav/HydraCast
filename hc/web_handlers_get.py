@@ -23,18 +23,33 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # HLS proxy URL helper (imported from web_handler to keep the definition DRY)
 # ---------------------------------------------------------------------------
-def _hls_proxy_url(cfg) -> str:
+def _hls_proxy_url(cfg, full: bool = False) -> str:
     """
     Return the proxied HLS URL for use in the Web UI.
 
-    Routes all HLS traffic through /hls/<port>/<stream_path>/index.m3u8 on
-    the Web UI's own HTTPS origin so the browser never makes a plain-HTTP
-    mixed-content request to MediaMTX's HLS port directly.
+    When full=False (default): returns a relative path like
+      /hls/<port>/<path>/index.m3u8
+    used by the in-browser HLS.js video player (same HTTPS origin, no mixed-content).
+
+    When full=True: returns the absolute URL like
+      https://<server_ip>/hls/<port>/<path>/index.m3u8
+    used in copy-to-clipboard and display fields so external players (VLC etc) work.
+
+    Returns "" when HLS is not enabled for this stream.
     """
     if not cfg.hls_enabled:
         return ""
     spath = (cfg.rtsp_path or cfg.stream_path or "stream").strip("/")
-    return f"/hls/{cfg.hls_port}/{spath}/index.m3u8"
+    rel = f"/hls/{cfg.hls_port}/{spath}/index.m3u8"
+    if not full:
+        return rel
+    from hc.utils import _local_ip
+    from hc.constants import get_web_port, LISTEN_ADDR
+    ip     = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
+    port   = get_web_port()
+    scheme = "https"
+    port_sfx = f":{port}" if port not in (443, 80) else ""
+    return f"{scheme}://{ip}{port_sfx}{rel}"
 
 
 
@@ -169,7 +184,7 @@ class _GetHandlersMixin:
                 "time_remaining": st.time_remaining(),
                 "fps":            st.fps,
                 "rtsp_url":       cfg.rtsp_url_external,
-                "hls_url":        _hls_proxy_url(cfg),
+                "hls_url":        _hls_proxy_url(cfg, full=True),
                 "shuffle":        cfg.shuffle,
                 "playlist_count": len(cfg.playlist),
                 "enabled":        cfg.enabled,
@@ -328,8 +343,7 @@ class _GetHandlersMixin:
             "name":          cfg.name,
             "port":          cfg.port,
             "rtsp_url":      cfg.rtsp_url_external,
-            "hls_url":       _hls_proxy_url(cfg),
-            "weekdays":      cfg.weekdays_display(),
+            "hls_url":       _hls_proxy_url(cfg, full=True),
             "status":        st.status.label,
             "progress":      st.progress,
             "current_pos":   st.current_pos,
@@ -357,7 +371,7 @@ class _GetHandlersMixin:
             return
         cfg = st.config
         # RTSP-first: when HLS is not enabled, viewer URL should default to RTSP
-        hls_url = _hls_proxy_url(cfg)
+        hls_url = _hls_proxy_url(cfg, full=True)
         self._json({
             "name":          cfg.name,
             "status":        st.status.label,
@@ -374,36 +388,66 @@ class _GetHandlersMixin:
     def _get_cameras(self) -> None:
         """GET /api/cameras — returns the full camera registry (passwords masked).
 
-        BUG FIX: JSONManager.load_cameras() may not exist in older builds.
-        Use getattr() to detect it safely and return an empty list when absent,
-        rather than crashing with AttributeError → 500 → "Failed to fetch".
+        Reads cameras.hcf directly so it works even when JSONManager.load_cameras()
+        is absent in older builds.  Falls back to an empty list gracefully.
         """
         try:
-            from hc.json_manager import JSONManager
-            load_fn = getattr(JSONManager, "load_cameras", None)
-            cameras = load_fn() if load_fn is not None else []
+            import json as _json
+            from hc.constants import CAMERAS_FILE
+            from hc.models import CameraConfig
+
+            cameras_file = CAMERAS_FILE()
+            cameras_raw: list = []
+            if cameras_file.exists():
+                try:
+                    cameras_raw = _json.loads(cameras_file.read_text(encoding="utf-8"))
+                    if not isinstance(cameras_raw, list):
+                        cameras_raw = []
+                except Exception:
+                    cameras_raw = []
+
             result = []
-            for cam in cameras:
-                result.append({
-                    "camera_id":   cam.camera_id,
-                    "name":        cam.name,
-                    "protocol":    cam.protocol,
-                    "host":        cam.host,
-                    "port":        cam.port,
-                    "path":        cam.path,
-                    "username":    cam.username,
-                    # Never send the real password to the browser — mask it
-                    "password":    "••••••••" if cam.password else "",
-                    "source_type": cam.source_type,
-                    "enabled":     cam.enabled,
-                    "notes":       cam.notes,
-                    "url_masked":  cam.url_masked,
-                    "url_display": cam.url_masked,
-                })
+            for raw in cameras_raw:
+                try:
+                    cam = CameraConfig(
+                        camera_id   = str(raw.get("camera_id", "")),
+                        name        = str(raw.get("name", "")),
+                        protocol    = str(raw.get("protocol", "rtsp")),
+                        host        = str(raw.get("host", "")),
+                        port        = int(raw.get("port", 554)),
+                        path        = str(raw.get("path", "/")),
+                        username    = str(raw.get("username", "")),
+                        password    = str(raw.get("password", "")),
+                        source_type = str(raw.get("source_type", "rtsp")),
+                        enabled     = bool(raw.get("enabled", True)),
+                        notes       = str(raw.get("notes", "")),
+                    )
+                    result.append({
+                        "camera_id":   cam.camera_id,
+                        "name":        cam.name,
+                        "protocol":    cam.protocol,
+                        "host":        cam.host,
+                        "port":        cam.port,
+                        "path":        cam.path,
+                        "username":    cam.username,
+                        # Never send the real password to the browser — mask it
+                        "password":    "••••••••" if cam.password else "",
+                        "source_type": cam.source_type,
+                        "enabled":     cam.enabled,
+                        "notes":       cam.notes,
+                        "url_masked":  cam.url_masked,
+                        "url_display": cam.url_masked,
+                    })
+                except Exception as exc2:
+                    log.warning("_get_cameras: skipping malformed entry: %s", exc2)
+                    continue
+
             self._json(result)
         except Exception as exc:
             log.error("_get_cameras error: %s", exc)
             self._json({"error": str(exc)}, 500)
+
+
 
     def _get_holidays(self, qs: Dict[str, Any]) -> None:
         """GET /api/holidays — delegate to _CalendarHandlersMixin with safe fallback.
