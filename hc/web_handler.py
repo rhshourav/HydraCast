@@ -2587,6 +2587,219 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
 
+    # ── Camera CRUD ──────────────────────────────────────────────────────────
+    def _camera_add(self, data: Dict[str, Any]) -> None:
+        """POST action: add_camera — Add a new camera to cameras.hcf."""
+        try:
+            from hc.models import CameraConfig, CAMERA_PROTOCOL_DEFAULTS
+            import uuid as _uuid
+            import json as _json
+            from hc.constants import CAMERAS_FILE
+
+            name = str(data.get("name", "")).strip()
+            if not name:
+                self._json({"ok": False, "msg": "Camera name is required"}); return
+            if len(name) > 64:
+                self._json({"ok": False, "msg": "Camera name too long (max 64 chars)"}); return
+
+            source_type = str(data.get("source_type", "rtsp")).strip().lower()
+            protocol    = str(data.get("protocol", "rtsp")).strip().lower()
+            host        = str(data.get("host", "")).strip()
+            if not host:
+                self._json({"ok": False, "msg": "Host / device path is required"}); return
+
+            port     = int(data.get("port", CAMERA_PROTOCOL_DEFAULTS.get(protocol, 554)))
+            path     = str(data.get("path", "/")).strip() or "/"
+            username = str(data.get("username", "")).strip()
+            password = str(data.get("password", ""))
+            enabled  = bool(data.get("enabled", True))
+            notes    = str(data.get("notes", "")).strip()[:500]
+
+            # Load existing list
+            cameras_file = CAMERAS_FILE()
+            cameras_raw: list = []
+            if cameras_file.exists():
+                try:
+                    cameras_raw = _json.loads(cameras_file.read_text(encoding="utf-8"))
+                except Exception:
+                    cameras_raw = []
+
+            # Check for duplicate name
+            if any(c.get("name", "").lower() == name.lower() for c in cameras_raw):
+                self._json({"ok": False, "msg": f"A camera named '{name}' already exists"}); return
+
+            cam_id = str(_uuid.uuid4())
+            cameras_raw.append({
+                "camera_id":   cam_id,
+                "name":        name,
+                "protocol":    protocol,
+                "host":        host,
+                "port":        port,
+                "path":        path,
+                "username":    username,
+                "password":    password,
+                "source_type": source_type,
+                "enabled":     enabled,
+                "notes":       notes,
+            })
+            cameras_file.write_text(
+                _json.dumps(cameras_raw, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            log.info("Camera added: %s (id=%s, host=%s)", name, cam_id, host)
+            self._json({"ok": True, "msg": f"Camera '{name}' added.", "camera_id": cam_id})
+        except Exception as exc:
+            log.error("_camera_add error: %s", exc)
+            self._json({"ok": False, "msg": str(exc)})
+
+    def _camera_edit(self, data: Dict[str, Any]) -> None:
+        """POST action: edit_camera — Update an existing camera in cameras.hcf."""
+        try:
+            import json as _json
+            from hc.constants import CAMERAS_FILE
+            from hc.models import CAMERA_PROTOCOL_DEFAULTS
+
+            camera_id = str(data.get("camera_id", "")).strip()
+            if not camera_id:
+                self._json({"ok": False, "msg": "camera_id is required"}); return
+
+            cameras_file = CAMERAS_FILE()
+            cameras_raw: list = []
+            if cameras_file.exists():
+                try:
+                    cameras_raw = _json.loads(cameras_file.read_text(encoding="utf-8"))
+                except Exception:
+                    cameras_raw = []
+
+            cam_idx = next((i for i, c in enumerate(cameras_raw) if c.get("camera_id") == camera_id), None)
+            if cam_idx is None:
+                self._json({"ok": False, "msg": f"Camera '{camera_id}' not found"}); return
+
+            cam = cameras_raw[cam_idx]
+            name = str(data.get("name", cam.get("name", ""))).strip()
+            if not name:
+                self._json({"ok": False, "msg": "Camera name is required"}); return
+
+            # Check duplicate name (ignore self)
+            for i, c in enumerate(cameras_raw):
+                if i != cam_idx and c.get("name", "").lower() == name.lower():
+                    self._json({"ok": False, "msg": f"A camera named '{name}' already exists"}); return
+
+            source_type = str(data.get("source_type", cam.get("source_type", "rtsp"))).strip().lower()
+            protocol    = str(data.get("protocol",    cam.get("protocol",    "rtsp"))).strip().lower()
+            host        = str(data.get("host",        cam.get("host",        ""))).strip()
+            if not host:
+                self._json({"ok": False, "msg": "Host / device path is required"}); return
+
+            port     = int(data.get("port", cam.get("port", CAMERA_PROTOCOL_DEFAULTS.get(protocol, 554))))
+            path     = str(data.get("path", cam.get("path", "/"))).strip() or "/"
+            username = str(data.get("username", cam.get("username", ""))).strip()
+            enabled  = bool(data.get("enabled", cam.get("enabled", True)))
+            notes    = str(data.get("notes",   cam.get("notes",   ""))).strip()[:500]
+
+            # Password: only update if explicitly sent; else keep existing
+            if "password" in data and str(data["password"]) not in ("", "••••••••"):
+                password = str(data["password"])
+            else:
+                password = cam.get("password", "")
+
+            cameras_raw[cam_idx] = {
+                "camera_id":   camera_id,
+                "name":        name,
+                "protocol":    protocol,
+                "host":        host,
+                "port":        port,
+                "path":        path,
+                "username":    username,
+                "password":    password,
+                "source_type": source_type,
+                "enabled":     enabled,
+                "notes":       notes,
+            }
+            cameras_file.write_text(
+                _json.dumps(cameras_raw, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            log.info("Camera updated: %s (id=%s)", name, camera_id)
+            self._json({"ok": True, "msg": f"Camera '{name}' updated."})
+        except Exception as exc:
+            log.error("_camera_edit error: %s", exc)
+            self._json({"ok": False, "msg": str(exc)})
+
+    def _camera_delete(self, data: Dict[str, Any]) -> None:
+        """POST action: delete_camera — Remove a camera from cameras.hcf."""
+        try:
+            import json as _json
+            from hc.constants import CAMERAS_FILE
+
+            camera_id = str(data.get("camera_id", "")).strip()
+            if not camera_id:
+                self._json({"ok": False, "msg": "camera_id is required"}); return
+
+            cameras_file = CAMERAS_FILE()
+            cameras_raw: list = []
+            if cameras_file.exists():
+                try:
+                    cameras_raw = _json.loads(cameras_file.read_text(encoding="utf-8"))
+                except Exception:
+                    cameras_raw = []
+
+            before = len(cameras_raw)
+            cameras_raw = [c for c in cameras_raw if c.get("camera_id") != camera_id]
+            if len(cameras_raw) == before:
+                self._json({"ok": False, "msg": "Camera not found"}); return
+
+            cameras_file.write_text(
+                _json.dumps(cameras_raw, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            # Detach deleted camera from any stream configs that referenced it
+            mgr = _WEB_MANAGER
+            if mgr:
+                for st in mgr.states:
+                    if getattr(st.config, "camera_id", None) == camera_id:
+                        st.config.camera_id   = None
+                        st.config.source_mode = "playlist"
+                        log.info("Camera %s removed from stream '%s'", camera_id, st.config.name)
+                try:
+                    from hc.json_manager import JSONManager
+                    JSONManager.save([s.config for s in mgr.states])
+                except Exception as exc2:
+                    log.warning("_camera_delete: could not save stream configs: %s", exc2)
+
+            log.info("Camera deleted: id=%s", camera_id)
+            self._json({"ok": True, "msg": "Camera deleted."})
+        except Exception as exc:
+            log.error("_camera_delete error: %s", exc)
+            self._json({"ok": False, "msg": str(exc)})
+
+    def _source_switch(self, data: Dict[str, Any]) -> None:
+        """POST action: source_switch — Toggle a stream between camera and playlist source."""
+        try:
+            mgr = _WEB_MANAGER
+            if not mgr:
+                self._json({"ok": False, "msg": "Manager not ready"}); return
+
+            name   = str(data.get("name",   "")).strip()
+            target = str(data.get("target", "")).strip()  # "camera" or "playlist"
+            if not name:
+                self._json({"ok": False, "msg": "Stream name is required"}); return
+            if target not in ("camera", "playlist"):
+                self._json({"ok": False, "msg": "target must be 'camera' or 'playlist'"}); return
+
+            st = mgr.get_state(name)
+            if not st:
+                self._json({"ok": False, "msg": f"Stream '{name}' not found"}); return
+
+            st.source_override = target
+            st.active_source   = target
+            log.info("[%s] Source switched to: %s", name, target)
+            self._json({"ok": True, "msg": f"Switched '{name}' to {target} source."})
+        except Exception as exc:
+            log.error("_source_switch error: %s", exc)
+            self._json({"ok": False, "msg": str(exc)})
+
     def _handle_reset(self, data: Dict[str, Any]) -> None:
         """
         POST /api/reset  { "confirm": true }
