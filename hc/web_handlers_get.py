@@ -185,9 +185,9 @@ class _GetHandlersMixin:
                 "current_file":   cur_file,
                 # Compliance alert (non-None = show banner in UI)
                 "compliance_alert": st.compliance_alert,
-                # ── Hybrid source switching ───────────────────────────────
-                "source_mode":    cfg.source_mode,
-                "active_source":  st.active_source,
+                # ── Hybrid source switching (graceful fallback for older models) ──
+                "source_mode":    getattr(cfg, "source_mode",   "file"),
+                "active_source":  getattr(st,  "active_source", "file"),
             })
         self._json(result)
 
@@ -216,10 +216,10 @@ class _GetHandlersMixin:
                 "compliance_enabled":   cfg.compliance_enabled,
                 "compliance_start":     cfg.compliance_start,
                 "compliance_loop":      cfg.compliance_loop,
-                # ── Hybrid source switching ───────────────────────────────
-                "source_mode":     cfg.source_mode,
-                "camera_id":       cfg.camera_id,
-                "camera_windows":  cfg.camera_windows,
+                # ── Hybrid source switching (graceful fallback for older models) ──
+                "source_mode":    getattr(cfg, "source_mode",    "file"),
+                "camera_id":      getattr(cfg, "camera_id",      None),
+                "camera_windows": getattr(cfg, "camera_windows", []),
             })
         self._json(result)
 
@@ -366,16 +366,22 @@ class _GetHandlersMixin:
             "current_pos":   st.current_pos,
             "duration":      st.duration,
             "progress":      st.progress,
-            # ── Hybrid source switching ───────────────────────────────────
-            "source_mode":   cfg.source_mode,
-            "active_source": st.active_source,
+            # ── Hybrid source switching (graceful fallback for older models) ──
+            "source_mode":   getattr(cfg, "source_mode",   "file"),
+            "active_source": getattr(st,  "active_source", "file"),
         })
 
     def _get_cameras(self) -> None:
-        """GET /api/cameras — returns the full camera registry (passwords masked)."""
+        """GET /api/cameras — returns the full camera registry (passwords masked).
+
+        BUG FIX: JSONManager.load_cameras() may not exist in older builds.
+        Use getattr() to detect it safely and return an empty list when absent,
+        rather than crashing with AttributeError → 500 → "Failed to fetch".
+        """
         try:
             from hc.json_manager import JSONManager
-            cameras = JSONManager.load_cameras()
+            load_fn = getattr(JSONManager, "load_cameras", None)
+            cameras = load_fn() if load_fn is not None else []
             result = []
             for cam in cameras:
                 result.append({
@@ -398,6 +404,37 @@ class _GetHandlersMixin:
         except Exception as exc:
             log.error("_get_cameras error: %s", exc)
             self._json({"error": str(exc)}, 500)
+
+    def _get_holidays(self, qs: Dict[str, Any]) -> None:
+        """GET /api/holidays — delegate to _CalendarHandlersMixin with safe fallback.
+
+        BUG FIX: If the calendar mixin's _get_holidays crashes (missing holidays
+        package, bad country code, etc.) the UI spins forever on "loading".
+        This override calls super() and catches any exception, returning an empty
+        but valid payload so the UI renders instead of hanging.
+        """
+        try:
+            # _CalendarHandlersMixin is later in the MRO; call it via super().
+            super()._get_holidays(qs)
+        except AttributeError:
+            # Calendar mixin not present in this build — return safe empty payload.
+            year = datetime.now().year
+            self._json({
+                "holidays": [],
+                "custom":   [],
+                "country":  "",
+                "year":     year,
+            })
+        except Exception as exc:
+            log.error("_get_holidays error: %s", exc)
+            year = datetime.now().year
+            self._json({
+                "holidays": [],
+                "custom":   [],
+                "country":  "",
+                "year":     year,
+                "error":    str(exc),
+            })
 
     def _get_mail_config(self) -> None:
         import json as _json
