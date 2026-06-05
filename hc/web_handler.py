@@ -182,6 +182,23 @@ _SEC_HEADERS: Dict[str, str] = {
 }
 
 
+def _hls_proxy_url(cfg) -> str:
+    """
+    Return the proxied HLS URL for use in the Web UI.
+
+    The browser must never contact MediaMTX's plain-HTTP HLS port directly
+    from an HTTPS page — that is a mixed-content block.  Instead, all HLS
+    traffic is routed through the Web UI's own HTTPS origin via the
+    /hls/<port>/<path>/index.m3u8 reverse proxy added in web_handler.py.
+
+    Returns "" when HLS is not enabled for this stream.
+    """
+    if not cfg.hls_enabled:
+        return ""
+    spath = (cfg.rtsp_path or cfg.stream_path or "stream").strip("/")
+    return f"/hls/{cfg.hls_port}/{spath}/index.m3u8"
+
+
 # =============================================================================
 # LIBRARY CACHE
 # =============================================================================
@@ -573,10 +590,130 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             except Exception as exc:
                 log.error("WebHandler GET %s: %s", path, exc)
                 self._json({"error": "internal server error"}, 500)
+        elif path.startswith("/hls/"):
+            self._proxy_hls(path, parsed.query)
         elif path.startswith("/static/") or path.startswith("/resources/") or path == "/favicon.ico":
             self._serve_static(path)
         else:
             self._send(404, b"Not Found", "text/plain")
+
+
+    # ── HLS reverse proxy ────────────────────────────────────────────────────
+    def _proxy_hls(self, path: str, query: str) -> None:
+        """
+        Reverse-proxy HLS segments from MediaMTX to the browser.
+
+        URL scheme  : /hls/<hls_port>/<stream_path...>
+        Proxied to  : http://127.0.0.1:<hls_port>/<stream_path...>
+
+        Why this exists
+        ───────────────
+        • MediaMTX binds its HLS listener on a plain HTTP port (e.g. 8556).
+          The Web UI is served over HTTPS (port 443).  A browser will block a
+          mixed-content fetch — HTTPS page loading HTTP resources — so the
+          player can never reach MediaMTX directly.
+        • Routing HLS through the existing HTTPS server avoids opening the HLS
+          port to the outside world entirely; the browser only ever contacts the
+          single Web-UI port.
+        • It also eliminates any residual CORS concern because the origin of the
+          playlist and segment requests matches the origin of the page.
+
+        Security
+        ────────
+        • Only numeric HLS ports that belong to a known, HLS-enabled StreamConfig
+          are accepted.  Every other port is rejected with 403 — this cannot be
+          used as an open HTTP proxy.
+        • Connections are made to 127.0.0.1 only — never to external hosts.
+
+        Path parsing
+        ────────────
+          /hls/8556/stream/index.m3u8  → http://127.0.0.1:8556/stream/index.m3u8
+          /hls/8556/stream/seg0.ts     → http://127.0.0.1:8556/stream/seg0.ts
+        """
+        import urllib.request as _urlreq
+        import urllib.error   as _urlerr
+
+        # ── Parse /hls/<port>/<rest> ──────────────────────────────────────
+        parts = path.lstrip("/").split("/", 2)   # ["hls", "<port>", "<rest>"]
+        if len(parts) < 3 or not parts[1].isdigit():
+            self._send(400, b"Bad HLS path", "text/plain")
+            return
+
+        hls_port  = int(parts[1])
+        rest_path = parts[2]   # e.g. "stream/index.m3u8"
+
+        # ── Authorise: port must belong to a known, HLS-enabled stream ────
+        mgr     = _WEB_MANAGER
+        allowed = False
+        if mgr:
+            for st in mgr.states:
+                cfg = st.config
+                if cfg.hls_enabled and cfg.hls_port == hls_port:
+                    allowed = True
+                    break
+        if not allowed:
+            self._send(403, b"HLS port not allowed", "text/plain")
+            return
+
+        # ── Build upstream URL ────────────────────────────────────────────
+        upstream = f"http://127.0.0.1:{hls_port}/{rest_path}"
+        if query:
+            upstream += f"?{query}"
+
+        # ── Content-type map ─────────────────────────────────────────────
+        _HLS_MIME = {
+            ".m3u8": "application/vnd.apple.mpegurl",
+            ".ts":   "video/mp2t",
+            ".aac":  "audio/aac",
+            ".mp4":  "video/mp4",
+            ".m4s":  "video/mp4",
+        }
+        suffix = ("." + rest_path.rsplit(".", 1)[-1]) if "." in rest_path else ""
+        ct = _HLS_MIME.get(suffix.lower(), "application/octet-stream")
+
+        try:
+            req = _urlreq.Request(
+                upstream,
+                headers={"User-Agent": "HydraCast-HLSProxy/1.0"},
+            )
+            with _urlreq.urlopen(req, timeout=10) as resp:
+                body = resp.read()
+        except _urlerr.HTTPError as exc:
+            self._send(exc.code, str(exc).encode(), "text/plain")
+            return
+        except Exception as exc:
+            log.warning("HLS proxy error for %s: %s", upstream, exc)
+            self._send(502, b"HLS upstream unreachable", "text/plain")
+            return
+
+        # Rewrite .m3u8 segment URLs so the browser always hits the proxy,
+        # never MediaMTX directly.
+        if suffix.lower() == ".m3u8":
+            # Compute the directory prefix for relative segment paths
+            dir_parts = rest_path.split("/")[:-1]
+            prefix = f"/hls/{hls_port}/" + "/".join(dir_parts) if dir_parts else f"/hls/{hls_port}"
+
+            def _rewrite(line: str) -> str:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or stripped.startswith("http"):
+                    return line
+                if stripped.startswith("/hls/"):
+                    return line
+                return f"{prefix}/{stripped.lstrip('/')}"
+
+            text = body.decode("utf-8", errors="replace")
+            body = "\n".join(_rewrite(ln) for ln in text.splitlines()).encode("utf-8")
+
+        self.send_response(200)
+        self.send_header("Content-Type",   ct)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control",  "no-cache")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
@@ -703,7 +840,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 "time_remaining": st.time_remaining(),
                 "fps":            st.fps,
                 "rtsp_url":       cfg.rtsp_url_external,
-                "hls_url":        cfg.hls_url if cfg.hls_enabled else "",
+                "hls_url":        _hls_proxy_url(cfg),
                 "shuffle":        cfg.shuffle,
                 "playlist_count": len(cfg.playlist),
                 "enabled":        cfg.enabled,
@@ -833,7 +970,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                     "port":        cfg.port,
                     "stream_path": cfg.stream_path or "",
                     "rtsp_url":    cfg.rtsp_url_external,
-                    "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
+                    "hls_url":     _hls_proxy_url(cfg),
                     "status":      st.status.label,
                     "enabled":     "yes" if cfg.enabled else "no",
                 }
@@ -1061,7 +1198,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             "name":          cfg.name,
             "port":          cfg.port,
             "rtsp_url":      cfg.rtsp_url_external,
-            "hls_url":       cfg.hls_url if cfg.hls_enabled else "",
+            "hls_url":       _hls_proxy_url(cfg),
             "weekdays":      cfg.weekdays_display(),
             "status":        st.status.label,
             "progress":      st.progress,
@@ -1102,7 +1239,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
             "name":           cfg.name,
             "status":         st.status.label,
             "rtsp_url":       cfg.rtsp_url_external,
-            "hls_url":        cfg.hls_url if cfg.hls_enabled else "",
+            "hls_url":        _hls_proxy_url(cfg),
             "current_pos":    st.current_pos,
             "duration":       st.duration,
             "progress":       st.progress,
