@@ -17,6 +17,7 @@ _HTML = r"""
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -3045,13 +3046,27 @@ function loadHLSStream(name,hlsUrl,rtspUrl){
     toast('No HLS or RTSP URL available','err');return;
   }
   if(hlsUrl){
-    // Try HLS.js if available, else native video
-    preview.innerHTML=`
-      <video id="vid-${esc(name)}" controls autoplay muted style="width:100%;height:100%;object-fit:contain;background:#000"
-        onerror="this.outerHTML='<div class=\\'stream-overlay\\'><div style=\\'color:var(--red);font-size:11px\\'>HLS load failed</div></div>'">
-        <source src="${esc(hlsUrl)}" type="application/x-mpegURL">
-        Your browser doesn't support HLS.
-      </video>`;
+    // Inject a <video> element then attach HLS.js (Chrome/Firefox) or
+    // fall back to native HLS (Safari / iOS which support it natively).
+    preview.innerHTML='<video id="vid-'+name+'" controls autoplay muted playsinline '
+      +'style="width:100%;height:100%;object-fit:contain;background:#000"></video>';
+    const vid=document.getElementById('vid-'+name);
+    if(typeof Hls!=='undefined'&&Hls.isSupported()){
+      const hls=new Hls({debug:false,enableWorker:true,lowLatencyMode:true});
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(vid);
+      hls.on(Hls.Events.ERROR,function(_,d){
+        if(d.fatal){
+          preview.innerHTML='<div class="stream-overlay"><div style="color:var(--red);font-size:11px">HLS error: '+d.details+'</div></div>';
+          hls.destroy();
+        }
+      });
+    } else if(vid.canPlayType('application/vnd.apple.mpegurl')){
+      // Native HLS (Safari)
+      vid.src=hlsUrl;
+    } else {
+      preview.innerHTML='<div class="stream-overlay"><div style="color:var(--yellow);font-size:11px;text-align:center;padding:12px">HLS.js failed to load.<br>Try opening the URL directly:<br><a href="'+hlsUrl+'" style="color:var(--cyan)" target="_blank">'+hlsUrl+'</a></div></div>';
+    }
   } else {
     overlay.innerHTML=`
       <div style="font-size:11px;color:var(--text3);text-align:center;padding:20px">
@@ -5613,10 +5628,10 @@ async function saveCameraForm(){
       }
     }
     const action = _camEditId ? 'edit_camera' : 'add_camera';
-    const r = await fetch('/api',{
+    const r = await fetch('/api/'+action,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action,...payload})
+      body:JSON.stringify(payload)
     }).then(r=>r.json());
     if(r.ok){
       st.textContent='✓ '+r.msg;st.style.color='var(--green)';
@@ -5633,10 +5648,10 @@ async function saveCameraForm(){
 async function deleteCamera(camera_id, name){
   if(!confirm(`Delete '${name}'?\n\nAny streams using this camera will be switched back to playlist mode.`)) return;
   try{
-    const r = await fetch('/api',{
+    const r = await fetch('/api/delete_camera',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'delete_camera',camera_id})
+      body:JSON.stringify({camera_id})
     }).then(r=>r.json());
     toast(r.msg||(r.ok?'Camera deleted':'Delete failed'),r.ok?'ok':'err');
     if(r.ok) loadCameras();
@@ -5647,10 +5662,10 @@ async function deleteCamera(camera_id, name){
 
 // ── Source switching ───────────────────────────────────────────────────────
 async function switchSource(name, target){
-  const r = await fetch('/api',{
+  const r = await fetch('/api/source_switch',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'source_switch',name,target})
+    body:JSON.stringify({name,target})
   }).then(r=>r.json());
   toast(r.msg||(r.ok?'Switched':'Switch failed'),r.ok?'ok':'err');
 }
