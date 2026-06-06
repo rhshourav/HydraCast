@@ -46,92 +46,7 @@ from pathlib import Path
 # ── Constants ─────────────────────────────────────────────────────────────────
 WORKER_TIMEOUT = 30.0      # seconds to wait for worker "ready" signal
 
-# ── Logging: always write to a CSV file (no console in bg mode) ──────────────
-import csv as _csv
-import datetime as _datetime
-from logging.handlers import BaseRotatingHandler
-
-
-class _DailyCSVHandler(BaseRotatingHandler):
-    """
-    A logging handler that writes structured CSV log entries and rotates to a
-    new file each calendar day.
-
-    File naming: hydracast_bg_YYYY-MM-DD.csv
-    CSV columns : timestamp, level, thread, message
-    """
-
-    CSV_HEADER = ["timestamp", "level", "thread", "message"]
-
-    def __init__(self, log_dir: Path, encoding: str = "utf-8"):
-        self.log_dir = log_dir
-        self._current_date: str = ""
-        # Compute today's filename and open it.
-        filename = self._filename_for_today()
-        super().__init__(str(filename), mode="a", encoding=encoding, delay=False)
-        self._write_header_if_empty()
-
-    # ── Internal helpers ──────────────────────────────────────────────────────
-
-    def _filename_for_today(self) -> Path:
-        today = _datetime.date.today().isoformat()   # e.g. "2025-06-04"
-        self._current_date = today
-        return self.log_dir / f"hydracast_bg_{today}.csv"
-
-    def _write_header_if_empty(self) -> None:
-        """Write the CSV header row when the file is brand-new (zero bytes)."""
-        try:
-            if self.stream and self.stream.tell() == 0:
-                writer = _csv.writer(self.stream)
-                writer.writerow(self.CSV_HEADER)
-                self.stream.flush()
-        except Exception:
-            pass
-
-    # ── Rotation logic ────────────────────────────────────────────────────────
-
-    def shouldRollover(self, record) -> bool:  # type: ignore[override]
-        """Roll over when the calendar date has changed."""
-        return _datetime.date.today().isoformat() != self._current_date
-
-    def doRollover(self) -> None:
-        """Close the current file and open a fresh one for the new day."""
-        if self.stream:
-            try:
-                self.stream.flush()
-                self.stream.close()
-            except Exception:
-                pass
-            self.stream = None  # type: ignore[assignment]
-
-        new_path = self._filename_for_today()
-        self.baseFilename = str(new_path)
-        self.stream = self._open()
-        self._write_header_if_empty()
-
-    # ── Emit ─────────────────────────────────────────────────────────────────
-
-    def emit(self, record: logging.LogRecord) -> None:
-        """Format the record as a CSV row and write it."""
-        try:
-            if self.shouldRollover(record):
-                self.doRollover()
-            timestamp = _datetime.datetime.fromtimestamp(record.created).strftime(
-                "%Y-%m-%d %H:%M:%S.%f"
-            )[:-3]   # trim to milliseconds
-            row = [
-                timestamp,
-                record.levelname,
-                record.threadName,
-                self.format(record),
-            ]
-            writer = _csv.writer(self.stream)
-            writer.writerow(row)
-            self.stream.flush()
-        except Exception:
-            self.handleError(record)
-
-
+# ── Logging: always write to a file (no console in bg mode) ──────────────────
 def _setup_logging(base: Path) -> None:
     appdata = os.environ.get("APPDATA")
     candidates = []
@@ -156,20 +71,14 @@ def _setup_logging(base: Path) -> None:
         log_dir = Path(tempfile.gettempdir()) / "HydraCast"
         log_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Attach the daily-rotating CSV handler ─────────────────────────────────
-    csv_handler = _DailyCSVHandler(log_dir, encoding="utf-8")
-    # Use a plain message format; timestamp/level/thread are separate CSV columns.
-    csv_handler.setFormatter(logging.Formatter("%(message)s"))
-    csv_handler.setLevel(logging.DEBUG)
-
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
-    root_logger.addHandler(csv_handler)
-
-    # ── Redirect stdout / stderr to today's CSV file ──────────────────────────
+    log_file = log_dir / "hydracast_bg.log"
+    logging.basicConfig(
+        filename=str(log_file),
+        level=logging.DEBUG,
+        format="%(asctime)s  %(levelname)-7s  [%(threadName)s]  %(message)s",
+        encoding="utf-8",
+    )
     try:
-        today = _datetime.date.today().isoformat()
-        log_file = log_dir / f"hydracast_bg_{today}.csv"
         _fh = open(log_file, "a", encoding="utf-8", errors="replace")
         sys.stdout = _fh
         sys.stderr = _fh
@@ -330,108 +239,18 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
 
     Returns True  → should be restarted (crash / non-fatal error).
     Returns False → clean exit or fatal error; do not restart automatically.
-
-    Background-mode TUI strategy
-    ─────────────────────────────
-    The original stub replaced run_tui_loop with a bare sleep loop.  That broke
-    everything: the real run_tui_loop is not just a display loop — it owns the
-    StreamManager lifecycle (start_all on launch, scheduler ticks, compliance
-    checks, auto-restart signals).  Replacing it meant streams were never
-    started, monitored, or recovered from errors.
-
-    Fix: inject a *headless-safe* wrapper that calls the REAL run_tui_loop with
-    a Rich Console whose output is directed to a null sink (force_terminal=True,
-    no_color=True).  KeyboardHandler gets no input in bg mode (no TTY attached)
-    so its readline thread simply blocks harmlessly; the shutdown_event drives
-    the clean exit as usual.  The restart_event is forwarded via a combined
-    stop-event so the TUI loop exits promptly on tray-menu restart requests.
     """
     _patch_signal_for_thread()
     try:
         import hc.tui as _tui_mod
 
-        _real_run_tui_loop = _tui_mod.run_tui_loop
-
-        def _headless_tui_loop(
-            *,
-            manager,
-            glog,
-            console,
-            shutdown_event: threading.Event,
-            export_urls_fn,
-            **kw,
-        ) -> None:
-            """
-            Drop-in replacement for run_tui_loop in background mode.
-
-            Runs the REAL TUI loop (which manages streams, scheduler, compliance,
-            auto-restart, etc.) but feeds it a headless Rich Console so Rich
-            never tries to render escape codes to a missing TTY.
-
-            Both shutdown_event and state.restart_event are watched; either one
-            causes the loop to exit cleanly.
-            """
-            import io
-            from rich.console import Console as _Console
-
-            # Null-sink console: Rich renders to a StringIO and discards output.
-            # force_terminal=True prevents Rich from disabling colour/markup
-            # detection which would raise errors on some Rich widgets.
-            # no_color=True prevents ANSI escape sequences polluting the log.
-            _sink = io.StringIO()
-            _headless_console = _Console(
-                file=_sink,
-                force_terminal=True,
-                no_color=True,
-                highlight=False,
-                markup=False,
-                width=120,
-            )
-
-            # Combined stop-event: fires when either full-shutdown OR tray-
-            # triggered restart is requested, so the TUI loop exits promptly
-            # in both cases.
-            _combined_stop = threading.Event()
-
-            def _watch_combined() -> None:
-                while not _combined_stop.is_set():
-                    if shutdown_event.is_set() or state.restart_event.is_set():
-                        _combined_stop.set()
-                        return
-                    time.sleep(0.1)
-
-            _watcher = threading.Thread(
-                target=_watch_combined, daemon=True, name="bg-tui-watcher"
-            )
-            _watcher.start()
-
-            log.info("BG-mode TUI loop starting (real run_tui_loop, headless console).")
-            try:
-                _real_run_tui_loop(
-                    manager=manager,
-                    glog=glog,
-                    console=_headless_console,
-                    shutdown_event=_combined_stop,
-                    export_urls_fn=export_urls_fn,
-                    **kw,
-                )
-            finally:
-                _combined_stop.set()   # unblock the watcher thread
-                log.info("BG-mode TUI loop exited.")
-                # Explicit manager stop: manager.shutdown() calls stop_all()
-                # synchronously (up to 12 s wait).  This gives each worker's
-                # _kill_ffmpeg + _kill_mediamtx a chance to run in the calling
-                # thread context before the process exits, rather than relying
-                # on daemon threads that may be reaped prematurely.
-                try:
-                    from hc.web_handler import _WEB_MANAGER
-                    _mgr = _WEB_MANAGER
-                    if _mgr is not None:
-                        log.info("BG-mode: calling manager.shutdown() …")
-                        _mgr.shutdown()
-                        log.info("BG-mode: manager.shutdown() complete.")
-                except Exception as _exc:
-                    log.warning("BG-mode: manager.shutdown() error: %s", _exc)
+        def _headless_tui_loop(**kw):
+            log.info("Headless TUI loop — waiting for shutdown or restart signal.")
+            # Block until either shutdown or an explicit restart is requested.
+            while not state.shutdown_event.is_set():
+                if state.restart_event.is_set():
+                    return   # worker will be restarted by _run_hydracast_with_restarts
+                time.sleep(0.2)
 
         _tui_mod.run_tui_loop = _headless_tui_loop
 
@@ -445,94 +264,24 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
 
             def _hooked_start():
                 result = _bound_start()
-                # ── Read the real port AFTER start() has called set_web_port() ──
-                # web_server.WebServer.start() calls set_web_port(real_port) so
-                # get_web_port() is now authoritative (e.g. 8080 after 443 fallback).
                 try:
                     from hc.constants import get_web_port
                     state.port = get_web_port()
                 except Exception:
                     pass
-
-                # ── Read the SSL flag set by WebServer.start() ────────────────
-                # ws_self._use_ssl is set by start() after the cert check.
-                # Falls back to False (plain HTTP) if absent (older build).
-                _use_ssl    = getattr(ws_self, "_use_ssl", False)
-                _probe_port = state.port
-                _scheme     = "https" if _use_ssl else "http"
-
-                # ── Wait until the server actually responds to an HTTP request ──
-                # A bare socket.create_connection() would succeed immediately on
-                # a TLS socket (TCP layer opens) but the server then drops it
-                # waiting for a ClientHello — so the browser gets ERR_EMPTY_RESPONSE.
-                # Instead we send a real HTTP GET to /health and only signal ready
-                # once we receive any HTTP response (even 503 proves the socket works).
-                import http.client as _http
-                import ssl as _ssl_mod
-                _deadline  = time.time() + 15.0
-                _signalled = False
-                while time.time() < _deadline:
-                    if state.shutdown_event.is_set():
-                        break
-                    try:
-                        if _use_ssl:
-                            _ctx = _ssl_mod.SSLContext(_ssl_mod.PROTOCOL_TLS_CLIENT)
-                            _ctx.check_hostname = False
-                            _ctx.verify_mode    = _ssl_mod.CERT_NONE
-                            conn = _http.HTTPSConnection(
-                                "127.0.0.1", _probe_port,
-                                timeout=1.0, context=_ctx,
-                            )
-                        else:
-                            conn = _http.HTTPConnection(
-                                "127.0.0.1", _probe_port, timeout=1.0
-                            )
-                        conn.request("GET", "/health")
-                        resp = conn.getresponse()
-                        resp.read()
-                        conn.close()
-                        log.info(
-                            "WebServer %s://127.0.0.1:%d responded HTTP %d — "
-                            "signalling ready.", _scheme, _probe_port, resp.status
-                        )
-                        state.ready_event.set()
-                        _signalled = True
-                        break
-                    except Exception:
-                        time.sleep(0.15)
-                if not _signalled:
-                    log.warning(
-                        "WebServer %s://127.0.0.1:%d did not respond within "
-                        "15 s — signalling ready anyway.", _scheme, _probe_port,
-                    )
-                    state.ready_event.set()
+                log.info("WebServer started on port %d — signalling ready.", state.port)
+                state.ready_event.set()
                 return result
 
             ws_self.start = _hooked_start
 
         _WS.__init__ = _patched_init
 
-        # ── Suppress auto-start on first run ──────────────────────────────
-        # Streams are started by the user from the Web UI.  Patching
-        # StreamManager.start_all() to a no-op prevents the scheduler from
-        # launching every enabled stream automatically at boot.
-        import hc.manager as _mgr_mod
-        _real_start_all = _mgr_mod.StreamManager.start_all
-
-        def _no_autostart(self_mgr):
-            log.info("start_all() suppressed — user will start streams from Web UI.")
-
-        _mgr_mod.StreamManager.start_all = _no_autostart
-
         try:
             import hydracast as _hc
             _hc.main()
         finally:
-            # Restore ALL patches so a tray-triggered restart gets
-            # a clean re-injection on the next _run_hydracast_once() call.
-            _mgr_mod.StreamManager.start_all = _real_start_all
             _WS.__init__ = _real_init
-            _tui_mod.run_tui_loop = _real_run_tui_loop
 
     except SystemExit as exc:
         code = exc.code
@@ -670,21 +419,7 @@ def _build_and_run_tray(state: _WorkerState) -> None:
         return
 
     port = state.port
-    # Derive the URL scheme from the server instance's _use_ssl flag (set by
-    # the fixed web_server.py).  Fall back: https only on port 443, http otherwise.
-    try:
-        import gc as _gc
-        _server_ssl: "Optional[bool]" = None
-        for _obj in _gc.get_objects():
-            if type(_obj).__name__ == "WebServer" and hasattr(_obj, "_use_ssl"):
-                _server_ssl = _obj._use_ssl
-                break
-        _scheme = "https" if (_server_ssl is True or (
-            _server_ssl is None and port == 443)) else "http"
-    except Exception:
-        _scheme = "https" if port == 443 else "http"
-
-    log.info("HydraCast ready — %s://localhost:%d — showing tray icon.", _scheme, port)
+    log.info("HydraCast ready on port %d — showing tray icon.", port)
 
     # ── Menu actions ──────────────────────────────────────────────────────────
     def _open_web(icon, item):
@@ -693,7 +428,7 @@ def _build_and_run_tray(state: _WorkerState) -> None:
             ip = _local_ip()
         except Exception:
             ip = "localhost"
-        url = f"{_scheme}://{ip}:{state.port}"
+        url = f"https://{ip}:{state.port}"
         log.info("Opening %s", url)
         webbrowser.open(url)
 
@@ -719,7 +454,7 @@ def _build_and_run_tray(state: _WorkerState) -> None:
         startup_on = _get_startup_enabled()
         startup_label = "✔  Run at Windows startup" if startup_on else "     Run at Windows startup"
         return pystray.Menu(
-            Item(f"Open Web UI  ({_scheme}://{_ip}:{port})", _open_web, default=True),
+            Item(f"Open Web UI  (https://{_ip}:{port})", _open_web, default=True),
             pystray.Menu.SEPARATOR,
             Item("Restart HydraCast",   _restart_worker),
             pystray.Menu.SEPARATOR,
@@ -732,17 +467,14 @@ def _build_and_run_tray(state: _WorkerState) -> None:
         )
 
     def _open_log(icon, item):
-        import datetime as _dt
-        today = _dt.date.today().isoformat()
-        csv_name = f"hydracast_bg_{today}.csv"
         appdata = os.environ.get("APPDATA")
         log_path = None
         if appdata:
-            candidate = Path(appdata) / "HydraCast" / "logs" / csv_name
+            candidate = Path(appdata) / "HydraCast" / "logs" / "hydracast_bg.log"
             if candidate.exists():
                 log_path = candidate
         if log_path is None:
-            log_path = _exe_dir() / "logs" / csv_name
+            log_path = _exe_dir() / "logs" / "hydracast_bg.log"
         try:
             os.startfile(str(log_path))
         except Exception:
@@ -771,7 +503,7 @@ def _build_and_run_tray(state: _WorkerState) -> None:
     image = _load_image()
     icon = pystray.Icon(
         "HydraCast", image,
-        f"HydraCast  {_scheme}://{_ip}:{port}  [Guardian Active]",
+        f"HydraCast  https://{_ip}:{port}  [Guardian Active]",
         _build_menu(),
     )
 
@@ -791,98 +523,6 @@ def _build_and_run_tray(state: _WorkerState) -> None:
     except Exception as exc:
         log.exception("pystray icon.run() raised: %s", exc)
 
-
-
-# ── Orphan-process cleanup ─────────────────────────────────────────────────────
-
-def _force_kill_orphans() -> None:
-    """
-    Belt-and-suspenders sweep: kill any MediaMTX or FFmpeg processes that are
-    still children of the current process after a normal shutdown.
-
-    Why this is needed
-    ──────────────────
-    manager.stop_all() dispatches one daemon thread per stream (worker.stop()
-    → _kill_ffmpeg + _kill_mediamtx).  Those daemon threads are NOT joined
-    anywhere.  On a fast or clean exit path Python can reach sys.exit() before
-    those threads finish their proc.terminate() + proc.wait() calls, leaving
-    both MediaMTX and FFmpeg alive as orphans.
-
-    This function is called from main() AFTER worker.join(timeout=15) so the
-    normal stop paths have had their chance first.  The psutil sweep is a
-    last resort that is completely safe to run unconditionally.
-    """
-    try:
-        import psutil, signal as _sig, os as _os
-        current = psutil.Process()
-        children = current.children(recursive=True)
-        targets = [
-            p for p in children
-            if any(
-                name in p.name().lower()
-                for name in ("mediamtx", "ffmpeg")
-            )
-        ]
-        if not targets:
-            log.info("_force_kill_orphans: no surviving mediamtx/ffmpeg children.")
-            return
-        for p in targets:
-            try:
-                log.warning(
-                    "_force_kill_orphans: terminating %s PID=%d", p.name(), p.pid
-                )
-                p.terminate()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        # Give them 4 s to honour SIGTERM, then SIGKILL anything left.
-        _, still_alive = psutil.wait_procs(targets, timeout=4)
-        for p in still_alive:
-            try:
-                log.warning(
-                    "_force_kill_orphans: KILL %s PID=%d (did not terminate)",
-                    p.name(), p.pid,
-                )
-                p.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-    except ImportError:
-        # psutil not available — fall back to os.kill on the stored PIDs
-        # (best-effort; PIDs may have been reused by the OS)
-        log.warning("_force_kill_orphans: psutil not available, falling back to pid scan.")
-        _force_kill_orphans_fallback()
-    except Exception as exc:
-        log.warning("_force_kill_orphans error: %s", exc)
-
-
-def _force_kill_orphans_fallback() -> None:
-    """Fallback when psutil is absent: collect PIDs from the web manager."""
-    try:
-        from hc.web_handler import _WEB_MANAGER
-        mgr = _WEB_MANAGER
-        if not mgr:
-            return
-        import os as _os, subprocess as _sp
-        for st in mgr.states:
-            for proc_attr in ("ffmpeg_proc", "mtx_proc"):
-                proc = getattr(st, proc_attr, None)
-                if proc is None:
-                    continue
-                if proc.poll() is not None:
-                    continue   # already gone
-                try:
-                    log.warning(
-                        "_force_kill_orphans_fallback: killing %s PID=%d",
-                        proc_attr, proc.pid
-                    )
-                    proc.terminate()
-                    proc.wait(timeout=4)
-                except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-    except Exception as exc:
-        log.warning("_force_kill_orphans_fallback error: %s", exc)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 def main() -> None:
@@ -987,13 +627,7 @@ def main() -> None:
     log.info("Tray exited — signalling shutdown and waiting for worker …")
     state.shutdown_event.set()
     _heartbeat.stop()
-    # Give the worker (and its stop-stream daemon threads) up to 15 s to finish
-    # their normal proc.terminate() / proc.wait() cleanup.
     worker.join(timeout=15)
-    # Belt-and-suspenders: kill any MediaMTX or FFmpeg processes that are still
-    # alive after the normal shutdown path.  daemon stop-threads are not joined
-    # so they can outlive the worker join; this sweep ensures they don't.
-    _force_kill_orphans()
     log.info("hydracast_bg exiting cleanly.")
 
 
