@@ -1316,10 +1316,10 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         import socket as _socket
 
         try:
-            raw  = qs.get("from", ["8555"])[0].strip()
-            base = int(raw) if raw else 8555
+            raw  = qs.get("from", ["60123"])[0].strip()
+            base = int(raw) if raw else 60123
         except (ValueError, TypeError):
-            base = 8555
+            base = 60123
 
         # Clamp and make odd
         base = max(1025, min(base, 65520))
@@ -1497,13 +1497,13 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                 sp = str(data.get("stream_path", cfg.stream_path)).strip()
                 if sp:
                     cfg.stream_path = sp
-                # Bitrates
+                # Bitrates — "copy" is valid (stream-copy, no re-encode)
                 vbr = str(data.get("video_bitrate", "")).strip()
                 if vbr:
-                    cfg.video_bitrate = CSVManager._sanitize_bitrate(vbr, cfg.video_bitrate)
+                    cfg.video_bitrate = vbr if vbr.lower() == "copy" else CSVManager._sanitize_bitrate(vbr, cfg.video_bitrate)
                 abr = str(data.get("audio_bitrate", "")).strip()
                 if abr:
-                    cfg.audio_bitrate = CSVManager._sanitize_bitrate(abr, cfg.audio_bitrate)
+                    cfg.audio_bitrate = abr if abr.lower() == "copy" else CSVManager._sanitize_bitrate(abr, cfg.audio_bitrate)
                 # Booleans
                 cfg.shuffle     = bool(data.get("shuffle",     cfg.shuffle))
                 cfg.enabled     = bool(data.get("enabled",     cfg.enabled))
@@ -1586,8 +1586,8 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                         enabled=bool(row.get("enabled", True)),
                         shuffle=bool(row.get("shuffle", False)),
                         stream_path=str(row.get("stream_path", "stream")).strip() or "stream",
-                        video_bitrate=CSVManager._sanitize_bitrate(str(row.get("video_bitrate", "2500k")), "2500k"),
-                        audio_bitrate=CSVManager._sanitize_bitrate(str(row.get("audio_bitrate", "128k")), "128k"),
+                        video_bitrate=str(row.get("video_bitrate", "copy")).strip() or "copy",
+                        audio_bitrate=str(row.get("audio_bitrate", "copy")).strip() or "copy",
                         hls_enabled=bool(row.get("hls_enabled", False)),
                         compliance_enabled=bool(row.get("compliance_enabled", False)),
                         compliance_start=CSVManager._sanitize_hms(str(row.get("compliance_start", "06:00:00"))),
@@ -1841,10 +1841,8 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
                     enabled=bool(data.get("enabled", True)),
                     shuffle=bool(data.get("shuffle", False)),
                     stream_path=stream_path,
-                    video_bitrate=CSVManager._sanitize_bitrate(
-                        str(data.get("video_bitrate", "2500k")), "2500k"),
-                    audio_bitrate=CSVManager._sanitize_bitrate(
-                        str(data.get("audio_bitrate", "128k")), "128k"),
+                    video_bitrate=str(data.get("video_bitrate", "copy")).strip() or "copy",
+                    audio_bitrate=str(data.get("audio_bitrate", "copy")).strip() or "copy",
                     hls_enabled=bool(data.get("hls_enabled", False)),
                     folder_source=folder_source,
                     compliance_enabled=bool(data.get("compliance_enabled", False)),
