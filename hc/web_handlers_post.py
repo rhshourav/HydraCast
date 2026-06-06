@@ -140,10 +140,10 @@ class _PostHandlersMixin:
                     cfg.stream_path = sp
                 vbr = str(data.get("video_bitrate", "")).strip()
                 if vbr:
-                    cfg.video_bitrate = CSVManager._sanitize_bitrate(vbr, cfg.video_bitrate)
+                    cfg.video_bitrate = vbr if vbr.lower() == "copy" else CSVManager._sanitize_bitrate(vbr, cfg.video_bitrate)
                 abr = str(data.get("audio_bitrate", "")).strip()
                 if abr:
-                    cfg.audio_bitrate = CSVManager._sanitize_bitrate(abr, cfg.audio_bitrate)
+                    cfg.audio_bitrate = abr if abr.lower() == "copy" else CSVManager._sanitize_bitrate(abr, cfg.audio_bitrate)
                 if "enabled" in data:
                     cfg.enabled = bool(data["enabled"])
                 if "shuffle" in data:
@@ -346,10 +346,8 @@ class _PostHandlersMixin:
                     enabled=bool(data.get("enabled", True)),
                     shuffle=bool(data.get("shuffle", False)),
                     stream_path=stream_path,
-                    video_bitrate=CSVManager._sanitize_bitrate(
-                        str(data.get("video_bitrate", "2500k")), "2500k"),
-                    audio_bitrate=CSVManager._sanitize_bitrate(
-                        str(data.get("audio_bitrate", "128k")), "128k"),
+                    video_bitrate=str(data.get("video_bitrate", "copy")).strip() or "copy",
+                    audio_bitrate=str(data.get("audio_bitrate", "copy")).strip() or "copy",
                     hls_enabled=bool(data.get("hls_enabled", False)),
                     folder_source=folder_source,
                     compliance_enabled=bool(data.get("compliance_enabled", False)),
