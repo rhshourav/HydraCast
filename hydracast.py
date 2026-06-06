@@ -8,59 +8,132 @@
 #  ██║  ██║   ██║   ██████╔╝██║  ██║██║  ██║╚██████╗██║  ██║███████║   ██║
 #  ╚═╝  ╚═╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝
 #
-#  HydraCast  —  Multi-Stream RTSP Weekly Scheduler  v5.3.0
+#  HydraCast  —  Multi-Stream RTSP Weekly Scheduler  v5.4.0
 #  Author  : rhshourav
 #  GitHub  : https://github.com/rhshourav/HydraCast
 #
-#  v5.3 changelog
-#  ──────────────
-#  CHANGED  streams.csv / events.csv replaced with JSON files in config/:
-#             config/streams.json  — stream definitions
-#             config/events.json   — one-shot events
-#  NEW      CSVManager removed; JSONManager (hc/json_manager.py) handles
-#           all persistence.  Public API is identical so all call-sites only
-#           needed their import updated.
-#  NEW      Folder-source playlist is now TODAY-AWARE:
-#             1. Files tagged _today_ (e.g. _tue_) stream FIRST.
-#             2. Untagged files stream SECOND (available every day).
-#             3. Other weekday files stream LAST (in weekday order).
-#           This means a correctly named folder auto-curates the right
-#           content for the current day without any manual intervention.
+#  Architecture (unified TUI + tray, no CLI flags needed)
+#  ───────────────────────────────────────────────────────
+#  Main thread   : pystray icon loop  (Windows requires tray on the main thread)
+#  Worker thread : HydraCast TUI core (streams, web server, scheduler)
+#  Heartbeat     : UDP ping to guardian every 10 s (daemon thread)
 #
-#  v5.1 changelog
-#  ──────────────
-#  FIXED    Stop (S key) no longer causes stream to restart — _auto_restart
-#           now checks the _stop flag before every restart attempt.
-#  FIXED    K key no longer conflicts with UP navigation; only ↑/↓ arrows
-#           and J navigate; K is now a free hotkey.
-#  FIXED    Number key stream selection (1-9) works correctly.
-#  NEW      D key — interactive stream detail overlay (config, files, URLs).
-#  NEW      V key — scrollable per-stream log viewer overlay.
-#  NEW      H / ? key — keyboard help overlay.
-#  NEW      F key — force folder rescan for folder-source streams.
-#  NEW      C key — clear error state and reset restart count.
-#  NEW      Page Up/Down — scroll 5 streams at a time.
-#  NEW      --protect  — prevent accidental closure via Ctrl-C / close button.
-#  NEW      --background — daemonize (Linux/macOS fork; Windows detached proc);
-#                          runs web-only with no TUI, safe for unattended use.
-#  FIXED    After web upload, folder-source streams pick up new files on
-#           next start/restart (no manual JSON reload needed).
-#  FIXED    seek_start_pos AttributeError on fresh StreamState.
-#  IMPROVED restart() no longer races with _monitor auto-restart.
-#  IMPROVED FolderWatcher polls folder sources every 15 s and updates
-#           playlists live without any manual intervention.
+#  Behaviour
+#  ─────────
+#  Launch     → TUI console opens immediately AND tray icon is always visible.
+#  Close / minimize console window → console hides; tray icon stays.
+#  Right-click tray → menu with "Show TUI", web links, restart, quit.
+#  "Show TUI" → console reappears exactly where it was.
+#  "Quit HydraCast" → clean shutdown of streams + guardian.
+#
+#  No CLI flags are needed or exposed to users.  The guardian is a SEPARATE
+#  exe (hydracast_guardian.exe) built from hydracast_guardian.py, unchanged.
 # =============================================================================
 
+import logging
 import os
-import platform
-import signal
-import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from pathlib import Path
-from typing import List, Optional
-from hc.hc_system import assert_licensed, start_checker  # [LG]
+
+# ── Logging: write to daily-rotating CSV before anything else ─────────────────
+import csv as _csv
+import datetime as _datetime
+from logging.handlers import BaseRotatingHandler
+
+
+class _DailyCSVHandler(BaseRotatingHandler):
+    """Rotating CSV log handler — one file per calendar day."""
+
+    CSV_HEADER = ["timestamp", "level", "thread", "message"]
+
+    def __init__(self, log_dir: Path, encoding: str = "utf-8"):
+        self.log_dir = log_dir
+        self._current_date: str = ""
+        filename = self._filename_for_today()
+        super().__init__(str(filename), mode="a", encoding=encoding, delay=False)
+        self._write_header_if_empty()
+
+    def _filename_for_today(self) -> Path:
+        today = _datetime.date.today().isoformat()
+        self._current_date = today
+        return self.log_dir / f"hydracast_{today}.csv"
+
+    def _write_header_if_empty(self) -> None:
+        try:
+            if self.stream and self.stream.tell() == 0:
+                _csv.writer(self.stream).writerow(self.CSV_HEADER)
+                self.stream.flush()
+        except Exception:
+            pass
+
+    def shouldRollover(self, record) -> bool:
+        return _datetime.date.today().isoformat() != self._current_date
+
+    def doRollover(self) -> None:
+        if self.stream:
+            try:
+                self.stream.flush()
+                self.stream.close()
+            except Exception:
+                pass
+            self.stream = None
+        self.baseFilename = str(self._filename_for_today())
+        self.stream = self._open()
+        self._write_header_if_empty()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if self.shouldRollover(record):
+                self.doRollover()
+            ts = _datetime.datetime.fromtimestamp(record.created).strftime(
+                "%Y-%m-%d %H:%M:%S.%f"
+            )[:-3]
+            _csv.writer(self.stream).writerow(
+                [ts, record.levelname, record.threadName, self.format(record)]
+            )
+            self.stream.flush()
+        except Exception:
+            self.handleError(record)
+
+
+def _setup_logging(base: Path) -> Path:
+    """Set up CSV logging; returns the log directory used."""
+    appdata = os.environ.get("APPDATA")
+    candidates = []
+    if appdata:
+        candidates.append(Path(appdata) / "HydraCast" / "logs")
+    candidates.append(base / "logs")
+
+    log_dir: Path | None = None
+    for c in candidates:
+        try:
+            c.mkdir(parents=True, exist_ok=True)
+            tp = c / ".write_test"
+            tp.touch()
+            tp.unlink()
+            log_dir = c
+            break
+        except Exception:
+            continue
+
+    if log_dir is None:
+        import tempfile
+        log_dir = Path(tempfile.gettempdir()) / "HydraCast"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+    handler = _DailyCSVHandler(log_dir)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.setLevel(logging.DEBUG)
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    root.addHandler(handler)
+    return log_dir
+
+
+log = logging.getLogger("hydracast")
 
 
 # ── Python version guard ───────────────────────────────────────────────────────
@@ -68,33 +141,32 @@ if sys.version_info < (3, 8):
     sys.exit("HydraCast requires Python 3.8 or newer.")
 
 
-# ── Bootstrap: install runtime deps if missing ────────────────────────────────
+# ── Bootstrap: install runtime deps when running from source ──────────────────
 def _bootstrap() -> None:
-    # When running as a PyInstaller frozen executable all dependencies are
-    # already bundled — skip pip and the os.execv restart entirely.
-    # os.execv would relaunch the .exe itself rather than python.exe, causing
-    # an infinite restart loop, so this guard is critical.
+    # PyInstaller bundles all deps — skip pip entirely to avoid os.execv loops.
     if getattr(sys, "frozen", False):
         return
 
     import importlib.util as _ilu
+
     needed = {
         "rich":     "rich>=13.0",
         "psutil":   "psutil>=5.9",
         "holidays": "holidays>=0.45",
+        "pystray":  "pystray>=0.19",
+        "PIL":      "Pillow>=9.0",
     }
 
-    def _is_available(mod: str) -> bool:
-        # find_spec raises ModuleNotFoundError for dotted names (e.g. "google.auth")
-        # when the parent package ("google") does not exist yet.
+    def _ok(mod: str) -> bool:
         try:
             return _ilu.find_spec(mod) is not None
         except (ModuleNotFoundError, ValueError):
             return False
 
-    missing = [pkg for mod, pkg in needed.items() if not _is_available(mod)]
+    missing = [pkg for mod, pkg in needed.items() if not _ok(mod)]
     if not missing:
         return
+    import subprocess
     print(f"[HydraCast] Installing: {', '.join(missing)} …")
     subprocess.check_call(
         [sys.executable, "-m", "pip", "install", *missing, "-q"],
@@ -107,73 +179,70 @@ def _bootstrap() -> None:
 
 _bootstrap()
 
-# ── Third-party imports (available after bootstrap) ───────────────────────────
-import argparse
-import logging
+# ── hc package ────────────────────────────────────────────────────────────────
+import subprocess
 
-from rich.console import Console
+def _exe_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent
 
-# ── hc package: set_base_dir MUST be called before any path-dependent import ──
-_HERE = Path(__file__).parent.resolve()
+
+_HERE = _exe_dir()
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 from hc.constants import (
-    APP_NAME, APP_VER, APP_AUTHOR,
+    APP_NAME, APP_VER,
     CC, CD, CG, CR, CY,
-    CPU_COUNT, IS_LINUX, IS_MAC, IS_WIN, WEB_PORT,
+    IS_WIN,
     CONFIG_DIR, CONFIGS_DIR, LOGS_DIR,
-    set_base_dir,
-    set_ffmpeg, set_ffprobe,
+    set_base_dir, set_ffmpeg, set_ffprobe,
     set_no_firewall, set_listen_addr, set_web_port,
-    get_web_port,
+    get_web_port, WEB_PORT,
 )
 
-# Initialise all directory paths relative to this script's folder.
-# When frozen by PyInstaller, __file__ points inside the unpacked temp dir;
-# we want the directory that contains the .exe instead so that config/,
-# logs/, media/ etc. are created next to the executable, not in the temp dir.
 if getattr(sys, "frozen", False):
     set_base_dir(Path(sys.executable))
 else:
     set_base_dir(Path(__file__))
 
-# Now it is safe to import everything else.
-from hc import web as _web_module          # noqa: E402
-from hc.json_manager import JSONManager    # noqa: E402  (replaces csv_manager)
-from hc.dependency import DependencyManager # noqa: E402
-from hc.firewall import FirewallManager    # noqa: E402
-from hc.manager import StreamManager       # noqa: E402
-from hc.models import StreamConfig, StreamStatus  # noqa: E402
-from hc.tui import run_tui_loop            # noqa: E402
-from hc.utils import _local_ip             # noqa: E402
-from hc.web import WebServer               # noqa: E402
-from hc.worker import LogBuffer            # noqa: E402
-from hc.ssl_bootstrap import ensure_ssl    # noqa: E402
+from hc import web as _web_module
+from hc.hc_system import assert_licensed, start_checker   # [LG]
+from hc.watchdog import launch_guardian, HeartbeatSender
 
 
 # =============================================================================
-# BACKGROUND / PROTECT HELPERS
+# WORKER TIMEOUT
 # =============================================================================
 
-def _win_disable_close_button() -> None:
-    """
-    Grey-out the ✕ button on the Windows console window so users cannot
-    accidentally dismiss HydraCast.  Requires no elevation.
-    """
+WORKER_TIMEOUT = 30.0   # seconds to wait for the worker to signal ready
+
+
+# =============================================================================
+# CONSOLE WINDOW HELPERS  (Windows only)
+# =============================================================================
+
+def _get_console_hwnd() -> int:
     try:
         import ctypes
-        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-        if not hwnd:
-            return
-        hmenu = ctypes.windll.user32.GetSystemMenu(hwnd, False)
-        # MF_BYCOMMAND | MF_GRAYED
-        ctypes.windll.user32.EnableMenuItem(hmenu, 0xF060, 0x00000001)
+        return ctypes.windll.kernel32.GetConsoleWindow()
     except Exception:
-        pass   # not fatal — TUI still works without it
+        return 0
 
 
-def _win_set_title(title: str) -> None:
+def _show_console(visible: bool) -> None:
+    """SW_SHOW = 5, SW_HIDE = 0."""
+    try:
+        import ctypes
+        hwnd = _get_console_hwnd()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 5 if visible else 0)
+    except Exception:
+        pass
+
+
+def _set_console_title(title: str) -> None:
     try:
         import ctypes
         ctypes.windll.kernel32.SetConsoleTitleW(title)
@@ -181,302 +250,96 @@ def _win_set_title(title: str) -> None:
         pass
 
 
-def _protect_signals(glog: Optional["LogBuffer"] = None) -> None:
+def _install_close_hook(callback) -> None:
     """
-    Re-wire SIGINT (Ctrl-C) so it logs a reminder instead of quitting.
-    On Linux/macOS also ignore SIGHUP so closing the terminal does NOT
-    kill the process.
+    Hook the console ✕ button so it calls callback() instead of killing
+    the process.  SetConsoleCtrlHandler intercepts CTRL_CLOSE_EVENT (2).
+    Returning True from the handler suppresses the default termination.
+    We must return within ~5 s or Windows force-kills us anyway —
+    callback() must be fast (just set an event / hide window).
     """
-    def _ignore_sigint(sig, frame):  # noqa: ANN001
-        if glog:
-            glog.add("Ctrl-C blocked — press Q in the TUI or use the Web UI to quit.", "WARN")
-        else:
-            print("\n[HydraCast] Ctrl-C blocked. Press Q in the TUI or use the Web UI to quit.")
-
-    signal.signal(signal.SIGINT, _ignore_sigint)
-
-    if IS_LINUX or IS_MAC:
-        try:
-            signal.signal(signal.SIGHUP, signal.SIG_IGN)
-        except (OSError, ValueError):
-            pass   # some environments (e.g. Windows WSL edge cases) raise here
-
-
-def _daemonize_linux(console: Console, log_path: str) -> None:
-    """
-    POSIX double-fork daemonisation.  The *parent* process prints a message
-    and exits; the grandchild continues as a fully detached daemon.
-    """
-    # First fork — parent exits immediately.
-    pid = os.fork()
-    if pid > 0:
-        console.print(
-            f"\n[{CG}]✔  HydraCast daemonized (PID will appear in log).[/]\n"
-            f"[{CD}]   Logs   : {log_path}[/]\n"
-            f"[{CD}]   Web UI : http://localhost:{get_web_port()}[/]\n"
-        )
-        sys.exit(0)
-
-    # Decouple from parent environment.
-    os.setsid()
-    os.umask(0o022)
-
-    # Second fork — orphan the session leader so it can never acquire a tty.
-    pid = os.fork()
-    if pid > 0:
-        sys.exit(0)
-
-    # Redirect stdin/stdout/stderr.
-    sys.stdout.flush()
-    sys.stderr.flush()
-    with open(os.devnull, "rb") as fi:
-        os.dup2(fi.fileno(), sys.stdin.fileno())
-    with open(log_path, "ab") as fo:
-        os.dup2(fo.fileno(), sys.stdout.fileno())
-        os.dup2(fo.fileno(), sys.stderr.fileno())
-
-
-def _daemonize_windows(console: Console) -> None:
-    """
-    Re-launch this script as a fully detached Windows process (no console
-    window) then exit the current process.  The child will skip the
-    --background flag so it runs normally.
-    """
-    import ctypes
-
-    # Build the new argv without --background so the child doesn't loop.
-    args = [a for a in sys.argv if a not in ("--background", "-b")]
-
-    DETACHED_PROCESS    = 0x00000008
-    CREATE_NO_WINDOW    = 0x08000000
-    CREATE_NEW_PG       = 0x00000200
-
-    # When frozen, sys.executable IS the .exe — relaunch it directly without
-    # prepending it again as a script argument.
-    if getattr(sys, "frozen", False):
-        cmd = [sys.executable] + args[1:]  # args[0] would be the exe path itself
-    else:
-        cmd = [sys.executable] + args
-
-    proc = subprocess.Popen(
-        cmd,
-        creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW | CREATE_NEW_PG,
-        close_fds=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    console.print(
-        f"\n[{CG}]✔  HydraCast launched in background (PID {proc.pid}).[/]\n"
-        f"[{CD}]   Web UI : http://localhost:{get_web_port()}[/]\n"
-    )
-    sys.exit(0)
-
-
-def _apply_background_mode(console: Console) -> bool:
-    """
-    Daemonize the process.  Returns True if execution should continue in
-    this process (i.e. we are the daemon child on Linux/macOS).
-    Returns False is never reached on Windows (sys.exit called in parent).
-    """
-    log_path = str(LOGS_DIR() / "hydracast.log")
-
-    if IS_WIN:
-        _daemonize_windows(console)
-        return False  # unreachable — _daemonize_windows calls sys.exit
-
-    # Linux / macOS: double-fork.  After _daemonize_linux the current
-    # process *is* the daemon grandchild if we reach here.
-    _daemonize_linux(console, log_path)
-    return True
-
-
-# =============================================================================
-# CLI
-# =============================================================================
-def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        prog="hydracast",
-        description=f"{APP_NAME} v{APP_VER} — Multi-Stream RTSP Weekly Scheduler",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    p.add_argument(
-        "--no-firewall", action="store_true",
-        help="Skip automatic firewall port-opening.",
-    )
-    p.add_argument(
-        "--listen", metavar="IP", default="0.0.0.0",
-        help="IP address for MediaMTX to bind (default: 0.0.0.0).",
-    )
-    p.add_argument(
-        "--web-port", type=int, default=WEB_PORT,
-        help=f"Web UI port (default: {WEB_PORT}).",
-    )
-    p.add_argument(
-        "--no-web", action="store_true",
-        help="Disable the embedded Web UI.",
-    )
-    p.add_argument(
-        "--list-ports", action="store_true",
-        help="Print which TCP ports would be opened, then exit.",
-    )
-    p.add_argument(
-        "--export-urls", action="store_true",
-        help="Write stream_urls.txt next to this script at startup.",
-    )
-    p.add_argument(
-        "--protect", action="store_true",
-        help=(
-            "Prevent accidental shutdown: ignore Ctrl-C, disable the console "
-            "close button (Windows) and ignore SIGHUP (Linux/macOS). "
-            "Only Q in the TUI or the Web UI can stop HydraCast."
-        ),
-    )
-    p.add_argument(
-        "--background", "-b", action="store_true",
-        help=(
-            "Detach from the terminal and run as a background process. "
-            "Linux/macOS: double-fork daemon. "
-            "Windows: re-launch without a console window. "
-            "In background mode the TUI is disabled; use the Web UI to manage streams. "
-            "Implies --protect."
-        ),
-    )
-    return p.parse_args()
-
-
-# =============================================================================
-# PRE-FLIGHT CHECKS
-# =============================================================================
-def _preflight(console: Console) -> List[StreamConfig]:
-    from hc.constants import LISTEN_ADDR, BASE_DIR, MEDIA_DIR, WRITABLE_BASE_DIR
-
-    console.rule(f"[{CC}]{APP_NAME} v{APP_VER}[/]  Pre-flight checks")
-    console.print()
-
-    # Remove stale per-stream MediaMTX YAML configs from a previous run.
-    for f in CONFIGS_DIR().glob("mediamtx_*.yml"):
-        try:
-            f.unlink()
-        except Exception:
-            pass
-
-    console.print(
-        f"[{CD}]  OS        : {platform.system()} "
-        f"{platform.release()} ({platform.machine()})[/]"
-    )
-    console.print(f"[{CD}]  Python    : {sys.version.split()[0]}[/]")
-    console.print(f"[{CD}]  CPU cores : {CPU_COUNT}[/]")
-    console.print(f"[{CD}]  LAN IP    : {_local_ip()}[/]")
-    console.print(f"[{CD}]  Bind addr : {LISTEN_ADDR()}[/]")
-    console.print(f"[{CD}]  Base dir  : {BASE_DIR()}[/]")
-    if WRITABLE_BASE_DIR() != BASE_DIR():
-        console.print(f"[{CD}]  Data dir  : {WRITABLE_BASE_DIR()}  (redirected — install dir is read-only)[/]")
-    console.print(f"[{CD}]  Media dir : {MEDIA_DIR()}[/]")
-    console.print(f"[{CD}]  Config dir: {CONFIG_DIR()}[/]")
-    console.print()
-
-    # ── MediaMTX ──────────────────────────────────────────────────────────────
-    if not DependencyManager.download_mediamtx(console):
-        console.print(f"[{CR}]✘  Cannot continue without MediaMTX.[/]")
-        sys.exit(1)
-
-    # ── FFmpeg ────────────────────────────────────────────────────────────────
-    # ensure_ffmpeg prints its own ✔ / ⚠ / ✘ lines and auto-downloads if needed.
-    ffmpeg_path = DependencyManager.ensure_ffmpeg(console)
-    if not ffmpeg_path:
-        console.print(
-            f"[{CR}]✘  FFmpeg could not be found or downloaded automatically.[/]\n"
-            f"[{CY}]   Install it manually then re-run HydraCast:\n"
-            f"   Linux  : sudo apt install ffmpeg\n"
-            f"   Windows: https://www.gyan.dev/ffmpeg/builds/\n"
-            f"   macOS  : brew install ffmpeg[/]"
-        )
-        sys.exit(1)
-    set_ffmpeg(ffmpeg_path)
-
-    # ensure_ffprobe is non-fatal; it also auto-downloads when possible.
-    ffprobe_path = DependencyManager.ensure_ffprobe(console)
-    if ffprobe_path:
-        set_ffprobe(ffprobe_path)
-    else:
-        console.print(f"[{CY}]⚠  FFprobe not available (optional — some probing features disabled).[/]")
-
-    # ── SSL certificate ───────────────────────────────────────────────────────
+    if not IS_WIN:
+        return
     try:
-        ensure_ssl(console)
-    except RuntimeError as exc:
-        console.print(f"[{CR}]✘  SSL error: {exc}[/]")
-        sys.exit(1)
+        import ctypes
 
-    # ── config/streams.json ───────────────────────────────────────────────────
-    try:
-        configs = JSONManager.load()
+        CTRL_CLOSE_EVENT = 2
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_uint)
+        def _handler(ctrl_type: int) -> bool:
+            if ctrl_type == CTRL_CLOSE_EVENT:
+                callback()
+                # Block until the tray is actually showing so the process
+                # doesn't exit before pystray has taken over.
+                time.sleep(0.5)
+                return True
+            return False
+
+        # Keep a reference so GC doesn't collect the ctypes function pointer.
+        _install_close_hook._ref = _handler
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(_handler, True)
     except Exception as exc:
-        console.print(f"[{CR}]✘  Config error: {exc}[/]")
-        sys.exit(1)
-
-    if configs:
-        console.print(
-            f"[{CG}]✔  Loaded {len(configs)} stream(s) from config/streams.json[/]"
-        )
-        # Show folder-source streams so the operator can verify the scan.
-        for c in configs:
-            if c.folder_source:
-                console.print(
-                    f"[{CD}]   └─ [{c.name}] folder-source: {c.folder_source.name} "
-                    f"({len(c.playlist)} file(s) found, today's tagged files first)[/]"
-                )
-    else:
-        console.print(
-            f"[{CY}]⚠  No valid streams configured yet — "
-            f"starting in web-only mode.[/]"
-        )
-        console.print(
-            f"[{CD}]   Open the Web UI → Configure tab to add streams.[/]"
-        )
-
-    # ── Firewall ──────────────────────────────────────────────────────────────
-    enabled_ports = [c.port for c in configs if c.enabled]
-    if enabled_ports:
-        console.print()
-        FirewallManager.open_ports(enabled_ports, console)
-
-    console.print()
-    time.sleep(0.6)
-    return configs
+        log.warning("Could not install console close hook: %s", exc)
 
 
 # =============================================================================
-# UAC ELEVATION (Windows)
+# ICON LOADER
 # =============================================================================
+
+def _load_tray_image():
+    from PIL import Image
+    candidates = [
+        _HERE / "resources" / "HydraCast.ico",
+        _HERE / "_internal" / "resources" / "HydraCast.ico",
+        _HERE / "resources" / "logo.png",
+        _HERE / "_internal" / "resources" / "logo.png",
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                return Image.open(p).convert("RGBA")
+            except Exception:
+                pass
+    # Fallback: simple green circle
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    from PIL import ImageDraw
+    ImageDraw.Draw(img).ellipse([4, 4, 60, 60], fill=(34, 197, 94, 255))
+    return img
+
+
+# =============================================================================
+# ERROR POPUP
+# =============================================================================
+
+def _show_error(title: str, msg: str) -> None:
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(0, msg, title, 0x10)
+    except Exception:
+        pass
+
+
+# =============================================================================
+# UAC ELEVATION
+# =============================================================================
+
 def _request_admin_if_needed() -> bool:
     """
-    Re-launch the current process with administrator privileges via UAC if:
-      • We are running on Windows, AND
-      • The current process is NOT already elevated.
+    Returns True  → already admin or non-Windows; continue.
+    Returns False → elevated copy was spawned; caller must sys.exit(0).
 
-    Returns True  → already admin (or non-Windows): continue normally.
-    Returns False → an elevated process was spawned: caller should exit.
-
-    HydraCast needs elevation to:
-      • Create subdirectories inside C:\\Program Files\\HydraCast\\
-      • Bind to privileged ports (80, 443)
-      • Add Windows Firewall rules
-
-    If the user declines the UAC prompt, the function returns True and the app
-    continues — constants.py will silently redirect all writable dirs to
-    %%APPDATA%%\\HydraCast so the startup never fails with PermissionError.
+    Only called ONCE per process on first launch.  Guardian restarts inherit
+    the elevated token so IsUserAnAdmin() returns True immediately —
+    no UAC prompt loop.
     """
     if not IS_WIN:
         return True
-
     try:
         import ctypes
         if ctypes.windll.shell32.IsUserAnAdmin():
-            return True   # already elevated
+            return True
     except Exception:
-        return True       # can't check; assume OK
+        return True
 
     try:
         import ctypes
@@ -485,157 +348,528 @@ def _request_admin_if_needed() -> bool:
             None, "runas", sys.executable, params, None, 1
         )
         if ret > 32:
-            return False  # elevated copy launched; exit un-elevated one
+            return False
     except Exception:
         pass
-
-    return True   # elevation declined or failed — continue without it
+    return True   # elevation declined — continue without it
 
 
 # =============================================================================
-# MAIN
+# STARTUP REGISTRY  (HKCU — no admin needed at runtime)
 # =============================================================================
-def main() -> None:
-    # ── UAC elevation (Windows) ───────────────────────────────────────────────
-    # Request admin rights before any I/O so we can write to the install dir
-    # and bind to privileged ports (80/443).  If the user declines, constants.py
-    # falls back to %APPDATA%\HydraCast silently.
-    if not _request_admin_if_needed():
-        sys.exit(0)   # elevated copy is running; exit the un-elevated one
 
-    assert_licensed()                # [LG] exit if locked
-    start_checker("hydracast")       # [LG] background validator
-    args = _parse_args()
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
-    set_no_firewall(args.no_firewall)
-    set_listen_addr(args.listen)
-    set_web_port(args.web_port)
 
-    console = Console(force_terminal=True, highlight=False)
+def _get_startup_enabled() -> bool:
+    try:
+        import winreg
+        k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_READ)
+        winreg.QueryValueEx(k, APP_NAME)
+        winreg.CloseKey(k)
+        return True
+    except Exception:
+        return False
 
-    # ── --list-ports mode ─────────────────────────────────────────────────────
-    if args.list_ports:
+
+def _set_startup_enabled(enabled: bool) -> None:
+    try:
+        import winreg
+        target = str(Path(sys.executable)) if getattr(sys, "frozen", False) \
+                 else str(Path(__file__).resolve())
+        k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE)
+        if enabled:
+            winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, f'"{target}"')
+        else:
+            try:
+                winreg.DeleteValue(k, APP_NAME)
+            except FileNotFoundError:
+                pass
+        winreg.CloseKey(k)
+    except Exception as exc:
+        log.warning("startup registry update failed: %s", exc)
+
+
+# =============================================================================
+# WORKER STATE  (shared between tray main-thread and worker thread)
+# =============================================================================
+
+class _WorkerState:
+    def __init__(self):
+        self.ready_event    = threading.Event()  # set when web server responds
+        self.shutdown_event = threading.Event()  # set to begin full shutdown
+        self.restart_event  = threading.Event()  # set to hot-restart worker
+        self.show_tui_event = threading.Event()  # set to restore console
+        self.port: int      = WEB_PORT
+        self.scheme: str    = "http"
+        self.fatal: bool    = False
+        self.restart_count: int = 0
+
+
+# =============================================================================
+# SIGNAL PATCH  (suppress signal.signal() calls from inside the worker thread;
+# only the main thread is allowed to register OS signals on Windows)
+# =============================================================================
+
+import signal as _signal_mod
+_REAL_SIGNAL = _signal_mod.signal
+
+
+def _noop_signal(signum, handler):
+    log.debug("signal.signal(%s, …) suppressed in worker thread.", signum)
+
+
+def _patch_signal():
+    _signal_mod.signal = _noop_signal
+
+
+def _unpatch_signal():
+    _signal_mod.signal = _REAL_SIGNAL
+
+
+# =============================================================================
+# HYDRACAST CORE WORKER
+# Runs the full hydracast.main() inside a thread, with two patches:
+#   1. run_tui_loop → headless wrapper that respects shutdown/restart events.
+#   2. WebServer.start → hooked to capture the real port+scheme and signal ready.
+# =============================================================================
+
+def _run_hydracast_once(state: _WorkerState) -> bool:
+    """
+    Run the HydraCast core once.
+
+    Returns True  → restart (crash / non-fatal).
+    Returns False → do not restart (clean exit, fatal error, or user quit).
+    """
+    _patch_signal()
+    try:
+        # ── Patch 1: headless TUI loop ────────────────────────────────────────
+        import hc.tui as _tui_mod
+        _real_tui = _tui_mod.run_tui_loop
+
+        def _headless_tui(*, manager, glog, console, shutdown_event, export_urls_fn, **kw):
+            """
+            Runs the REAL run_tui_loop with a null-sink Rich console so
+            the stream/scheduler/compliance logic still executes, but no
+            ANSI codes go to a missing TTY.
+
+            Exits when either:
+              • state.shutdown_event fires  (full quit), or
+              • state.restart_event fires   (tray-triggered hot-restart).
+            """
+            import io
+            from rich.console import Console as _C
+            _sink = io.StringIO()
+            _hcon = _C(file=_sink, force_terminal=True, no_color=True,
+                       highlight=False, markup=False, width=120)
+
+            # Combined stop event watched by the real TUI loop.
+            _stop = threading.Event()
+
+            def _watch():
+                while not _stop.is_set():
+                    if state.shutdown_event.is_set() or state.restart_event.is_set():
+                        _stop.set()
+                        return
+                    time.sleep(0.1)
+
+            threading.Thread(target=_watch, daemon=True, name="hc-bg-watcher").start()
+
+            log.info("Headless TUI loop starting.")
+            try:
+                _real_tui(manager=manager, glog=glog, console=_hcon,
+                          shutdown_event=_stop, export_urls_fn=export_urls_fn, **kw)
+            finally:
+                _stop.set()
+                log.info("Headless TUI loop exited.")
+                # Explicit shutdown so stream/mediamtx/ffmpeg children are
+                # cleaned up before the thread exits.
+                try:
+                    from hc.web_handler import _WEB_MANAGER
+                    if _WEB_MANAGER is not None:
+                        log.info("Calling manager.shutdown() from headless TUI finally …")
+                        _WEB_MANAGER.shutdown()
+                except Exception as e:
+                    log.warning("manager.shutdown() in headless TUI: %s", e)
+
+        _tui_mod.run_tui_loop = _headless_tui
+
+        # ── Patch 2: WebServer.start → capture port/scheme, signal ready ─────
+        from hc.web import WebServer as _WS
+        _real_ws_init = _WS.__init__
+
+        def _patched_ws_init(ws_self, *a, **kw):
+            _real_ws_init(ws_self, *a, **kw)
+            _real_start = ws_self.start
+
+            def _hooked_start():
+                result = _real_start()
+                try:
+                    from hc.constants import get_web_port as _gwp
+                    state.port = _gwp()
+                except Exception:
+                    pass
+
+                _use_ssl = getattr(ws_self, "_use_ssl", False)
+                state.scheme = "https" if _use_ssl else "http"
+                port = state.port
+                scheme = state.scheme
+
+                # Wait for the server to actually serve HTTP before signalling.
+                import http.client as _hc_lib
+                import ssl as _ssl
+                deadline = time.time() + 15.0
+                signalled = False
+                while time.time() < deadline:
+                    if state.shutdown_event.is_set():
+                        break
+                    try:
+                        if _use_ssl:
+                            ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+                            ctx.check_hostname = False
+                            ctx.verify_mode = _ssl.CERT_NONE
+                            conn = _hc_lib.HTTPSConnection(
+                                "127.0.0.1", port, timeout=1.0, context=ctx)
+                        else:
+                            conn = _hc_lib.HTTPConnection(
+                                "127.0.0.1", port, timeout=1.0)
+                        conn.request("GET", "/health")
+                        resp = conn.getresponse()
+                        resp.read()
+                        conn.close()
+                        log.info("WebServer %s://127.0.0.1:%d HTTP %d — ready.",
+                                 scheme, port, resp.status)
+                        state.ready_event.set()
+                        signalled = True
+                        break
+                    except Exception:
+                        time.sleep(0.15)
+                if not signalled:
+                    log.warning("WebServer did not respond in 15 s — signalling anyway.")
+                    state.ready_event.set()
+                return result
+
+            ws_self.start = _hooked_start
+
+        _WS.__init__ = _patched_ws_init
+
+        # ── Run HydraCast core ────────────────────────────────────────────────
         try:
-            cfgs = JSONManager.load()
-        except Exception as exc:
-            console.print(f"[{CR}]✘  {exc}[/]")
-            sys.exit(1)
-        console.print(f"[{CC}]Ports that would be opened:[/]")
-        for c in cfgs:
-            if c.enabled:
-                hls_info = f"  + HLS :{c.hls_port}" if c.hls_enabled else ""
-                console.print(f"  {c.name:20s}  TCP :{c.port}{hls_info}")
-        sys.exit(0)
+            import hydracast as _hc_main
+            _hc_main.main()
+        finally:
+            _tui_mod.run_tui_loop = _real_tui
+            _WS.__init__ = _real_ws_init
 
-    # ── Background mode ───────────────────────────────────────────────────────
-    # Must happen BEFORE pre-flight so the parent can exit cleanly.
-    background_mode = args.background
-    if background_mode:
-        console.print(
-            f"[{CY}]⚡  Background mode requested — "
-            f"{'daemonizing' if not IS_WIN else 'detaching'} …[/]"
+    except SystemExit as exc:
+        code = exc.code
+        log.warning("HydraCast exited with code %s.", code)
+        if code in (None, 0):
+            return False          # clean user-initiated quit
+        log.error("Fatal exit (code=%s) — no restart.", code)
+        state.fatal = True
+        return False
+
+    except ValueError as exc:
+        log.exception("Worker ValueError: %s", exc)
+        state.fatal = True
+        return False
+
+    except Exception as exc:
+        log.exception("Unhandled exception in worker: %s", exc)
+        return not state.shutdown_event.is_set()
+
+    finally:
+        _unpatch_signal()
+
+    return False
+
+
+def _run_worker_loop(state: _WorkerState) -> None:
+    """Outer restart loop for tray-triggered hot-restarts."""
+    while not state.shutdown_event.is_set():
+        state.restart_event.clear()
+        state.ready_event.clear()
+
+        should_restart = _run_hydracast_once(state)
+
+        if state.fatal or state.shutdown_event.is_set():
+            break
+
+        if state.restart_event.is_set():
+            log.info("Hot-restart requested from tray.")
+            state.restart_count += 1
+            state.ready_event.clear()
+            time.sleep(1.0)
+            continue
+
+        if not should_restart:
+            break
+
+    state.ready_event.set()    # unblock anything waiting
+    state.shutdown_event.set()
+    log.info("Worker loop finished.")
+
+
+# =============================================================================
+# ORPHAN CLEANUP  (kill any surviving mediamtx / ffmpeg children)
+# =============================================================================
+
+def _kill_orphans() -> None:
+    try:
+        import psutil
+        me = psutil.Process()
+        targets = [
+            p for p in me.children(recursive=True)
+            if any(n in p.name().lower() for n in ("mediamtx", "ffmpeg"))
+        ]
+        if not targets:
+            return
+        for p in targets:
+            try:
+                p.terminate()
+            except Exception:
+                pass
+        _, alive = psutil.wait_procs(targets, timeout=4)
+        for p in alive:
+            try:
+                p.kill()
+            except Exception:
+                pass
+    except Exception as exc:
+        log.warning("_kill_orphans: %s", exc)
+
+
+# =============================================================================
+# TRAY  (runs on the MAIN thread — Windows requirement)
+# =============================================================================
+
+def _run_tray(state: _WorkerState, log_dir: Path) -> None:
+    """
+    Build and run the pystray icon on the main thread.
+
+    The tray icon is ALWAYS visible while HydraCast is running.
+    Right-click → menu with: Show TUI, Open Web UI, Restart, Startup toggle,
+                              Open Log, Quit.
+    """
+    try:
+        import pystray
+        from pystray import MenuItem as Item
+    except ImportError:
+        log.warning("pystray not available — no system tray; waiting for worker.")
+        state.shutdown_event.wait()
+        return
+
+    # ── Wait for the worker to be ready before building the full menu ─────────
+    log.info("Waiting up to %.0fs for HydraCast worker …", WORKER_TIMEOUT)
+    became_ready = state.ready_event.wait(timeout=WORKER_TIMEOUT)
+
+    if state.fatal or (not became_ready and state.shutdown_event.is_set()):
+        log.error("Worker failed to start — aborting tray.")
+        _show_error(
+            "HydraCast — Startup Failed",
+            "HydraCast failed to start.\n\nCheck the logs folder for details.",
         )
-        # On Linux/macOS _apply_background_mode forks; only the daemon child
-        # continues past this call.  On Windows sys.exit() is called.
-        _apply_background_mode(console)
-        # If we reach here we are the daemon child (Linux/macOS).
-        # Re-create console since we have new stdout/stderr.
-        console = Console(force_terminal=False, highlight=False)
+        return
 
-    # ── Pre-flight ────────────────────────────────────────────────────────────
-    configs = _preflight(console)
+    port   = state.port
+    scheme = state.scheme
 
-    # ── File logging ──────────────────────────────────────────────────────────
-    logging.basicConfig(
-        filename=str(LOGS_DIR() / "hydracast.log"),
-        level=logging.INFO,
-        format="%(asctime)s  %(levelname)-7s  %(message)s",
+    try:
+        from hc.utils import _local_ip
+        ip = _local_ip()
+    except Exception:
+        ip = "localhost"
+
+    # ── Menu action callbacks ─────────────────────────────────────────────────
+
+    def _show_tui(icon, item):
+        """Make the console window visible again."""
+        log.info("Show TUI requested.")
+        _show_console(True)
+
+    def _open_web(icon, item):
+        url = f"{scheme}://{ip}:{state.port}"
+        log.info("Opening %s", url)
+        webbrowser.open(url)
+
+    def _restart(icon, item):
+        log.info("Hot-restart requested from tray menu.")
+        state.restart_event.set()
+
+    def _toggle_startup(icon, item):
+        cur = _get_startup_enabled()
+        _set_startup_enabled(not cur)
+        # Rebuild menu so the checkmark flips immediately.
+        icon.menu = _build_menu()
+        log.info("Startup toggle: now %s", "ON" if not cur else "OFF")
+
+    def _open_log(icon, item):
+        today = _datetime.date.today().isoformat()
+        candidates = [
+            log_dir / f"hydracast_{today}.csv",
+            log_dir / "hydracast.log",
+        ]
+        for p in candidates:
+            if p.exists():
+                try:
+                    os.startfile(str(p))
+                    return
+                except Exception:
+                    webbrowser.open(p.as_uri())
+                    return
+
+    def _open_guardian_log(icon, item):
+        candidates = [
+            log_dir / "guardian.log",
+        ]
+        for p in candidates:
+            if p.exists():
+                try:
+                    os.startfile(str(p))
+                    return
+                except Exception:
+                    webbrowser.open(p.as_uri())
+                    return
+
+    def _quit(icon, item):
+        log.info("Quit requested from tray.")
+        state.shutdown_event.set()
+        icon.stop()
+
+    def _build_menu():
+        su = _get_startup_enabled()
+        su_label = "✔  Run at Windows startup" if su else "     Run at Windows startup"
+        return pystray.Menu(
+            Item(f"Open Web UI  ({scheme}://{ip}:{port})", _open_web, default=True),
+            pystray.Menu.SEPARATOR,
+            Item("Show TUI",            _show_tui),
+            Item("Restart HydraCast",   _restart),
+            pystray.Menu.SEPARATOR,
+            Item(su_label,              _toggle_startup),
+            pystray.Menu.SEPARATOR,
+            Item("Open Log",            _open_log),
+            Item("Open Guardian Log",   _open_guardian_log),
+            pystray.Menu.SEPARATOR,
+            Item("Quit HydraCast",      _quit),
+        )
+
+    # ── Build icon ────────────────────────────────────────────────────────────
+    image = _load_tray_image()
+    icon = pystray.Icon(
+        "HydraCast",
+        image,
+        f"HydraCast  {scheme}://{ip}:{port}",
+        _build_menu(),
     )
 
-    # ── Core objects ──────────────────────────────────────────────────────────
-    glog    = LogBuffer()
-    manager = StreamManager(configs, glog)
-
-    # Expose the manager to the web module so upload handlers can trigger
-    # in-memory folder rescans after a file is uploaded.
-    _web_module._WEB_MANAGER = manager
-
-    # ── Signal handling / process protection ──────────────────────────────────
-    _shutdown = threading.Event()
-
-    def _on_signal(sig: int, _frame: object) -> None:  # noqa: ANN001
-        _shutdown.set()
-
-    # In protect or background mode Ctrl-C is re-wired to a warning;
-    # in normal mode it still triggers a clean shutdown.
-    if args.protect or background_mode:
-        _protect_signals(glog)
-        if IS_WIN and not background_mode:
-            _win_disable_close_button()
-            _win_set_title(f"{APP_NAME} v{APP_VER}  —  Press Q to quit")
-        glog.add(
-            "Protect mode active — Ctrl-C disabled. "
-            "Use Q in the TUI or the Web UI to stop.", "INFO"
-        )
-    else:
-        signal.signal(signal.SIGINT,  _on_signal)
-
-    signal.signal(signal.SIGTERM, _on_signal)
-
-    # ── Start everything ──────────────────────────────────────────────────────
-    glog.add(
-        f"{APP_NAME} v{APP_VER} started — "
-        f"{len(configs)} stream(s) configured."
-    )
-    manager.start_all()
-    manager.run_scheduler()
-
-    if args.export_urls:
+    # ── Watch worker — stop icon when worker exits ────────────────────────────
+    def _worker_watcher():
+        state.shutdown_event.wait()
+        log.info("Shutdown event — stopping tray icon.")
         try:
-            url_file = manager.export_urls()
-            glog.add(f"Stream URLs exported → {url_file.name}")
-        except Exception as exc:
-            glog.add(f"URL export error: {exc}", "ERROR")
-
-    web: Optional[WebServer] = None
-    if not args.no_web:
-        web = WebServer(get_web_port())
-        web.start()
-        glog.add(
-            f"Web UI → http://{_local_ip()}:{get_web_port()}", "INFO"
-        )
-
-    # ── TUI main loop — skipped in background mode ────────────────────────────
-    if not background_mode:
-        run_tui_loop(
-            manager=manager,
-            glog=glog,
-            console=console,
-            shutdown_event=_shutdown,
-            export_urls_fn=manager.export_urls,
-        )
-    else:
-        # Background / daemon mode: no TUI.  Block until SIGTERM or web shutdown.
-        glog.add("Running in background mode — Web UI is the only control interface.")
-        _shutdown.wait()
-
-    # ── Graceful shutdown ─────────────────────────────────────────────────────
-    if not background_mode:
-        console.clear()
-        console.print(f"\n[{CY}]⏳  Stopping all streams … please wait.[/]")
-    manager.shutdown()
-    if web:
-        web.stop()
-    # Clean up per-stream MediaMTX YAML configs.
-    for f in CONFIGS_DIR().glob("mediamtx_*.yml"):
-        try:
-            f.unlink()
+            icon.stop()
         except Exception:
             pass
-    if not background_mode:
-        console.print(f"[{CG}]✔  HydraCast stopped cleanly. Goodbye.[/]\n")
+
+    threading.Thread(target=_worker_watcher, daemon=True, name="tray-watcher").start()
+
+    log.info("Starting pystray icon loop (main thread).")
+    try:
+        icon.run()
+    except Exception as exc:
+        log.exception("pystray icon.run() raised: %s", exc)
 
 
 # =============================================================================
+# ENTRY POINT
+# =============================================================================
+
+def main() -> None:
+    # ── UAC elevation ─────────────────────────────────────────────────────────
+    if not _request_admin_if_needed():
+        sys.exit(0)
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    log_dir = _setup_logging(_HERE)
+    log.info("hydracast starting (frozen=%s, pid=%d).",
+             getattr(sys, "frozen", False), os.getpid())
+
+    # ── License check  [LG] ───────────────────────────────────────────────────
+    assert_licensed()
+    # start_checker runs ONCE here — never inside the worker loop.
+    start_checker("hydracast")
+
+    # ── Launch guardian (separate EXE) ────────────────────────────────────────
+    try:
+        from hc.constants import LOGS_DIR
+        guardian_log_dir = LOGS_DIR()
+        guardian_log_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        guardian_log_dir = log_dir
+
+    try:
+        target_cmd = (
+            str(Path(sys.executable))
+            if getattr(sys, "frozen", False)
+            else f"{sys.executable} {Path(__file__).resolve()}"
+        )
+        gp = launch_guardian(target_cmd, guardian_log_dir)
+        if gp is not None:
+            log.info("Guardian launched (PID %d).", gp.pid)
+        else:
+            log.info("Guardian already running or not needed.")
+    except Exception as exc:
+        log.warning("Guardian launch failed: %s — continuing without supervisor.", exc)
+
+    # ── Heartbeat sender ──────────────────────────────────────────────────────
+    heartbeat = HeartbeatSender()
+    heartbeat.start()
+    log.info("Heartbeat sender started.")
+
+    # ── Shared state ──────────────────────────────────────────────────────────
+    state = _WorkerState()
+
+    # ── Open the TUI console immediately ─────────────────────────────────────
+    # The TUI lives in its own thread.  The main thread runs the tray.
+    # hydracast.main() already opens its own Rich console and blocks in
+    # run_tui_loop — we just need to start it and show the window.
+    _show_console(True)
+    _set_console_title(f"{APP_NAME} v{APP_VER}  —  close or minimize to tray")
+
+    # ── Install console close hook → hide to tray instead of killing ──────────
+    def _on_close():
+        log.info("Console ✕ clicked — hiding to tray.")
+        _show_console(False)
+
+    _install_close_hook(_on_close)
+
+    # ── Worker thread (TUI + streams + web server) ────────────────────────────
+    worker = threading.Thread(
+        target=_run_worker_loop,
+        args=(state,),
+        name="hydracast-worker",
+        daemon=True,
+    )
+    worker.start()
+    log.info("Worker thread started.")
+
+    # ── Main thread: run pystray (blocking) ───────────────────────────────────
+    _run_tray(state, log_dir)
+
+    # ── Clean shutdown ────────────────────────────────────────────────────────
+    log.info("Tray exited — signalling shutdown.")
+    state.shutdown_event.set()
+    heartbeat.stop()
+
+    # Give the worker and its stop-stream daemon threads up to 15 s.
+    worker.join(timeout=15)
+
+    # Belt-and-suspenders: kill any surviving mediamtx / ffmpeg processes.
+    _kill_orphans()
+
+    log.info("hydracast exiting cleanly.")
+
+
 if __name__ == "__main__":
     main()
