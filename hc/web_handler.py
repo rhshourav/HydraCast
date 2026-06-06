@@ -1316,10 +1316,10 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         import socket as _socket
 
         try:
-            raw  = qs.get("from", ["60123"])[0].strip()
-            base = int(raw) if raw else 60123
+            raw  = qs.get("from", ["30123"])[0].strip()
+            base = int(raw) if raw else 30123
         except (ValueError, TypeError):
-            base = 60123
+            base = 30123
 
         # Clamp and make odd
         base = max(1025, min(base, 65520))
