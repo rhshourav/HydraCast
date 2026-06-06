@@ -287,7 +287,7 @@ class WebServer:
     # Public API
     # ------------------------------------------------------------------
     def start(self) -> None:
-        from hc.constants import LISTEN_ADDR, WEB_PORT, get_http_port, set_web_port
+        from hc.constants import LISTEN_ADDR, WEB_PORT, get_http_port
 
         bind_addr  = LISTEN_ADDR()
         https_port = self._port      if self._port      is not None else WEB_PORT
@@ -299,15 +299,6 @@ class WebServer:
         # SSL generation failed on port 443 -> fall back to plain HTTP on 8080.
         if not use_ssl and https_port == _PORT_HTTPS:
             https_port = _PORT_HTTP_FALLBACK
-
-        # Persist the real port so get_web_port() returns the correct value.
-        # Critical when we fell back from 443 -> 8080: without this the tray
-        # opens http://host:443 instead of http://host:8080.
-        set_web_port(https_port)
-
-        # Expose the SSL flag on the instance so the hydracast_bg probe can
-        # choose HTTPSConnection vs HTTPConnection without re-examining certs.
-        self._use_ssl = use_ssl
 
         # ------------------------------------------------------------------
         # HTTPS (or plain-HTTP fallback) listener
