@@ -909,7 +909,7 @@ select option{background:var(--bg3)}
 .config-stream-item .dot.error{background:var(--red)}
 .config-main{
   background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  overflow:hidden;display:flex;flex-direction:column;
+  overflow:hidden;display:flex;flex-direction:column;min-height:0;
   transition:background 0.35s,border-color 0.35s;
 }
 .config-main-hdr{
@@ -926,7 +926,7 @@ select option{background:var(--bg3)}
 }
 .config-main-footer{
   padding:16px 22px;border-top:1px solid var(--border);background:var(--bg3);
-  display:flex;gap:10px;justify-content:flex-end;
+  display:flex;gap:10px;justify-content:flex-end;flex-shrink:0;
 }
 
 /* ─────────── PLAYLIST EDITOR ─────────── */
@@ -2432,35 +2432,15 @@ async function api(action,data){
 // ═══════════════════════════════════
 // DOWNLOAD URLS CSV
 // ═══════════════════════════════════
-async function downloadUrlsCsv(){
+function downloadUrlsCsv(){
   const incFiles=document.getElementById('csv-files')?.checked?'1':'0';
-  toast('Preparing URLs CSV\u2026','info');
-  try{
-    const r=await fetch('/api/urls_csv?include_files='+incFiles);
-    if(!r.ok){
-      let msg='Server error '+r.status;
-      try{const j=await r.json();msg=j.msg||msg;}catch(_){}
-      toast('CSV download failed: '+msg,'err');
-      return;
-    }
-    const blob=await r.blob();
-    if(blob.size===0){toast('CSV download failed: empty response from server','err');return;}
-    // Extract filename from Content-Disposition or fall back to a timestamped name
-    let fname='stream_urls.csv';
-    const cd=r.headers.get('Content-Disposition')||'';
-    const m=cd.match(/filename\*?=(?:UTF-8''|")?([^";\r\n]+)/i);
-    if(m&&m[1]) fname=decodeURIComponent(m[1].replace(/"/g,'').trim());
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=fname;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(a.href);
-    toast('URLs CSV downloaded','ok');
-  }catch(e){
-    toast('CSV download failed: '+(e.message||e),'err');
-  }
+  const a=document.createElement('a');
+  a.href='/api/urls_csv?include_files='+incFiles;
+  a.download='';           // filename comes from Content-Disposition
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('Downloading URLs CSV\u2026','info');
 }
 
 // ═══════════════════════════════════
