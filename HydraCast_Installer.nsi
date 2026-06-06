@@ -22,9 +22,8 @@ Unicode True
 ;
 ;  v5.5 changes
 ;  -------------
-;  hydracast_bg.exe fully removed -- unified into hydracast.exe.
+;  hydracast_bg.exe and hydracast_guardian.exe removed entirely.
 ;  Single-instance mutex prevents double-launch without UAC on restart.
-;  Guardian restarts never trigger UAC (inherits elevated token).
 ; ============================================================================
 
 ; -- Compression --------------------------------------------------------------
@@ -42,14 +41,12 @@ SetCompressorDictSize 64
 !define PRODUCT_PUBLISHER    "rhshourav"
 !define PRODUCT_URL          "https://github.com/rhshourav/HydraCast"
 !define PRODUCT_EXE          "hydracast.exe"
-!define PRODUCT_GUARDIAN_EXE "hydracast_guardian.exe"
 !define FFMPEG_EXE           "ffmpeg.exe"
 !define FFPROBE_EXE          "ffprobe.exe"
 !define MEDIAMTX_EXE         "mediamtx.exe"
 !define PRODUCT_ICON         "dist\HydraCast\_internal\resources\HydraCast.ico"
 !define UNINSTALLER_NAME     "Uninstall HydraCast.exe"
 !define REG_KEY              "Software\Microsoft\Windows\CurrentVersion\Uninstall\HydraCast"
-!define STARTUP_REG_KEY      "Software\Microsoft\Windows\CurrentVersion\Run"
 !define MUTEX_NAME           "HydraCastInstallerMutex"
 
 ; -- Output -------------------------------------------------------------------
@@ -69,7 +66,7 @@ ShowUninstDetails   show
 !define MUI_WELCOMEPAGE_TITLE        "Welcome to HydraCast ${PRODUCT_VERSION} Setup"
 !define MUI_WELCOMEPAGE_TEXT         "This wizard will guide you through the installation of HydraCast, a multi-stream RTSP weekly scheduler.$\r$\n$\r$\nClick Next to continue."
 
-; Finish page launches hydracast.exe -- opens TUI and tray icon immediately.
+; Finish page launches hydracast.exe directly.
 !define MUI_FINISHPAGE_RUN           "$INSTDIR\${PRODUCT_EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT      "Launch HydraCast"
 !define MUI_FINISHPAGE_LINK          "Visit HydraCast on GitHub"
@@ -91,9 +88,7 @@ Page custom StartupPage StartupPageLeave
 !insertmacro MUI_LANGUAGE "English"
 
 ; -- Variables ----------------------------------------------------------------
-Var StartupCheck
 Var DesktopCheck
-Var DoStartup
 Var DoDesktop
 
 ; -- Options page -------------------------------------------------------------
@@ -105,11 +100,7 @@ Function StartupPage
     ${NSD_CreateLabel} 0 0 100% 20u "Select any additional options:"
     Pop $0
 
-    ${NSD_CreateCheckbox} 10u 30u 100% 14u "Launch HydraCast automatically at Windows startup"
-    Pop $StartupCheck
-    ${NSD_SetState} $StartupCheck ${BST_CHECKED}
-
-    ${NSD_CreateCheckbox} 10u 50u 100% 14u "Create Desktop shortcut"
+    ${NSD_CreateCheckbox} 10u 30u 100% 14u "Create Desktop shortcut"
     Pop $DesktopCheck
     ${NSD_SetState} $DesktopCheck ${BST_CHECKED}
 
@@ -117,7 +108,6 @@ Function StartupPage
 FunctionEnd
 
 Function StartupPageLeave
-    ${NSD_GetState} $StartupCheck $DoStartup
     ${NSD_GetState} $DesktopCheck $DoDesktop
 FunctionEnd
 
@@ -161,7 +151,7 @@ Section "HydraCast (required)" SecMain
     WriteRegDWORD HKLM "${REG_KEY}" "NoRepair"             1
     WriteRegDWORD HKLM "${REG_KEY}" "EstimatedSize"        950000
 
-    ; Start Menu -- single shortcut (TUI opens + tray is always visible)
+    ; Start Menu shortcut
     CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
 
     CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}\HydraCast.lnk" \
@@ -181,15 +171,6 @@ Section "HydraCast (required)" SecMain
             SW_SHOWNORMAL "" "HydraCast -- RTSP multi-stream scheduler"
     ${EndIf}
 
-    ; Startup registry -- HKCU only (no admin needed at runtime)
-    ; Points to hydracast.exe (unified TUI+tray, no separate bg exe).
-    ${If} $DoStartup = ${BST_CHECKED}
-        WriteRegStr HKCU "${STARTUP_REG_KEY}" "${PRODUCT_NAME}" \
-            '"$INSTDIR\${PRODUCT_EXE}"'
-    ${Else}
-        DeleteRegValue HKCU "${STARTUP_REG_KEY}" "${PRODUCT_NAME}"
-    ${EndIf}
-
 SectionEnd
 
 ; -- Uninstaller --------------------------------------------------------------
@@ -200,18 +181,7 @@ Section "Uninstall"
     ExecWait 'taskkill /F /IM "${FFPROBE_EXE}"'          $0
     ExecWait 'taskkill /F /IM "${MEDIAMTX_EXE}"'         $0
     ExecWait 'taskkill /F /IM "${PRODUCT_EXE}"'          $0
-    ExecWait 'taskkill /F /IM "${PRODUCT_GUARDIAN_EXE}"' $0
     Sleep 2000
-
-    ; Remove internal guardian runtime files (not user data).
-    Delete "$INSTDIR\logs\guardian.pid"
-    Delete "$INSTDIR\logs\guardian_self.pid"
-    Delete "$INSTDIR\logs\guardian.log"
-    Delete "$INSTDIR\logs\guardian.log.1"
-    Delete "$INSTDIR\logs\guardian.log.2"
-    Delete "$INSTDIR\logs\guardian.log.3"
-    Delete "$INSTDIR\logs\guardian.log.4"
-    Delete "$INSTDIR\logs\guardian.log.5"
 
     ; Ask whether to keep user data (config, logs, media).
     MessageBox MB_YESNO|MB_ICONQUESTION \
@@ -227,7 +197,6 @@ Section "Uninstall"
 
     RMDir /r "$INSTDIR\_internal"
     Delete   "$INSTDIR\${PRODUCT_EXE}"
-    Delete   "$INSTDIR\${PRODUCT_GUARDIAN_EXE}"
     Delete   "$INSTDIR\${UNINSTALLER_NAME}"
     RMDir /r "$INSTDIR\bin"
     RMDir    "$INSTDIR"
@@ -235,7 +204,6 @@ Section "Uninstall"
     RMDir /r "$SMPROGRAMS\${PRODUCT_NAME}"
     Delete   "$DESKTOP\HydraCast.lnk"
 
-    DeleteRegKey   HKLM "${REG_KEY}"
-    DeleteRegValue HKCU "${STARTUP_REG_KEY}" "${PRODUCT_NAME}"
+    DeleteRegKey HKLM "${REG_KEY}"
 
 SectionEnd
