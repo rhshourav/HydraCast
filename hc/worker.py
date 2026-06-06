@@ -169,6 +169,34 @@ def grab_thumbnail(file_path: Path, seek_secs: float = 5.0) -> Optional[bytes]:
 
 
 # =============================================================================
+# HELPERS
+# =============================================================================
+
+def _double_bitrate(bitrate_str: str) -> str:
+    """
+    Return a VBV buffer size equal to 2× the given bitrate string.
+
+    Accepts strings like "8000k", "8M", "8000000".
+    Falls back to the original string unchanged on any parse error so FFmpeg
+    receives something and emits its own diagnostic rather than crashing here.
+
+    Examples:
+      "8000k"   → "16000k"
+      "8M"      → "16M"
+      "8000000" → "16000000"
+    """
+    s = bitrate_str.strip()
+    try:
+        if s.lower().endswith("k"):
+            return f"{int(float(s[:-1]) * 2)}k"
+        if s.lower().endswith("m"):
+            return f"{int(float(s[:-1]) * 2)}M"
+        return str(int(float(s) * 2))
+    except (ValueError, IndexError):
+        return s
+
+
+# =============================================================================
 # STREAM WORKER
 # =============================================================================
 class StreamWorker:
@@ -1205,15 +1233,53 @@ class StreamWorker:
         # 400 Bad Request. The YAML uses "~all" which accepts any named path.
         _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
         _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
+
+        # ── Build codec arguments ─────────────────────────────────────────────
+        # "copy" means pass-through: no re-encoding, preserves original quality
+        # and bitrate exactly.  Any other value is treated as a target bitrate
+        # for libx264/aac re-encoding.
+        #
+        # IMPORTANT: "copy" is a codec selector (-c:v copy), NOT a bitrate value.
+        # Passing it to -b:v is invalid and causes FFmpeg to silently ignore the
+        # bitrate or error out.  The two modes are mutually exclusive.
+        _vbr = cfg.video_bitrate.strip().lower()
+        _abr = cfg.audio_bitrate.strip().lower()
+
+        if _vbr == "copy" and _abr == "copy":
+            # Full pass-through — fastest, lossless, no re-encoding at all.
+            codec_args = ["-c:v", "copy", "-c:a", "copy"]
+        elif _vbr == "copy":
+            # Video pass-through, re-encode audio only.
+            codec_args = [
+                "-c:v", "copy",
+                "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
+            ]
+        elif _abr == "copy":
+            # Audio pass-through, re-encode video only.
+            codec_args = [
+                "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+                "-b:v", cfg.video_bitrate, "-maxrate", cfg.video_bitrate,
+                "-bufsize", _double_bitrate(cfg.video_bitrate),
+                "-pix_fmt", "yuv420p", "-g", "50",
+                "-c:a", "copy",
+            ]
+        else:
+            # Full re-encode — use high-quality settings.
+            codec_args = [
+                "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+                "-b:v", cfg.video_bitrate, "-maxrate", cfg.video_bitrate,
+                "-bufsize", _double_bitrate(cfg.video_bitrate),
+                "-pix_fmt", "yuv420p", "-g", "50",
+                "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
+            ]
+
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error",
             "-re",
             "-ss", str(int(seek_pos)),
             *loop_flag,
             "-i", str(item.file_path),
-            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-            "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p", "-g", "50",
-            "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
+            *codec_args,
             "-progress", "pipe:1", "-nostats",
             "-f", "rtsp", "-rtsp_transport", "tcp",
             _rtsp_target,
