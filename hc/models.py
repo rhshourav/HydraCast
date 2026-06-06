@@ -1,43 +1,18 @@
 """
 hc/models.py  —  Core dataclasses and enums.
 
-v6.2.1 patch (bug fixes)
-─────────────────────────
-• StreamConfig gains a __post_init__ that enforces compliance_resync_interval
-  ≥ 60.0 s at construction time (Bug 4 fix).  Previously only _monitor()
-  clamped this at runtime via max(60.0, cfg.compliance_resync_interval).
-
-• StreamState gains four new properly-declared dataclass fields (Bug 7 fix):
-    seek_start_pos        float          = 0.0
-    buffering             bool           = False
-    restarting            bool           = False
-    active_oneshot_event  Optional[object] = None
-  These were previously injected dynamically by StreamWorker.__init__ via
-  hasattr guards.  Declaring them as fields makes them visible to type
-  checkers, introspection, and code that reads StreamState before a worker
-  is attached.  The hasattr guards in StreamWorker.__init__ remain harmless.
-
-v6.2 changes vs v6.1
+v6.1 changes vs v6.0
 ─────────────────────
-• New module-level constant CAMERA_PROTOCOL_DEFAULTS: default ports per
-  protocol (rtsp, rtmp, http, srt, udp).
+• StreamConfig gains compliance_alert_enabled (bool, default True).
+  When True (and compliance_enabled is True), the Web UI will surface
+  compliance errors as a pulsing side-banner every 10 seconds until the
+  operator acknowledges or disables alerts in Settings.
 
-• New dataclass CameraConfig (added before StreamConfig):
-  Represents a named camera with credentials, protocol, and source type.
-  Provides .url and .url_masked properties for URL construction.
-  Handles rtsp, rtmp, http, srt, udp network protocols and usb/dshow local
-  devices. SRT uses query-string format; UDP/SRT ignore auth fields.
+• StreamState gains compliance_alert (Optional[str]) — the last compliance
+  error message to display in the Web UI — and compliance_alert_ts (float)
+  timestamp of when it was set.
 
-• StreamConfig gains three hybrid source-switching fields:
-    source_mode     str            = "playlist"   # "playlist"|"camera"|"hybrid"
-    camera_id       Optional[str]  = None         # references CameraConfig.camera_id
-    camera_windows  List[Dict]     = []           # schedule windows for hybrid mode
-
-• StreamState gains two source-switching state fields:
-    active_source   str            = "playlist"   # current live source
-    source_override Optional[str]  = None         # manual override; None = follow schedule
-
-Everything else is unchanged from v6.1.
+Everything else is unchanged from v6.0.
 """
 from __future__ import annotations
 
@@ -47,22 +22,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from hc.constants import DAY_ABBR, LISTEN_ADDR, WEEKDAY_MAP
-
-
-# =============================================================================
-# MODULE-LEVEL CONSTANTS
-# =============================================================================
-
-CAMERA_PROTOCOL_DEFAULTS: Dict[str, int] = {
-    "rtsp": 554,
-    "rtmp": 1935,
-    "http": 80,
-    "srt":  9000,
-    "udp":  1234,
-}
 
 
 # =============================================================================
@@ -109,55 +71,6 @@ class PlaylistItem:
 
 
 @dataclass
-class CameraConfig:
-    camera_id:   str          # UUID, e.g. "a1b2c3d4-..."
-    name:        str          # human label, e.g. "Front Door"
-    protocol:    str          # "rtsp" | "rtmp" | "http" | "srt" | "udp"
-    host:        str          # IP or hostname, e.g. "192.168.1.50"
-    port:        int          # custom port, e.g. 554 (RTSP default), 80, 1935, etc.
-    path:        str          # stream path, e.g. "/live" or "/cam/1/stream"
-    username:    str  = ""    # optional — empty string means no auth
-    password:    str  = ""    # optional — stored in plaintext locally; stripped from backups
-    source_type: str  = "rtsp"  # "rtsp" | "usb" | "dshow" — determines FFmpeg input method
-    enabled:     bool = True
-    notes:       str  = ""
-
-    @property
-    def url(self) -> str:
-        """
-        Build the full source URL from components.
-        For usb/dshow source_type, returns the raw host string (device path / dshow name).
-        For srt protocol, uses query-string format: srt://host:port?streamid=path
-        For udp protocol, ignores auth fields: udp://host:port
-        For other network protocols, builds: protocol://[user:pass@]host:port/path
-        """
-        if self.source_type in ("usb", "dshow"):
-            return self.host   # e.g. "/dev/video0" or "My Capture Card"
-        if self.protocol == "srt":
-            path = self.path.lstrip("/")
-            return f"srt://{self.host}:{self.port}?streamid={path}"
-        if self.protocol == "udp":
-            return f"udp://{self.host}:{self.port}"
-        auth = f"{self.username}:{self.password}@" if self.username else ""
-        path = self.path if self.path.startswith("/") else f"/{self.path}"
-        return f"{self.protocol}://{auth}{self.host}:{self.port}{path}"
-
-    @property
-    def url_masked(self) -> str:
-        """Same as url but with password replaced by '***' — safe for logs and UI display."""
-        if self.source_type in ("usb", "dshow"):
-            return self.host
-        if self.protocol == "srt":
-            path = self.path.lstrip("/")
-            return f"srt://{self.host}:{self.port}?streamid={path}"
-        if self.protocol == "udp":
-            return f"udp://{self.host}:{self.port}"
-        auth = f"{self.username}:***@" if self.username else ""
-        path = self.path if self.path.startswith("/") else f"/{self.path}"
-        return f"{self.protocol}://{auth}{self.host}:{self.port}{path}"
-
-
-@dataclass
 class StreamConfig:
     name:           str
     port:           int
@@ -166,15 +79,8 @@ class StreamConfig:
     enabled:        bool
     shuffle:        bool  = False
     stream_path:    str   = ""
-    # Default bitrates (v6.4 high-resolution mode):
-    #   8000k video — sufficient for broadcast-quality 1080p H.264 high profile
-    #                 with CRF 18 (CRF is the primary quality lever; maxrate
-    #                 just caps the peak — simple scenes use far fewer bits).
-    #   320k  audio — AAC-LC 320 kbps is transparent at 48 kHz stereo.
-    #                 128k was audibly lossy on music/dialogue-heavy content.
-    # Operators can override these per-stream in the Web UI / streams.json.
-    video_bitrate:  str   = "8000k"
-    audio_bitrate:  str   = "320k"
+    video_bitrate:  str   = "2500k"
+    audio_bitrate:  str   = "128k"
     hls_enabled:    bool  = False
     row_index:      int   = 0
     folder_source:  Optional[Path] = None
@@ -191,29 +97,7 @@ class StreamConfig:
     # 0 = always resync on every periodic check regardless of drift.
     compliance_drift_threshold: float = 30.0
 
-    # ── Hybrid source switching ───────────────────────────────────────────────
-    source_mode:     str           = "playlist"  # "playlist" | "camera" | "hybrid"
-    camera_id:       Optional[str] = None        # references CameraConfig.camera_id
-    camera_windows:  List[Dict]    = field(default_factory=list)
-    # camera_windows entry format:
-    #   {"weekdays": [0,1,2,3,4], "start": "09:00:00", "end": "17:00:00"}
-    # Multiple windows per stream are allowed.
-    # Outside all windows → playlist plays (in hybrid mode).
-
     # ── Weekday helpers ───────────────────────────────────────────────────────
-
-    def __post_init__(self) -> None:
-        # Bug 4 fix: enforce the documented 60 s minimum for
-        # compliance_resync_interval at the data layer.  The comment on the
-        # field says "Minimum enforced at 60 s" but previously only _monitor()
-        # clamped the value at runtime (max(60.0, cfg.compliance_resync_interval)).
-        # A user who sets 0 or a very small value via the JSON/UI would see the
-        # monitor clamp it, but code that reads the field directly (tests,
-        # introspection, API serialisation) would see the unvalidated value.
-        # Enforcing it here makes the constraint visible at construction time
-        # and removes the footgun for future callers.
-        if self.compliance_resync_interval < 60.0:
-            self.compliance_resync_interval = 60.0
 
     def _int_weekdays(self) -> List[int]:
         result: List[int] = []
@@ -317,24 +201,6 @@ class StreamState:
     compliance_alert_ts:       float          = 0.0    # epoch time when alert was set
     # Epoch time of the last periodic drift check (0 = never checked).
     compliance_last_check_ts:  float          = 0.0
-
-    # ── Source switching state ────────────────────────────────────────────────
-    # active_source reflects the currently live source ("playlist" or "camera").
-    # source_override is an in-memory manual override; intentionally not
-    # persisted to disk — resets to None (follow schedule) on server restart.
-    active_source:   str           = "playlist"  # "playlist" | "camera"
-    source_override: Optional[str] = None        # manual override; None = follow schedule
-
-    # ── Bug 7 fix: fields that were previously injected dynamically by ────────
-    # StreamWorker.__init__ via hasattr guards.  Declaring them here as proper
-    # dataclass fields makes them visible to type checkers, introspection, and
-    # any code that reads StreamState before a StreamWorker is constructed.
-    # The hasattr guards in StreamWorker.__init__ remain harmless (they now
-    # always find the attribute already set to the default value).
-    seek_start_pos:       float          = 0.0   # absolute position when FFmpeg was last seeked
-    buffering:            bool           = False  # True while retrying transient EPIPE/400
-    restarting:           bool           = False  # True during _auto_restart() countdown
-    active_oneshot_event: Optional[object] = None  # currently playing OneShotEvent or None
 
     def set_compliance_alert(self, msg: Optional[str]) -> None:
         """Set (or clear) the compliance alert. Thread-safe."""
