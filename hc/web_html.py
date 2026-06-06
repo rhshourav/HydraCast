@@ -924,14 +924,14 @@ select option{background:var(--bg3)}
   color:var(--accent);font-weight:700;margin-bottom:14px;padding-bottom:8px;
   border-bottom:1px solid var(--border);font-family:var(--font-display);
 }
-/* external footer kept for backward compat but hidden by default */
+/* external footer hidden, replaced by inline .cfg-save-bar */
 .config-main-footer{display:none !important}
-/* inline sticky save bar rendered inside config-main-body */
+/* save bar rendered at the bottom of the scrollable form body */
 .cfg-save-bar{
-  position:sticky;bottom:0;margin:24px -24px -8px;
-  padding:14px 22px;border-top:1px solid var(--border);background:var(--bg3);
-  display:flex;gap:10px;justify-content:flex-end;
-  z-index:10;
+  display:flex;gap:10px;justify-content:flex-end;align-items:center;
+  padding:16px 0 4px;
+  border-top:1px solid var(--border);
+  margin-top:8px;
 }
 
 /* ─────────── PLAYLIST EDITOR ─────────── */
@@ -3411,8 +3411,8 @@ function renderConfigEditor(s){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate||'')}"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate||'')}"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate==='copy'?'':(s.video_bitrate||''))}" placeholder="copy (default) or e.g. 2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate==='copy'?'':(s.audio_bitrate||''))}" placeholder="copy (default) or e.g. 128k"></div>
       </div>
     </div>
     <div class="config-section">
@@ -3996,7 +3996,7 @@ async function suggestNextPort(inputId, resultId){
   // Always start 2 above the current value so the button advances to a
   // genuinely *next* free port instead of returning the same port when
   // the current one happens to be free already.
-  const cur = parseInt(inp.value||0)||30121;
+  const cur = parseInt(inp.value||0)||60121;
   const from = cur + 2;
   const suggestBtn = document.getElementById('suggest-btn-'+inputId);
   if(suggestBtn){
