@@ -38,7 +38,7 @@ SetCompressorDictSize 64
 
 ; -- Product metadata ---------------------------------------------------------
 !define PRODUCT_NAME         "HydraCast"
-!define PRODUCT_VERSION      "5.4.0"
+!define PRODUCT_VERSION      "6.5.0"
 !define PRODUCT_PUBLISHER    "rhshourav"
 !define PRODUCT_URL          "https://github.com/rhshourav/HydraCast"
 !define PRODUCT_EXE          "hydracast.exe"
