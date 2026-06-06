@@ -153,7 +153,7 @@ from hc.ssl_bootstrap import ensure_ssl    # noqa: E402
 
 
 # =============================================================================
-# BACKGROUND / PROTECT HELPERS
+# PROTECT HELPERS
 # =============================================================================
 
 def _win_disable_close_button() -> None:
@@ -202,95 +202,6 @@ def _protect_signals(glog: Optional["LogBuffer"] = None) -> None:
             pass   # some environments (e.g. Windows WSL edge cases) raise here
 
 
-def _daemonize_linux(console: Console, log_path: str) -> None:
-    """
-    POSIX double-fork daemonisation.  The *parent* process prints a message
-    and exits; the grandchild continues as a fully detached daemon.
-    """
-    # First fork — parent exits immediately.
-    pid = os.fork()
-    if pid > 0:
-        console.print(
-            f"\n[{CG}]✔  HydraCast daemonized (PID will appear in log).[/]\n"
-            f"[{CD}]   Logs   : {log_path}[/]\n"
-            f"[{CD}]   Web UI : http://localhost:{get_web_port()}[/]\n"
-        )
-        sys.exit(0)
-
-    # Decouple from parent environment.
-    os.setsid()
-    os.umask(0o022)
-
-    # Second fork — orphan the session leader so it can never acquire a tty.
-    pid = os.fork()
-    if pid > 0:
-        sys.exit(0)
-
-    # Redirect stdin/stdout/stderr.
-    sys.stdout.flush()
-    sys.stderr.flush()
-    with open(os.devnull, "rb") as fi:
-        os.dup2(fi.fileno(), sys.stdin.fileno())
-    with open(log_path, "ab") as fo:
-        os.dup2(fo.fileno(), sys.stdout.fileno())
-        os.dup2(fo.fileno(), sys.stderr.fileno())
-
-
-def _daemonize_windows(console: Console) -> None:
-    """
-    Re-launch this script as a fully detached Windows process (no console
-    window) then exit the current process.  The child will skip the
-    --background flag so it runs normally.
-    """
-    import ctypes
-
-    # Build the new argv without --background so the child doesn't loop.
-    args = [a for a in sys.argv if a not in ("--background", "-b")]
-
-    DETACHED_PROCESS    = 0x00000008
-    CREATE_NO_WINDOW    = 0x08000000
-    CREATE_NEW_PG       = 0x00000200
-
-    # When frozen, sys.executable IS the .exe — relaunch it directly without
-    # prepending it again as a script argument.
-    if getattr(sys, "frozen", False):
-        cmd = [sys.executable] + args[1:]  # args[0] would be the exe path itself
-    else:
-        cmd = [sys.executable] + args
-
-    proc = subprocess.Popen(
-        cmd,
-        creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW | CREATE_NEW_PG,
-        close_fds=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    console.print(
-        f"\n[{CG}]✔  HydraCast launched in background (PID {proc.pid}).[/]\n"
-        f"[{CD}]   Web UI : http://localhost:{get_web_port()}[/]\n"
-    )
-    sys.exit(0)
-
-
-def _apply_background_mode(console: Console) -> bool:
-    """
-    Daemonize the process.  Returns True if execution should continue in
-    this process (i.e. we are the daemon child on Linux/macOS).
-    Returns False is never reached on Windows (sys.exit called in parent).
-    """
-    log_path = str(LOGS_DIR() / "hydracast.log")
-
-    if IS_WIN:
-        _daemonize_windows(console)
-        return False  # unreachable — _daemonize_windows calls sys.exit
-
-    # Linux / macOS: double-fork.  After _daemonize_linux the current
-    # process *is* the daemon grandchild if we reach here.
-    _daemonize_linux(console, log_path)
-    return True
-
-
 # =============================================================================
 # CLI
 # =============================================================================
@@ -330,16 +241,6 @@ def _parse_args() -> argparse.Namespace:
             "Prevent accidental shutdown: ignore Ctrl-C, disable the console "
             "close button (Windows) and ignore SIGHUP (Linux/macOS). "
             "Only Q in the TUI or the Web UI can stop HydraCast."
-        ),
-    )
-    p.add_argument(
-        "--background", "-b", action="store_true",
-        help=(
-            "Detach from the terminal and run as a background process. "
-            "Linux/macOS: double-fork daemon. "
-            "Windows: re-launch without a console window. "
-            "In background mode the TUI is disabled; use the Web UI to manage streams. "
-            "Implies --protect."
         ),
     )
     return p.parse_args()
@@ -527,21 +428,6 @@ def main() -> None:
                 console.print(f"  {c.name:20s}  TCP :{c.port}{hls_info}")
         sys.exit(0)
 
-    # ── Background mode ───────────────────────────────────────────────────────
-    # Must happen BEFORE pre-flight so the parent can exit cleanly.
-    background_mode = args.background
-    if background_mode:
-        console.print(
-            f"[{CY}]⚡  Background mode requested — "
-            f"{'daemonizing' if not IS_WIN else 'detaching'} …[/]"
-        )
-        # On Linux/macOS _apply_background_mode forks; only the daemon child
-        # continues past this call.  On Windows sys.exit() is called.
-        _apply_background_mode(console)
-        # If we reach here we are the daemon child (Linux/macOS).
-        # Re-create console since we have new stdout/stderr.
-        console = Console(force_terminal=False, highlight=False)
-
     # ── Pre-flight ────────────────────────────────────────────────────────────
     configs = _preflight(console)
 
@@ -566,11 +452,11 @@ def main() -> None:
     def _on_signal(sig: int, _frame: object) -> None:  # noqa: ANN001
         _shutdown.set()
 
-    # In protect or background mode Ctrl-C is re-wired to a warning;
+    # In protect mode Ctrl-C is re-wired to a warning;
     # in normal mode it still triggers a clean shutdown.
-    if args.protect or background_mode:
+    if args.protect:
         _protect_signals(glog)
-        if IS_WIN and not background_mode:
+        if IS_WIN:
             _win_disable_close_button()
             _win_set_title(f"{APP_NAME} v{APP_VER}  —  Press Q to quit")
         glog.add(
@@ -605,24 +491,18 @@ def main() -> None:
             f"Web UI → http://{_local_ip()}:{get_web_port()}", "INFO"
         )
 
-    # ── TUI main loop — skipped in background mode ────────────────────────────
-    if not background_mode:
-        run_tui_loop(
-            manager=manager,
-            glog=glog,
-            console=console,
-            shutdown_event=_shutdown,
-            export_urls_fn=manager.export_urls,
-        )
-    else:
-        # Background / daemon mode: no TUI.  Block until SIGTERM or web shutdown.
-        glog.add("Running in background mode — Web UI is the only control interface.")
-        _shutdown.wait()
+    # ── TUI main loop ─────────────────────────────────────────────────────────
+    run_tui_loop(
+        manager=manager,
+        glog=glog,
+        console=console,
+        shutdown_event=_shutdown,
+        export_urls_fn=manager.export_urls,
+    )
 
     # ── Graceful shutdown ─────────────────────────────────────────────────────
-    if not background_mode:
-        console.clear()
-        console.print(f"\n[{CY}]⏳  Stopping all streams … please wait.[/]")
+    console.clear()
+    console.print(f"\n[{CY}]⏳  Stopping all streams … please wait.[/]")
     manager.shutdown()
     if web:
         web.stop()
@@ -632,8 +512,7 @@ def main() -> None:
             f.unlink()
         except Exception:
             pass
-    if not background_mode:
-        console.print(f"[{CG}]✔  HydraCast stopped cleanly. Goodbye.[/]\n")
+    console.print(f"[{CG}]✔  HydraCast stopped cleanly. Goodbye.[/]\n")
 
 
 # =============================================================================
