@@ -21,8 +21,8 @@ Unicode True
 ;    - Silent install support  (/S flag)
 ;
 ;  v5.5 changes
-;  ─────────────
-;  hydracast_bg.exe fully removed — unified into hydracast.exe.
+;  -------------
+;  hydracast_bg.exe fully removed -- unified into hydracast.exe.
 ;  Single-instance mutex prevents double-launch without UAC on restart.
 ;  Guardian restarts never trigger UAC (inherits elevated token).
 ; ============================================================================
@@ -69,7 +69,7 @@ ShowUninstDetails   show
 !define MUI_WELCOMEPAGE_TITLE        "Welcome to HydraCast ${PRODUCT_VERSION} Setup"
 !define MUI_WELCOMEPAGE_TEXT         "This wizard will guide you through the installation of HydraCast, a multi-stream RTSP weekly scheduler.$\r$\n$\r$\nClick Next to continue."
 
-; Finish page launches hydracast.exe — opens TUI and tray icon immediately.
+; Finish page launches hydracast.exe -- opens TUI and tray icon immediately.
 !define MUI_FINISHPAGE_RUN           "$INSTDIR\${PRODUCT_EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT      "Launch HydraCast"
 !define MUI_FINISHPAGE_LINK          "Visit HydraCast on GitHub"
@@ -161,13 +161,13 @@ Section "HydraCast (required)" SecMain
     WriteRegDWORD HKLM "${REG_KEY}" "NoRepair"             1
     WriteRegDWORD HKLM "${REG_KEY}" "EstimatedSize"        950000
 
-    ; Start Menu — single shortcut (TUI opens + tray is always visible)
+    ; Start Menu -- single shortcut (TUI opens + tray is always visible)
     CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
 
     CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}\HydraCast.lnk" \
         "$INSTDIR\${PRODUCT_EXE}" "" \
         "$INSTDIR\_internal\resources\HydraCast.ico" 0 \
-        SW_SHOWNORMAL "" "HydraCast — RTSP multi-stream scheduler"
+        SW_SHOWNORMAL "" "HydraCast -- RTSP multi-stream scheduler"
 
     CreateShortcut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall HydraCast.lnk" \
         "$INSTDIR\${UNINSTALLER_NAME}" "" \
@@ -178,10 +178,10 @@ Section "HydraCast (required)" SecMain
         CreateShortcut "$DESKTOP\HydraCast.lnk" \
             "$INSTDIR\${PRODUCT_EXE}" "" \
             "$INSTDIR\_internal\resources\HydraCast.ico" 0 \
-            SW_SHOWNORMAL "" "HydraCast — RTSP multi-stream scheduler"
+            SW_SHOWNORMAL "" "HydraCast -- RTSP multi-stream scheduler"
     ${EndIf}
 
-    ; Startup registry — HKCU only (no admin needed at runtime)
+    ; Startup registry -- HKCU only (no admin needed at runtime)
     ; Points to hydracast.exe (unified TUI+tray, no separate bg exe).
     ${If} $DoStartup = ${BST_CHECKED}
         WriteRegStr HKCU "${STARTUP_REG_KEY}" "${PRODUCT_NAME}" \
@@ -195,7 +195,7 @@ SectionEnd
 ; -- Uninstaller --------------------------------------------------------------
 Section "Uninstall"
 
-    ; Kill processes — workers first, then supervisors.
+    ; Kill processes -- workers first, then supervisors.
     ExecWait 'taskkill /F /IM "${FFMPEG_EXE}"'           $0
     ExecWait 'taskkill /F /IM "${FFPROBE_EXE}"'          $0
     ExecWait 'taskkill /F /IM "${MEDIAMTX_EXE}"'         $0
