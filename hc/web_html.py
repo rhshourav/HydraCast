@@ -17,7 +17,6 @@ _HTML = r"""
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -200,10 +199,6 @@ _HTML = r"""
 }
 @keyframes fadeIn{
   from{opacity:0}to{opacity:1}
-}
-@keyframes bufferingPulse{
-  0%,100%{opacity:1;border-color:rgba(122,159,194,0.38)}
-  50%{opacity:0.55;border-color:rgba(122,159,194,0.75)}
 }
 @keyframes shimmer{
   0%{background-position:-200% 0}
@@ -704,7 +699,6 @@ tr:hover td{background:rgba(184,115,51,0.045)}
 .SCHED{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(122,159,194,0.3)}
 .DISABLED{background:rgba(100,100,100,0.07);color:var(--text3);border:1px solid var(--border)}
 .ONESHOT{background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.4)}
-.BUFFERING{background:rgba(122,159,194,0.13);color:var(--blue);border:1px solid rgba(122,159,194,0.38);animation:bufferingPulse 1.1s ease-in-out infinite}
 
 /* ─────────── PROGRESS ─────────── */
 .prog{
@@ -877,12 +871,11 @@ select option{background:var(--bg3)}
    sidebar scrolls internally.  We lock the tab to its viewport height
    and let the sidebar flex-child consume the leftover space. */
 #tab-config{overflow:hidden;padding-bottom:0}
-#tab-config.active{display:flex;flex-direction:column}
-.config-layout{display:grid;grid-template-columns:235px 1fr;gap:18px;flex:1;min-height:0}
+.config-layout{display:grid;grid-template-columns:235px 1fr;gap:18px;height:100%}
 .config-sidebar{
   background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
   overflow:hidden;transition:background 0.35s,border-color 0.35s;
-  display:flex;flex-direction:column;min-height:0;
+  display:flex;flex-direction:column;
 }
 .config-sidebar-hdr{
   padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg3);
@@ -893,8 +886,8 @@ select option{background:var(--bg3)}
 #config-stream-list{
   flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;
 }
-#config-stream-list::-webkit-scrollbar{width:5px}
-#config-stream-list::-webkit-scrollbar-track{background:var(--bg3)}
+#config-stream-list::-webkit-scrollbar{width:4px}
+#config-stream-list::-webkit-scrollbar-track{background:transparent}
 #config-stream-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 #config-stream-list::-webkit-scrollbar-thumb:hover{background:var(--text3)}
 .config-stream-item{
@@ -1341,9 +1334,6 @@ select option{background:var(--bg3)}
     <button class="nav-tab" onclick="switchTab('events',this)">
       <span class="tab-dot"></span>Events
     </button>
-    <button class="nav-tab" onclick="switchTab('cameras',this)">
-      <span class="tab-dot"></span>Cameras
-    </button>
     <button class="nav-tab" onclick="switchTab('settings',this)">
       <span class="tab-dot"></span>Settings
     </button>
@@ -1634,131 +1624,6 @@ select option{background:var(--bg3)}
       </div>
     </div>
   </div>
-</div>
-
-<!-- ══ CAMERAS TAB ══ -->
-<div id="tab-cameras" class="tab-panel">
-  <div class="section-hdr">
-    <h2>Cameras</h2>
-    <span class="sep"></span>
-    <button class="btn g" onclick="openCameraForm()" title="Add a new camera to the registry">+ Add Camera</button>
-    <button class="btn" onclick="loadCameras()" title="Refresh camera list">↻ Refresh</button>
-  </div>
-
-  <!-- Add/Edit Camera inline form -->
-  <div id="cam-form-wrap" style="display:none;margin:0 0 18px 0;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h3 id="cam-form-title" style="font-size:14px;font-weight:600;color:var(--text)">Add Camera</h3>
-      <button onclick="closeCameraForm()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">✕</button>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Name <span style="color:var(--red)">*</span></label>
-        <input id="cam-name" placeholder="e.g. Front Door" style="width:100%;font-size:12px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-      </div>
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Source Type</label>
-        <div style="display:flex;gap:4px">
-          <button id="cam-st-network" class="btn b" onclick="setCamSourceType('network')" style="flex:1;font-size:11px;padding:5px 8px">Network</button>
-          <button id="cam-st-usb" class="btn" onclick="setCamSourceType('usb')" style="flex:1;font-size:11px;padding:5px 8px">USB/V4L2</button>
-          <button id="cam-st-dshow" class="btn" onclick="setCamSourceType('dshow')" style="flex:1;font-size:11px;padding:5px 8px">DirectShow</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Network fields -->
-    <div id="cam-network-fields" style="display:grid;grid-template-columns:1fr 1fr 80px 1fr;gap:12px;margin-top:12px">
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Protocol</label>
-        <select id="cam-protocol" onchange="onCamProtocolChange()" style="width:100%;font-size:12px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-          <option value="rtsp">RTSP (554)</option>
-          <option value="rtmp">RTMP (1935)</option>
-          <option value="http">HTTP (80)</option>
-          <option value="srt">SRT (9000)</option>
-          <option value="udp">UDP (1234)</option>
-        </select>
-      </div>
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Host <span style="color:var(--red)">*</span></label>
-        <input id="cam-host" placeholder="192.168.1.x or hostname" oninput="_updateCamUrlPreview()" style="width:100%;font-size:12px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-      </div>
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Port</label>
-        <input id="cam-port" type="number" min="1" max="65535" value="554" oninput="_camPortEdited=true;_updateCamUrlPreview()" style="width:100%;font-size:12px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-      </div>
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Path</label>
-        <input id="cam-path" placeholder="/live" oninput="_updateCamUrlPreview()" style="width:100%;font-size:12px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-      </div>
-    </div>
-
-    <!-- Device field (USB/dshow) -->
-    <div id="cam-device-fields" style="display:none;margin-top:12px">
-      <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Device <span style="color:var(--red)">*</span></label>
-      <input id="cam-device" placeholder="/dev/video0 (Linux) or capture card name (Windows)" oninput="_updateCamUrlPreview()" style="width:100%;font-size:12px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-    </div>
-
-    <!-- Auth (network only) -->
-    <div id="cam-auth-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Username</label>
-        <input id="cam-username" placeholder="Optional" oninput="_updateCamUrlPreview()" style="width:100%;font-size:12px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-      </div>
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Password <span id="cam-pwd-edit-hint" style="color:var(--text3);font-size:10px"></span></label>
-        <input id="cam-password" type="password" placeholder="Optional" style="width:100%;font-size:12px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-        <div id="cam-pwd-change-wrap" style="display:none;margin-top:4px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3);cursor:pointer">
-            <input type="checkbox" id="cam-pwd-change-cb" onchange="toggleCamPwdChange()" style="width:auto;accent-color:var(--accent)"> Change password
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 100px;gap:12px;margin-top:12px">
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Notes</label>
-        <input id="cam-notes" placeholder="Optional description" style="width:100%;font-size:12px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text)">
-      </div>
-      <div>
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Enabled</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding-top:6px">
-          <input type="checkbox" id="cam-enabled" checked style="width:auto;accent-color:var(--accent)"> Active
-        </label>
-      </div>
-    </div>
-
-    <!-- URL preview -->
-    <div id="cam-url-preview" style="margin-top:12px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);font-size:11px;color:var(--text2)">
-      URL preview will appear here
-    </div>
-
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="btn g" onclick="saveCameraForm()" style="font-size:13px;padding:7px 20px">Save Camera</button>
-      <button class="btn" onclick="closeCameraForm()" style="font-size:13px;padding:7px 16px">Cancel</button>
-      <div id="cam-form-status" style="font-size:11px;color:var(--text3);align-self:center;margin-left:4px"></div>
-    </div>
-  </div>
-
-  <!-- Camera table -->
-  <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead>
-        <tr style="border-bottom:2px solid var(--border)">
-          <th style="text-align:left;padding:8px 12px;color:var(--text3);font-weight:500">Name</th>
-          <th style="text-align:left;padding:8px 12px;color:var(--text3);font-weight:500">Type</th>
-          <th style="text-align:left;padding:8px 12px;color:var(--text3);font-weight:500">URL</th>
-          <th style="text-align:left;padding:8px 12px;color:var(--text3);font-weight:500">Status</th>
-          <th style="text-align:left;padding:8px 12px;color:var(--text3);font-weight:500">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="cam-tbody">
-        <tr><td colspan="5"><div class="empty"><div class="empty-icon">📷</div>No cameras configured.</div></td></tr>
-      </tbody>
-    </table>
-  </div>
-  <div id="cam-status" style="font-size:11px;color:var(--text3);margin-top:8px;padding:0 4px"></div>
 </div>
 
 <!-- ══ SETTINGS TAB ══ -->
@@ -2250,9 +2115,6 @@ select option{background:var(--bg3)}
             <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
               <input type="checkbox" id="bk-media-roots" checked style="width:auto;accent-color:var(--accent)" title="Include extra media root directory paths in the backup"> Media roots
             </label>
-            <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="bk-cameras" checked style="width:auto;accent-color:var(--accent)" title="Include camera registry in the backup (passwords are excluded)"> Cameras
-            </label>
           </div>
           <button class="btn g" onclick="downloadBackup()" title="Download a .hc backup file containing the selected configuration">⬇ Download Backup</button>
           <div id="bk-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
@@ -2534,7 +2396,6 @@ function _doSwitchTab(name,btn){
   else if(name==='viewer'){loadViewer();}
   else if(name==='config'){loadConfig();}
   else if(name==='settings'){updateSysInfo();loadMailConfig();ssInit();loadHolidaySettings();loadCustomHolidays();loadMediaRoots();loadBrandingSettings();}
-  else if(name==='cameras'){loadCameras();}
 }
 
 // ═══════════════════════════════════
@@ -2571,26 +2432,15 @@ async function api(action,data){
 // ═══════════════════════════════════
 // DOWNLOAD URLS CSV
 // ═══════════════════════════════════
-async function downloadUrlsCsv(){
+function downloadUrlsCsv(){
   const incFiles=document.getElementById('csv-files')?.checked?'1':'0';
-  try{
-    toast('Downloading URLs CSV…','info');
-    const r=await fetch('/api/urls_csv?include_files='+incFiles);
-    if(!r.ok) throw new Error('Server returned '+r.status);
-    const blob=await r.blob();
-    const cd=r.headers.get('Content-Disposition')||'';
-    const m=cd.match(/filename="([^"]+)"/);
-    const fname=m?m[1]:'hydracast_urls.csv';
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url; a.download=fname;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url),5000);
-    toast('URLs CSV downloaded ✓','ok');
-  }catch(e){
-    toast('CSV download failed: '+e.message,'err');
-  }
+  const a=document.createElement('a');
+  a.href='/api/urls_csv?include_files='+incFiles;
+  a.download='';           // filename comes from Content-Disposition
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('Downloading URLs CSV\u2026','info');
 }
 
 // ═══════════════════════════════════
@@ -2687,17 +2537,14 @@ function _sigOf(s){
          s.shuffle?1:0,
          s.active_event||'',
          s.current_file||'',
-         s.oneshot_active?1:0,
-         s.buffering?1:0].join('|');
+         s.oneshot_active?1:0].join('|');
 }
 
 function _rowCells(s,i,showRtsp){
   const pct=Math.max(0,Math.min(100,+s.progress)).toFixed(1);
   const fc=s.progress>80?'var(--red)':s.progress>55?'var(--yellow)':'var(--green)';
-  // Show BUFFERING badge while _start_ffmpeg_with_retry is absorbing transient
-  // broken-pipe / 400 Bad Request failures (state.buffering set by worker v5.3.7).
-  const status=s.buffering?'BUFFERING':(s.status||'STOPPED');
-  const isEvent = s.status==='ONESHOT' || !!s.oneshot_active;
+  const status=s.status||'STOPPED';
+  const isEvent = status==='ONESHOT' || !!s.oneshot_active;
   const nowPlayingFile = s.current_file || (isEvent ? s.active_event : null);
   return `
     <td class="td-muted">${i+1}</td>
@@ -2760,7 +2607,6 @@ function _rowCells(s,i,showRtsp){
         ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭</button>`:''}
         ${s.status==='LIVE'?`<button class="btn b" onclick="openSeek('${esc(s.name)}',${s.duration||0},${s.current_secs||0})" title="Jump to a specific position in the current file">⏩</button>`:''}
         ${isEvent?`<button class="btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.5);font-size:11px" onclick="cancelEvent('${esc(s.name)}')" title="Stop the running event and resume compliance/playlist immediately">✕ Cancel Event</button>`:''}
-        ${s.source_mode&&s.source_mode!=='playlist'?`<button class="btn ${s.active_source==='camera'?'b':''}" style="font-size:10px;padding:3px 8px;${s.active_source==='camera'?'color:var(--cyan)':''}" onclick="switchSource('${esc(s.name)}','${s.active_source==='camera'?'playlist':'camera'}')" title="${s.active_source==='camera'?'Switch to Playlist':'Switch to Camera'}">${s.active_source==='camera'?'📁 Playlist':'📷 Camera'}</button>`:''}
       </div>
       ${s.error_msg?`<div style="font-size:10px;color:var(--red);margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.error_msg)}">⚠ ${esc(s.error_msg)}</div>`:''}
     </td>`;
@@ -2918,11 +2764,9 @@ async function loadViewer(){
   Object.keys(existing).forEach(n=>{ if(!names.has(n)){existing[n].remove();delete existing[n];} });
 
   data.forEach((s,idx)=>{
-    // Show BUFFERING badge while _start_ffmpeg_with_retry is absorbing transient
-    // broken-pipe / 400 Bad Request failures (state.buffering set by worker v5.3.7).
-    const status=s.buffering?'BUFFERING':(s.status||'STOPPED');
-    const isLive=s.status==='LIVE';
-    const isEvent=s.status==='ONESHOT' || !!s.oneshot_active;
+    const status=s.status||'STOPPED';
+    const isLive=status==='LIVE';
+    const isEvent=status==='ONESHOT' || !!s.oneshot_active;
     const pct=(+s.progress||0).toFixed(1);
     const nowFile = s.current_file || (isEvent ? s.active_event : null);
     // safeName must be computed ONCE here and used in BOTH the first-render
@@ -2938,12 +2782,11 @@ async function loadViewer(){
     if(!existing[s.name]){
       // ── First render: create the full card ──
       const div=document.createElement('div');
-      div.className='stream-card'+(isLive||isEvent||s.buffering?' is-live':'');
+      div.className='stream-card'+(isLive||isEvent?' is-live':'');
       div.dataset.vname=s.name;
       div.innerHTML=`
         <div class="stream-card-header">
           <span class="badge vc-badge-${safeName}">${esc(status)}</span>
-          ${s.source_mode&&s.source_mode!=='playlist'?`<span class="badge vc-srcbadge-${safeName}" style="background:${s.active_source==='camera'?'rgba(122,184,194,0.15)':'var(--yellow-dim)'};color:${s.active_source==='camera'?'var(--cyan)':'var(--accent-light)'};font-size:9px">${s.active_source==='camera'?'📷 CAM':'📁 PLS'}</span>`:''}
           <span class="stream-card-title">${esc(s.name)}</span>
           <span style="font-size:11px;color:var(--accent-light)">:${s.port}</span>
         </div>
@@ -2967,8 +2810,7 @@ async function loadViewer(){
             <div class="stat-item"><b class="vc-pct-${safeName}">${pct}%</b></div>
           </div>
           <div class="btn-group">
-            <button class="btn b vc-copy-${safeName}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.rtsp||this.dataset.hls)" title="Copy stream URL to clipboard">📋</button>
-            ${s.source_mode&&s.source_mode!=='playlist'?`<button class="btn vc-sw-${safeName}" style="font-size:10px;padding:3px 8px" onclick="switchSource('${esc(s.name)}','${s.active_source==='camera'?'playlist':'camera'}')" title="${s.active_source==='camera'?'Switch to Playlist':'Switch to Camera'}">${s.active_source==='camera'?'📁':'📷'}</button>`:''}
+            <button class="btn b vc-copy-${safeName}" style="font-size:10px;padding:3px 8px" data-hls="${esc(s.hls_url||'')}" data-rtsp="${esc(s.rtsp_url||'')}" onclick="copyText(this.dataset.hls||this.dataset.rtsp)" title="Copy stream URL to clipboard">📋</button>
             ${isEvent?`<button class="btn" style="background:var(--purple-dim);color:var(--purple);border:1px solid rgba(154,138,176,0.5);font-size:10px;padding:3px 8px" onclick="cancelEvent('${esc(s.name)}')" title="Stop running event, resume compliance/playlist">✕ Event</button>`:''}
           </div>
         </div>
@@ -2985,7 +2827,7 @@ async function loadViewer(){
     } else {
       // ── Subsequent renders: only update text/status, leave preview untouched ──
       const card=existing[s.name];
-      card.className='stream-card'+(isLive||isEvent||s.buffering?' is-live':'');
+      card.className='stream-card'+(isLive||isEvent?' is-live':'');
       // safeName already computed above — same value used for first-render classes.
       const badge=card.querySelector('.vc-badge-'+safeName);
       if(badge){badge.className='badge '+esc(status);badge.textContent=status;}
@@ -2999,21 +2841,6 @@ async function loadViewer(){
       if(pfill){pfill.style.width=pct+'%';pfill.style.background=isEvent?'var(--purple)':+pct>80?'var(--red)':+pct>55?'var(--yellow)':'var(--green)';}
       const copyBtn=card.querySelector('.vc-copy-'+safeName);
       if(copyBtn){if(s.hls_url)copyBtn.dataset.hls=s.hls_url;if(s.rtsp_url)copyBtn.dataset.rtsp=s.rtsp_url;}
-      // Update source badge
-      const srcBadge=card.querySelector('.vc-srcbadge-'+safeName);
-      if(srcBadge&&s.source_mode&&s.source_mode!=='playlist'){
-        srcBadge.style.background=s.active_source==='camera'?'rgba(122,184,194,0.15)':'var(--yellow-dim)';
-        srcBadge.style.color=s.active_source==='camera'?'var(--cyan)':'var(--accent-light)';
-        srcBadge.textContent=s.active_source==='camera'?'📷 CAM':'📁 PLS';
-      }
-      // Update source switch button
-      const swBtn=card.querySelector('.vc-sw-'+safeName);
-      if(swBtn&&s.source_mode&&s.source_mode!=='playlist'){
-        const toTarget=s.active_source==='camera'?'playlist':'camera';
-        swBtn.onclick=()=>switchSource(s.name,toTarget);
-        swBtn.title=s.active_source==='camera'?'Switch to Playlist':'Switch to Camera';
-        swBtn.textContent=s.active_source==='camera'?'📁':'📷';
-      }
       // Update now-playing chip
       const npEl=card.querySelector('.vc-nowplaying-'+safeName);
       if(npEl){
@@ -3046,27 +2873,13 @@ function loadHLSStream(name,hlsUrl,rtspUrl){
     toast('No HLS or RTSP URL available','err');return;
   }
   if(hlsUrl){
-    // Inject a <video> element then attach HLS.js (Chrome/Firefox) or
-    // fall back to native HLS (Safari / iOS which support it natively).
-    preview.innerHTML='<video id="vid-'+name+'" controls autoplay muted playsinline '
-      +'style="width:100%;height:100%;object-fit:contain;background:#000"></video>';
-    const vid=document.getElementById('vid-'+name);
-    if(typeof Hls!=='undefined'&&Hls.isSupported()){
-      const hls=new Hls({debug:false,enableWorker:true,lowLatencyMode:true});
-      hls.loadSource(hlsUrl);
-      hls.attachMedia(vid);
-      hls.on(Hls.Events.ERROR,function(_,d){
-        if(d.fatal){
-          preview.innerHTML='<div class="stream-overlay"><div style="color:var(--red);font-size:11px">HLS error: '+d.details+'</div></div>';
-          hls.destroy();
-        }
-      });
-    } else if(vid.canPlayType('application/vnd.apple.mpegurl')){
-      // Native HLS (Safari)
-      vid.src=hlsUrl;
-    } else {
-      preview.innerHTML='<div class="stream-overlay"><div style="color:var(--yellow);font-size:11px;text-align:center;padding:12px">HLS.js failed to load.<br>Try opening the URL directly:<br><a href="'+hlsUrl+'" style="color:var(--cyan)" target="_blank">'+hlsUrl+'</a></div></div>';
-    }
+    // Try HLS.js if available, else native video
+    preview.innerHTML=`
+      <video id="vid-${esc(name)}" controls autoplay muted style="width:100%;height:100%;object-fit:contain;background:#000"
+        onerror="this.outerHTML='<div class=\\'stream-overlay\\'><div style=\\'color:var(--red);font-size:11px\\'>HLS load failed</div></div>'">
+        <source src="${esc(hlsUrl)}" type="application/x-mpegURL">
+        Your browser doesn't support HLS.
+      </video>`;
   } else {
     overlay.innerHTML=`
       <div style="font-size:11px;color:var(--text3);text-align:center;padding:20px">
@@ -3615,34 +3428,6 @@ function renderConfigEditor(s){
       </div>
     </div>
     <div class="config-section">
-      <div class="config-section-title">Live Source</div>
-      <div style="margin-bottom:10px">
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:5px">Source Mode</label>
-        <div style="display:flex;gap:6px">
-          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);cursor:pointer">
-            <input type="radio" name="cfg-source-mode" value="playlist" ${(!s.source_mode||s.source_mode==='playlist')?'checked':''} style="width:auto;accent-color:var(--accent)" onchange="cfgUpdateSourceMode()"> Playlist
-          </label>
-          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);cursor:pointer">
-            <input type="radio" name="cfg-source-mode" value="camera" ${s.source_mode==='camera'?'checked':''} style="width:auto;accent-color:var(--accent)" onchange="cfgUpdateSourceMode()"> Camera Only
-          </label>
-          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);cursor:pointer">
-            <input type="radio" name="cfg-source-mode" value="hybrid" ${s.source_mode==='hybrid'?'checked':''} style="width:auto;accent-color:var(--accent)" onchange="cfgUpdateSourceMode()"> Hybrid
-          </label>
-        </div>
-      </div>
-      <div id="cfg-camera-fields" style="display:${s.source_mode&&s.source_mode!=='playlist'?'block':'none'}">
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Camera</label>
-        <select id="cfg-camera-id" style="width:100%;font-size:12px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text);margin-bottom:10px">
-          <option value="">— Select camera —</option>
-        </select>
-        <div id="cfg-camera-windows-wrap" style="display:${s.source_mode==='hybrid'?'block':'none'}">
-          <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:5px">Camera Schedule Windows <span style="color:var(--text3);font-weight:400">(camera active during these times)</span></label>
-          <div id="cfg-cam-win-list"></div>
-          <button class="btn" style="font-size:11px;margin-top:6px" onclick="cfgAddCamWindow()">+ Add Window</button>
-          <div style="font-size:10px;color:var(--text3);margin-top:5px">ⓘ Manual override resets at next scheduled boundary or on server restart.</div>
-        </div>
-      </div>
-    <div class="config-section">
       <div class="config-section-title">Schedule (Weekdays)</div>
       <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px">
         ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d,i)=>{
@@ -3728,7 +3513,6 @@ function renderConfigEditor(s){
   _clearDirty();
   renderPlaylistEditor('cfg-pl-wrap', s.files||'');
   setTimeout(_attachDirtyListeners, 0);
-  setTimeout(()=>{ loadCameras(); cfgFillCameraSection(s); }, 0);
 }
 
 function _restoreFooter(){
@@ -3769,9 +3553,6 @@ async function saveConfig(){
     shuffle:document.getElementById('cfg-shuffle')?.checked||false,
     enabled:document.getElementById('cfg-enabled')?.checked!==false,
     hls_enabled:document.getElementById('cfg-hls')?.checked||false,
-    source_mode:document.querySelector('input[name="cfg-source-mode"]:checked')?.value||'playlist',
-    camera_id:document.getElementById('cfg-camera-id')?.value||null,
-    camera_windows:collectCameraWindows('cfg'),
     files,
     folder_source:folderPath||null,
     weekdays:weekdaysStr,
@@ -3839,52 +3620,7 @@ function _attachDirtyListeners(){
   });
 }
 
-// ── Weekday-aware playlist sort ──────────────────────────────────────────────
-// Day-tag detection: matches _MON_, _TUE_, _WED_, _THU_, _FRI_, _SAT_, _SUN_
-// (case-insensitive) anywhere in the file name or path.
-const _DAY_TAG_RE = /_(MON|TUE|WED|THU|FRI|SAT|SUN)_/i;
-const _DAY_TAG_IDX = {MON:0,TUE:1,WED:2,THU:3,FRI:4,SAT:5,SUN:6};
-
-function _dayDistance(path){
-  // Days forward from today until the file's tagged weekday.
-  // Returns 7 for same-weekday-as-today (plays last in cycle),
-  // and 14 for untagged files (always trails all tagged files).
-  const m = _DAY_TAG_RE.exec((path||'').replace(/\\/g,'/').split('/').pop()||'');
-  if(!m) return 14;
-  const fileDay = _DAY_TAG_IDX[m[1].toUpperCase()];
-  const today   = new Date().getDay(); // 0=Sun…6=Sat  → convert to Mon-based
-  const todayMon = (today + 6) % 7;   // 0=Mon…6=Sun
-  const dist = (fileDay - todayMon + 7) % 7;
-  return dist > 0 ? dist : 7;         // 0 = same day → send to end
-}
-
-function _plSortWeekdayOrPriority(){
-  // If at least one item has a day-tag, sort the whole list by weekday distance.
-  // Otherwise fall back to priority sort (standard manual-playlist behaviour).
-  const hasDayTags = _playlistItems.some(it => _DAY_TAG_RE.test(
-    (it.path||'').replace(/\\/g,'/').split('/').pop()||''));
-  if(hasDayTags){
-    _playlistItems.sort((a,b)=>{
-      const da=_dayDistance(a.path), db=_dayDistance(b.path);
-      if(da!==db) return da-db;
-      return (a.priority||0)-(b.priority||0); // tiebreak by priority
-    });
-  }else{
-    _playlistItems.sort((a,b)=>(a.priority||0)-(b.priority||0));
-  }
-}
-
-function renderPlaylistEditor(cid,raw){
-  _playlistItems=_parsePL(raw);
-  // Sort by weekday order when day-tagged files are present (e.g. _MON_, _TUE_…).
-  // For such playlists the priority field is 0 for all items (folder-source
-  // streams do not use manual priorities), so a plain priority sort would leave
-  // them in raw string order — which for a folder source may be alphabetical
-  // (_FRI_ first) rather than the correct broadcast week sequence (today first).
-  // When NO day tags are detected fall back to the standard priority sort.
-  _plSortWeekdayOrPriority();
-  _renderPLTable(cid);
-}
+// ── Playlist editor helpers ──────────────────────────────────────────────────
 function _parsePL(raw){
   const items=[];
   for(let part of (raw||'').split(/[;\n]+/)){
@@ -3922,41 +3658,21 @@ function _plGetStr(cid){
   });
   return _plToStr(_playlistItems);
 }
+function renderPlaylistEditor(cid,raw){
+  _playlistItems=_parsePL(raw);
+  _playlistItems.sort((a,b)=>a.priority-b.priority);
+  _renderPLTable(cid);
+}
 function _renderPLTable(cid){
   const wrap=document.getElementById(cid);if(!wrap)return;
-  const hasDayTags=_playlistItems.some(it=>_DAY_TAG_RE.test(
-    (it.path||'').replace(/\\/g,'/').split('/').pop()||''));
-
-  // Day-of-week short names for the badge, aligned with _DAY_TAG_IDX (Mon=0)
-  const _DAY_LABELS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const _todayMon=(new Date().getDay()+6)%7; // 0=Mon…6=Sun
-
   const rows=_playlistItems.map((item,i)=>{
     const ch=_plChannel(item.path);
     const fname=(item.path||'').replace(/\\/g,'/').split('/').pop()||item.path;
-    // Detect weekday tag from filename for the Day column badge
-    const dayMatch=_DAY_TAG_RE.exec(fname);
-    const dayIdx=dayMatch?_DAY_TAG_IDX[dayMatch[1].toUpperCase()]:null;
-    const isToday=dayIdx!==null&&dayIdx===_todayMon;
-    const dayBadge=hasDayTags?(
-      dayIdx!==null
-        ?'<span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;'
-            +(isToday
-              ?'background:var(--green-dim);color:var(--green);border:1px solid rgba(107,142,107,0.4)'
-              :'background:var(--bg4);color:var(--text2);border:1px solid var(--border)')
-            +'">'+_DAY_LABELS[dayIdx]+(isToday?' ★':'')+'</span>'
-        :'<span style="font-size:10px;color:var(--text3)">—</span>'
-    ):'';
-
     return '<tr>'
       +'<td style="width:82px;text-align:center;vertical-align:top;padding-top:8px">'
-        +(hasDayTags
-          ?(dayBadge+'<div style="margin-top:4px;font-size:9px;color:var(--text3)">'
-            +(isToday?'TODAY':(dayIdx!==null?'+'+((_DAY_TAG_IDX[dayMatch[1].toUpperCase()]-_todayMon+7)%7||7)+'d':''))
-            +'</div>')
-          :(_plPriBadge(item.priority)
-            +'<div style="margin-top:4px"><input type="number" value="'+item.priority+'" min="0" max="999"'
-            +' oninput="_plUpd('+i+',&apos;p&apos;,this.value)" style="width:54px;text-align:center"></div>'))
+        +_plPriBadge(item.priority)
+        +'<div style="margin-top:4px"><input type="number" value="'+item.priority+'" min="0" max="999"'
+        +' oninput="_plUpd('+i+',&apos;p&apos;,this.value)" style="width:54px;text-align:center"></div>'
       +'</td>'
       +'<td style="width:100px">'+(ch?'<span class="pl-channel-tag">'+esc(ch)+'</span>':'<span style="color:var(--text3);font-size:10px">—</span>')+'</td>'
       +'<td><div class="pl-path" title="'+esc(item.path)+'" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px">'+esc(fname)+'</div>'
@@ -3968,26 +3684,20 @@ function _renderPLTable(cid){
       +'</tr>';
   }).join('');
 
-  const sortBtnLabel=hasDayTags
-    ?'<i class="fa fa-calendar-week" style="margin-right:4px"></i>Sort by Weekday'
-    :'<i class="fa fa-sort-numeric-up" style="margin-right:4px"></i>Sort by Priority';
-  const priorityHeader=hasDayTags?'Day':'Priority';
-
   wrap.innerHTML=
     '<div class="pl-editor">'
       +'<div class="pl-toolbar">'
         +'<span class="pl-toolbar-label"><i class="fa fa-list-ol" style="margin-right:5px;opacity:0.65"></i>'
         +_playlistItems.length+' file'+(_playlistItems.length!==1?'s':'')+'</span>'
-        +'<button class="btn b" style="padding:3px 10px;font-size:10px" title="'
-          +(hasDayTags?'Sort files by weekday (today first)':'Sort files by priority (highest first)')
-          +'" onclick="_plSort(&apos;'+cid+'&apos;)">'+sortBtnLabel+'</button>'
+        +'<button class="btn b" style="padding:3px 10px;font-size:10px" title="Sort files by priority (highest first)" onclick="_plSort(&apos;'+cid+'&apos;)">'
+          +'<i class="fa fa-sort-numeric-up" style="margin-right:4px"></i>Sort by Priority</button>'
         +'<button class="btn" style="padding:3px 10px;font-size:10px" title="View or edit the raw playlist text" onclick="_plRawView(&apos;'+cid+'&apos;)">'
           +'<i class="fa fa-code" style="margin-right:4px"></i>Raw</button>'
       +'</div>'
       +(_playlistItems.length>0
         ?'<div style="overflow-x:auto"><table class="pl-table">'
           +'<thead><tr>'
-            +'<th style="width:82px;text-align:center">'+priorityHeader+'</th>'
+            +'<th style="width:82px;text-align:center">Priority</th>'
             +'<th style="width:100px">Channel</th>'
             +'<th>File</th>'
             +'<th style="width:106px">Start At</th>'
@@ -4025,7 +3735,7 @@ function _plSort(cid){
     if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
     if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
   });
-  _plSortWeekdayOrPriority();
+  _playlistItems.sort((a,b)=>a.priority-b.priority);
   _renderPLTable(cid);
 }
 function _plAdd(cid){
@@ -4033,7 +3743,7 @@ function _plAdd(cid){
   const raw=inp.value.trim();if(!raw){toast('Enter a file path','err');return;}
   const parsed=_parsePL(raw);if(!parsed.length){toast('Invalid path','err');return;}
   _playlistItems.push(...parsed);
-  _plSortWeekdayOrPriority();
+  _playlistItems.sort((a,b)=>a.priority-b.priority);
   inp.value='';_markDirty();_renderPLTable(cid);
 }
 function _plRawView(cid){
@@ -4063,7 +3773,7 @@ function _plRawView(cid){
 }
 function _plTableView(cid){
   const ta=document.querySelector('#'+cid+' textarea');
-  if(ta){_playlistItems=_parsePL(ta.value);_plSortWeekdayOrPriority();_markDirty();}
+  if(ta){_playlistItems=_parsePL(ta.value);_playlistItems.sort((a,b)=>a.priority-b.priority);_markDirty();}
   _renderPLTable(cid);
 }
 
@@ -4089,7 +3799,7 @@ function showNewStreamForm(){
             </i>
           </label>
           <div class="port-field-row">
-            <input id="new-port" type="number" value="30121" min="1025" max="65533" step="2"
+            <input id="new-port" type="number" value="8555" min="1025" max="65533" step="2"
               oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
               title="Must be an ODD number. HLS will use this port + 1 (even).">
             <button type="button" id="suggest-btn-new-port"
@@ -4139,8 +3849,8 @@ function showNewStreamForm(){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="8000k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="320k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="128k"></div>
       </div>
     </div>
     <div class="config-section">
@@ -4164,35 +3874,6 @@ function showNewStreamForm(){
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text2)">
           <input type="checkbox" id="new-hls" style="width:auto;accent-color:var(--accent)" title="Also serve this stream over HLS (HTTP Live Streaming) in addition to RTSP">HLS enabled
         </label>
-      </div>
-    </div>
-    <div class="config-section">
-      <div class="config-section-title">Live Source</div>
-      <div style="margin-bottom:10px">
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:5px">Source Mode</label>
-        <div style="display:flex;gap:6px">
-          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);cursor:pointer">
-            <input type="radio" name="new-source-mode" value="playlist" checked style="width:auto;accent-color:var(--accent)" onchange="newUpdateSourceMode()"> Playlist
-          </label>
-          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);cursor:pointer">
-            <input type="radio" name="new-source-mode" value="camera" style="width:auto;accent-color:var(--accent)" onchange="newUpdateSourceMode()"> Camera Only
-          </label>
-          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);cursor:pointer">
-            <input type="radio" name="new-source-mode" value="hybrid" style="width:auto;accent-color:var(--accent)" onchange="newUpdateSourceMode()"> Hybrid
-          </label>
-        </div>
-      </div>
-      <div id="new-camera-fields" style="display:none">
-        <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:3px">Camera</label>
-        <select id="new-camera-id" style="width:100%;font-size:12px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text);margin-bottom:10px">
-          <option value="">— Select camera —</option>
-        </select>
-        <div id="new-camera-windows-wrap" style="display:none">
-          <label style="font-size:11px;color:var(--text3);display:block;margin-bottom:5px">Camera Schedule Windows <span style="color:var(--text3);font-weight:400">(camera active during these times)</span></label>
-          <div id="new-cam-win-list"></div>
-          <button class="btn" style="font-size:11px;margin-top:6px" onclick="newAddCamWindow()">+ Add Window</button>
-          <div style="font-size:10px;color:var(--text3);margin-top:5px">ⓘ Manual override resets at next scheduled boundary or on server restart.</div>
-        </div>
       </div>
     </div>
     <div class="config-section">
@@ -4249,8 +3930,6 @@ function showNewStreamForm(){
   setTimeout(_attachDirtyListeners, 0);
   // Auto-suggest a free port on load
   setTimeout(()=>suggestNextPort('new-port','new-port-check-result'), 120);
-  // Populate camera dropdown
-  setTimeout(loadCameras, 0);
 }
 
 function switchNewSrcTab(mode){
@@ -4269,7 +3948,7 @@ async function suggestNextPort(inputId, resultId){
   // Always start 2 above the current value so the button advances to a
   // genuinely *next* free port instead of returning the same port when
   // the current one happens to be free already.
-  const cur = parseInt(inp.value||0)||30119;
+  const cur = parseInt(inp.value||0)||8553;
   const from = cur + 2;
   const suggestBtn = document.getElementById('suggest-btn-'+inputId);
   if(suggestBtn){
@@ -4461,14 +4140,11 @@ async function submitNewStream(){
     name,port,files,weekdays,
     folder_source: folderPath||null,
     stream_path:(document.getElementById('new-spath')?.value||'').trim(),
-    video_bitrate:(document.getElementById('new-vbr')?.value||'8000k').trim()||'8000k',
-    audio_bitrate:(document.getElementById('new-abr')?.value||'320k').trim()||'320k',
+    video_bitrate:(document.getElementById('new-vbr')?.value||'2500k').trim()||'2500k',
+    audio_bitrate:(document.getElementById('new-abr')?.value||'128k').trim()||'128k',
     shuffle:document.getElementById('new-shuffle')?.checked||false,
     enabled:document.getElementById('new-enabled')?.checked!==false,
     hls_enabled:document.getElementById('new-hls')?.checked||false,
-    source_mode:document.querySelector('input[name="new-source-mode"]:checked')?.value||'playlist',
-    camera_id:document.getElementById('new-camera-id')?.value||null,
-    camera_windows:collectCameraWindows('new'),
     compliance_enabled:document.getElementById('new-comp-en')?.checked||false,
     compliance_start:(document.getElementById('new-comp-start')?.value||'06:00:00').trim()||'06:00:00',
     compliance_loop:document.getElementById('new-comp-loop')?.checked||false,
@@ -4591,7 +4267,7 @@ function _plAddPath(cid, path) {
     if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
   });
   _playlistItems.push({path, start:'00:00:00', priority:0});
-  _plSortWeekdayOrPriority();
+  _playlistItems.sort((a,b)=>a.priority-b.priority);
   _markDirty();
   _renderPLTable(cid);
 }
@@ -5403,333 +5079,6 @@ async function saveBrandingSettings(){
 // ═══════════════════════════════════
 // MEDIA ROOT DIRECTORIES
 // ═══════════════════════════════════
-// CAMERAS
-// ═══════════════════════════════════
-
-let _camLoaded = false;
-let _camEditId = null;
-let _camPortEdited = false;
-let _camSourceType = 'network';
-let _camPwdHasExisting = false;
-
-const CAM_PROTOCOL_DEFAULTS = {rtsp:554, rtmp:1935, http:80, srt:9000, udp:1234};
-
-let _camStore = {};
-
-async function loadCameras(){
-  const tbody = document.getElementById('cam-tbody');
-  const st = document.getElementById('cam-status');
-  try{
-    const cams = await fetch('/api/cameras').then(r=>r.json());
-    _camStore = {};
-    cams.forEach(c=>{ _camStore[c.camera_id] = c; });
-    if(!cams.length){
-      if(tbody) tbody.innerHTML=`<tr><td colspan="5"><div class="empty"><div class="empty-icon">📷</div>No cameras configured.</div></td></tr>`;
-      if(st) st.textContent='';
-      _populateCameraSelects([]);
-      return;
-    }
-    if(tbody){
-      tbody.innerHTML = cams.map(c=>`
-        <tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:10px 12px;font-weight:500;color:var(--text)">${esc(c.name)}</td>
-          <td style="padding:10px 12px;color:var(--text2);font-size:11px">
-            <span class="chip" style="background:var(--bg3)">${esc(c.source_type||c.protocol||'?').toUpperCase()}</span>
-            ${!c.enabled?'<span class="chip" style="background:var(--red-dim);color:var(--red)">disabled</span>':''}
-          </td>
-          <td style="padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text2);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.url_display)}">${esc(c.url_display)}</td>
-          <td style="padding:10px 12px;font-size:11px;color:var(--text3)">${esc(c.notes||'')}</td>
-          <td style="padding:10px 12px;white-space:nowrap">
-            <div class="btn-group">
-              <button class="btn" onclick="editCamera('${esc(c.camera_id)}')" title="Edit this camera">✏ Edit</button>
-              <button class="btn r" onclick="deleteCamera('${esc(c.camera_id)}','${esc(c.name)}')" title="Delete this camera">✕</button>
-            </div>
-          </td>
-        </tr>`).join('');
-    }
-    _populateCameraSelects(cams);
-    if(st) st.textContent=`${cams.length} camera(s) loaded.`;
-  }catch(e){
-    if(tbody) tbody.innerHTML=`<tr><td colspan="5" style="color:var(--red);padding:12px">Failed to load cameras: ${esc(e.message)}</td></tr>`;
-  }
-}
-
-function _populateCameraSelects(cams){
-  ['cfg-camera-id','new-camera-id'].forEach(id=>{
-    const sel = document.getElementById(id);
-    if(!sel) return;
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">— Select camera —</option>' +
-      cams.map(c=>`<option value="${esc(c.camera_id)}" ${cur===c.camera_id?'selected':''}>${esc(c.name)}</option>`).join('');
-  });
-}
-
-function openCameraForm(cam){
-  _camEditId = null;
-  _camPortEdited = false;
-  _camPwdHasExisting = false;
-  document.getElementById('cam-form-title').textContent = 'Add Camera';
-  document.getElementById('cam-name').value = '';
-  document.getElementById('cam-protocol').value = 'rtsp';
-  document.getElementById('cam-host').value = '';
-  document.getElementById('cam-port').value = 554;
-  document.getElementById('cam-path').value = '';
-  document.getElementById('cam-username').value = '';
-  document.getElementById('cam-password').value = '';
-  document.getElementById('cam-notes').value = '';
-  document.getElementById('cam-enabled').checked = true;
-  document.getElementById('cam-pwd-change-wrap').style.display = 'none';
-  document.getElementById('cam-pwd-edit-hint').textContent = '';
-  document.getElementById('cam-form-status').textContent = '';
-  setCamSourceType('network');
-  _camPortEdited = false;
-  _updateCamUrlPreview();
-  document.getElementById('cam-form-wrap').style.display = 'block';
-  document.getElementById('cam-name').focus();
-}
-
-function editCamera(camera_id){
-  const c = _camStore[camera_id];
-  if(!c){ toast('Camera not found — reload the list','err'); return; }
-  _camEditId = c.camera_id;
-  _camPortEdited = true; // treat as manually set when editing
-  _camPwdHasExisting = c.has_password;
-  document.getElementById('cam-form-title').textContent = 'Edit Camera — ' + c.name;
-  document.getElementById('cam-name').value = c.name||'';
-  document.getElementById('cam-protocol').value = c.protocol||'rtsp';
-  document.getElementById('cam-host').value = c.host||'';
-  document.getElementById('cam-port').value = c.port||554;
-  document.getElementById('cam-path').value = c.path||'';
-  document.getElementById('cam-username').value = c.username||'';
-  document.getElementById('cam-password').value = '';
-  document.getElementById('cam-notes').value = c.notes||'';
-  document.getElementById('cam-enabled').checked = c.enabled!==false;
-  // Password change toggle
-  const pwdWrap = document.getElementById('cam-pwd-change-wrap');
-  const pwdField = document.getElementById('cam-password');
-  const pwdCb = document.getElementById('cam-pwd-change-cb');
-  const pwdHint = document.getElementById('cam-pwd-edit-hint');
-  if(_camPwdHasExisting){
-    pwdWrap.style.display = 'block';
-    pwdField.disabled = true;
-    pwdField.placeholder = '(unchanged)';
-    if(pwdCb) pwdCb.checked = false;
-    if(pwdHint) pwdHint.textContent = '(stored)';
-  } else {
-    pwdWrap.style.display = 'none';
-    pwdField.disabled = false;
-    pwdField.placeholder = 'Optional';
-    if(pwdHint) pwdHint.textContent = '';
-  }
-  document.getElementById('cam-form-status').textContent = '';
-  // Source type
-  const st = c.source_type||'rtsp';
-  if(st==='usb') setCamSourceType('usb');
-  else if(st==='dshow') setCamSourceType('dshow');
-  else { setCamSourceType('network'); }
-  _updateCamUrlPreview();
-  document.getElementById('cam-form-wrap').style.display = 'block';
-  document.getElementById('cam-name').focus();
-}
-
-function closeCameraForm(){
-  document.getElementById('cam-form-wrap').style.display = 'none';
-  _camEditId = null;
-}
-
-function setCamSourceType(type){
-  _camSourceType = type;
-  const netFields = document.getElementById('cam-network-fields');
-  const devFields = document.getElementById('cam-device-fields');
-  const authFields = document.getElementById('cam-auth-fields');
-  const btns = ['cam-st-network','cam-st-usb','cam-st-dshow'];
-  btns.forEach(id=>document.getElementById(id)?.classList.remove('b'));
-  if(type==='network'){
-    netFields.style.display='grid';
-    devFields.style.display='none';
-    authFields.style.display='grid';
-    document.getElementById('cam-st-network')?.classList.add('b');
-  } else {
-    netFields.style.display='none';
-    devFields.style.display='block';
-    authFields.style.display='none';
-    if(type==='usb') document.getElementById('cam-st-usb')?.classList.add('b');
-    else document.getElementById('cam-st-dshow')?.classList.add('b');
-  }
-  _updateCamUrlPreview();
-}
-
-function onCamProtocolChange(){
-  if(!_camPortEdited){
-    const proto = document.getElementById('cam-protocol')?.value||'rtsp';
-    document.getElementById('cam-port').value = CAM_PROTOCOL_DEFAULTS[proto]||554;
-  }
-  _updateCamUrlPreview();
-}
-
-function toggleCamPwdChange(){
-  const cb = document.getElementById('cam-pwd-change-cb');
-  const field = document.getElementById('cam-password');
-  if(cb && field){
-    field.disabled = !cb.checked;
-    if(cb.checked){ field.placeholder='New password'; field.focus(); }
-    else { field.placeholder='(unchanged)'; field.value=''; }
-  }
-}
-
-function _updateCamUrlPreview(){
-  const preview = document.getElementById('cam-url-preview');
-  if(!preview) return;
-  if(_camSourceType==='usb'||_camSourceType==='dshow'){
-    const dev = document.getElementById('cam-device')?.value||'';
-    preview.textContent = dev || '(device path will appear here)';
-    return;
-  }
-  const proto = document.getElementById('cam-protocol')?.value||'rtsp';
-  const host = document.getElementById('cam-host')?.value||'';
-  const port = document.getElementById('cam-port')?.value||554;
-  const path = document.getElementById('cam-path')?.value||'';
-  const user = document.getElementById('cam-username')?.value||'';
-  const authPart = user ? `${esc(user)}:***@` : '';
-  const pathPart = path ? (path.startsWith('/')?path:'/'+path) : '';
-  if(proto==='srt'){
-    preview.textContent = `srt://${host}:${port}?streamid=${pathPart}`;
-  } else {
-    preview.textContent = `${proto}://${authPart}${host}:${port}${pathPart}`;
-  }
-}
-
-async function saveCameraForm(){
-  const st = document.getElementById('cam-form-status');
-  st.textContent='Saving…';st.style.color='var(--yellow)';
-  try{
-    const name = document.getElementById('cam-name')?.value?.trim()||'';
-    if(!name){st.textContent='Name is required';st.style.color='var(--red)';return;}
-    const payload={};
-    if(_camEditId) payload.camera_id = _camEditId;
-    payload.name = name;
-    payload.source_type = _camSourceType;
-    payload.enabled = document.getElementById('cam-enabled')?.checked!==false;
-    payload.notes = document.getElementById('cam-notes')?.value?.trim()||'';
-    if(_camSourceType==='usb'||_camSourceType==='dshow'){
-      payload.host = document.getElementById('cam-device')?.value?.trim()||'';
-      payload.protocol = 'rtsp'; payload.port = 554; payload.path = '/';
-    } else {
-      payload.protocol = document.getElementById('cam-protocol')?.value||'rtsp';
-      payload.host = document.getElementById('cam-host')?.value?.trim()||'';
-      payload.port = parseInt(document.getElementById('cam-port')?.value)||554;
-      payload.path = document.getElementById('cam-path')?.value?.trim()||'/';
-      payload.username = document.getElementById('cam-username')?.value?.trim()||'';
-      // Password: only include if editing with change-cb checked, or new form
-      const pwdCb = document.getElementById('cam-pwd-change-cb');
-      const pwdField = document.getElementById('cam-password');
-      if(!_camEditId || (pwdCb && pwdCb.checked) || !_camPwdHasExisting){
-        payload.password = pwdField?.value||'';
-      }
-    }
-    const action = _camEditId ? 'edit_camera' : 'add_camera';
-    const r = await fetch('/api/'+action,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
-    }).then(r=>r.json());
-    if(r.ok){
-      st.textContent='✓ '+r.msg;st.style.color='var(--green)';
-      closeCameraForm();
-      loadCameras();
-    } else {
-      st.textContent='✕ '+(r.msg||'Save failed');st.style.color='var(--red)';
-    }
-  }catch(e){
-    st.textContent='✕ '+e.message;st.style.color='var(--red)';
-  }
-}
-
-async function deleteCamera(camera_id, name){
-  if(!confirm(`Delete '${name}'?\n\nAny streams using this camera will be switched back to playlist mode.`)) return;
-  try{
-    const r = await fetch('/api/delete_camera',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({camera_id})
-    }).then(r=>r.json());
-    toast(r.msg||(r.ok?'Camera deleted':'Delete failed'),r.ok?'ok':'err');
-    if(r.ok) loadCameras();
-  }catch(e){
-    toast('Delete failed: '+e.message,'err');
-  }
-}
-
-// ── Source switching ───────────────────────────────────────────────────────
-async function switchSource(name, target){
-  const r = await fetch('/api/source_switch',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,target})
-  }).then(r=>r.json());
-  toast(r.msg||(r.ok?'Switched':'Switch failed'),r.ok?'ok':'err');
-}
-
-// ── Camera window helpers ─────────────────────────────────────────────────
-function collectCameraWindows(prefix){
-  const rows = document.querySelectorAll(`.${prefix}-cam-win-row`);
-  return Array.from(rows).map(row=>({
-    weekdays:Array.from(row.querySelectorAll('.cam-wd:checked')).map(cb=>+cb.value),
-    start:(row.querySelector('.cam-win-start')?.value||'00:00')+':00',
-    end:(row.querySelector('.cam-win-end')?.value||'23:59')+':00',
-  })).filter(w=>w.weekdays.length>0);
-}
-
-function _makeCamWindowRow(prefix, win){
-  const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const wds = win?.weekdays||[0,1,2,3,4];
-  const start=(win?.start||'09:00:00').slice(0,5);
-  const end=(win?.end||'17:00:00').slice(0,5);
-  const div=document.createElement('div');
-  div.className=`${prefix}-cam-win-row`;
-  div.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px 10px';
-  div.innerHTML=days.map((d,i)=>`<label style="font-size:11px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:3px"><input type="checkbox" class="cam-wd" value="${i}" ${wds.includes(i)?'checked':''} style="width:auto;accent-color:var(--accent)">${d}</label>`).join('')
-    +`<input type="time" class="cam-win-start" value="${start}" style="font-size:12px;padding:3px 6px;background:var(--bg4);border:1px solid var(--border2);border-radius:5px;color:var(--text)">`
-    +`<span style="font-size:12px;color:var(--text3)">→</span>`
-    +`<input type="time" class="cam-win-end" value="${end}" style="font-size:12px;padding:3px 6px;background:var(--bg4);border:1px solid var(--border2);border-radius:5px;color:var(--text)">`
-    +`<button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;line-height:1;margin-left:auto">✕</button>`;
-  return div;
-}
-
-function cfgAddCamWindow(win){
-  document.getElementById('cfg-cam-win-list')?.appendChild(_makeCamWindowRow('cfg',win));
-}
-function newAddCamWindow(win){
-  document.getElementById('new-cam-win-list')?.appendChild(_makeCamWindowRow('new',win));
-}
-
-function cfgUpdateSourceMode(){
-  const mode = document.querySelector('input[name="cfg-source-mode"]:checked')?.value||'playlist';
-  document.getElementById('cfg-camera-fields').style.display = mode!=='playlist'?'block':'none';
-  document.getElementById('cfg-camera-windows-wrap').style.display = mode==='hybrid'?'block':'none';
-}
-function newUpdateSourceMode(){
-  const mode = document.querySelector('input[name="new-source-mode"]:checked')?.value||'playlist';
-  document.getElementById('new-camera-fields').style.display = mode!=='playlist'?'block':'none';
-  document.getElementById('new-camera-windows-wrap').style.display = mode==='hybrid'?'block':'none';
-}
-
-// Populate camera select + fill windows when config panel opens for a stream
-function cfgFillCameraSection(s){
-  // Camera select
-  const sel = document.getElementById('cfg-camera-id');
-  if(sel && s.camera_id) sel.value = s.camera_id;
-  // Mode radio
-  const modeVal = s.source_mode||'playlist';
-  const modeRb = document.querySelector(`input[name="cfg-source-mode"][value="${modeVal}"]`);
-  if(modeRb) modeRb.checked = true;
-  cfgUpdateSourceMode();
-  // Windows
-  const list = document.getElementById('cfg-cam-win-list');
-  if(list){ list.innerHTML=''; (s.camera_windows||[]).forEach(w=>cfgAddCamWindow(w)); }
-}
-
-// ═══════════════════════════════════
 
 // Tracks the current roots array in-memory so UI renders without extra round-trips
 let _mrRoots = [];
@@ -5875,7 +5224,6 @@ async function downloadBackup(){
       resume:       document.getElementById('bk-resume')?.checked!==false,
       app_settings: document.getElementById('bk-app-settings')?.checked!==false,
       media_roots:  document.getElementById('bk-media-roots')?.checked!==false,
-      cameras:      document.getElementById('bk-cameras')?.checked!==false,
     };
     const r=await fetch('/api/backup',{
       method:'POST',headers:{'Content-Type':'application/json'},
@@ -5946,7 +5294,6 @@ async function doRestore(file){
       resume_positions: {key:'resume_positions',  label:'Resume positions', present:'resume_positions' in data},
       app_settings:     {key:'app_settings',      label:'App settings',     present:'app_settings' in data},
       media_roots:      {key:'media_roots',       label:'Media roots',      present:'media_roots' in data},
-      cameras:          {key:'cameras',           label:'Cameras',          present:'cameras' in data},
     };
     const sections=Object.values(sectionMap).filter(s=>s.present).map(s=>s.label);
     if(sections.length===0){throw new Error('Backup file contains no restorable sections');}
@@ -5964,7 +5311,6 @@ async function doRestore(file){
     if('resume_positions' in data) counts['Resume positions']=typeof data.resume_positions==='object'?`${Object.keys(data.resume_positions).length} entry(ies)`:'present';
     if('app_settings' in data)     counts['App settings']='present';
     if('media_roots' in data)      counts['Media roots']=Array.isArray(data.media_roots)?`${data.media_roots.length} extra root(s)`:'present';
-    if('cameras' in data)          counts['Cameras']=Array.isArray(data.cameras)?`${data.cameras.length} camera(s) (passwords excluded)`:'present';
 
     // Version mismatch warning
     let verWarning='';
@@ -6032,7 +5378,6 @@ async function doRestore(file){
       setTimeout(()=>{
         if(typeof loadStreams==='function') loadStreams();
         if(r_list.includes('media_roots') && typeof loadMediaRoots==='function') loadMediaRoots();
-        if(r_list.includes('cameras') && typeof loadCameras==='function') loadCameras();
       },3500);
     }else{
       throw new Error(j.msg||'Restore failed');
