@@ -3660,7 +3660,7 @@ function _plGetStr(cid){
 }
 function renderPlaylistEditor(cid,raw){
   _playlistItems=_parsePL(raw);
-  _playlistItems.sort((a,b)=>a.priority-b.priority);
+  _playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
   _renderPLTable(cid);
 }
 function _renderPLTable(cid){
@@ -3735,7 +3735,7 @@ function _plSort(cid){
     if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
     if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
   });
-  _playlistItems.sort((a,b)=>a.priority-b.priority);
+  _playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
   _renderPLTable(cid);
 }
 function _plAdd(cid){
@@ -3743,7 +3743,7 @@ function _plAdd(cid){
   const raw=inp.value.trim();if(!raw){toast('Enter a file path','err');return;}
   const parsed=_parsePL(raw);if(!parsed.length){toast('Invalid path','err');return;}
   _playlistItems.push(...parsed);
-  _playlistItems.sort((a,b)=>a.priority-b.priority);
+  _playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
   inp.value='';_markDirty();_renderPLTable(cid);
 }
 function _plRawView(cid){
@@ -3773,7 +3773,7 @@ function _plRawView(cid){
 }
 function _plTableView(cid){
   const ta=document.querySelector('#'+cid+' textarea');
-  if(ta){_playlistItems=_parsePL(ta.value);_playlistItems.sort((a,b)=>a.priority-b.priority);_markDirty();}
+  if(ta){_playlistItems=_parsePL(ta.value);_playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});_markDirty();}
   _renderPLTable(cid);
 }
 
@@ -3799,7 +3799,7 @@ function showNewStreamForm(){
             </i>
           </label>
           <div class="port-field-row">
-            <input id="new-port" type="number" value="8555" min="1025" max="65533" step="2"
+            <input id="new-port" type="number" value="60123" min="1025" max="65533" step="2"
               oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
               title="Must be an ODD number. HLS will use this port + 1 (even).">
             <button type="button" id="suggest-btn-new-port"
@@ -3849,8 +3849,8 @@ function showNewStreamForm(){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="2500k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="128k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="copy" placeholder="copy or e.g. 2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="copy" placeholder="copy or e.g. 128k"></div>
       </div>
     </div>
     <div class="config-section">
@@ -3948,7 +3948,7 @@ async function suggestNextPort(inputId, resultId){
   // Always start 2 above the current value so the button advances to a
   // genuinely *next* free port instead of returning the same port when
   // the current one happens to be free already.
-  const cur = parseInt(inp.value||0)||8553;
+  const cur = parseInt(inp.value||0)||60121;
   const from = cur + 2;
   const suggestBtn = document.getElementById('suggest-btn-'+inputId);
   if(suggestBtn){
@@ -4267,7 +4267,7 @@ function _plAddPath(cid, path) {
     if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
   });
   _playlistItems.push({path, start:'00:00:00', priority:0});
-  _playlistItems.sort((a,b)=>a.priority-b.priority);
+  _playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
   _markDirty();
   _renderPLTable(cid);
 }
@@ -5907,7 +5907,7 @@ async function loadFiles(path) {
         `<div class="fm-row" data-row-type="dir" data-row-path="${_fmAttr(dir.path)}" data-row-name="${_fmAttr(dir.name)}">
            <span class="fm-row-icon">📁</span>
            <span class="fm-row-name is-dir">${_fmEsc(dir.name)}${subInfo}${mediaInfo}</span>
-           <span class="fm-row-meta">${dir.items} item${dir.items !== 1 ? 's' : ''}</span>
+           <span class="fm-row-meta">${dir.items < 0 ? '—' : dir.items + ' item' + (dir.items !== 1 ? 's' : '')}</span>
            <div class="fm-row-actions">
              <button class="fm-action-btn" data-action="rename" title="Rename this folder">✏ Rename</button>
              <button class="fm-action-btn mv"  data-action="move"   title="Move this folder">↗ Move</button>
