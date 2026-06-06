@@ -174,16 +174,11 @@ def grab_thumbnail(file_path: Path, seek_secs: float = 5.0) -> Optional[bytes]:
 
 def _double_bitrate(bitrate_str: str) -> str:
     """
-    Return a VBV buffer size equal to 2× the given bitrate string.
+    Return a VBV buffer size string equal to 2× the given bitrate.
 
-    Accepts strings like "8000k", "8M", "8000000".
-    Falls back to the original string unchanged on any parse error so FFmpeg
-    receives something and emits its own diagnostic rather than crashing here.
-
-    Examples:
-      "8000k"   → "16000k"
-      "8M"      → "16M"
-      "8000000" → "16000000"
+    Supports "8000k" → "16000k", "8M" → "16M", "8000000" → "16000000".
+    Falls back to the original string on any parse error so FFmpeg receives
+    something and can emit its own diagnostic.
     """
     s = bitrate_str.strip()
     try:
@@ -1234,43 +1229,46 @@ class StreamWorker:
         _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
         _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
 
-        # ── Build codec arguments ─────────────────────────────────────────────
-        # "copy" means pass-through: no re-encoding, preserves original quality
-        # and bitrate exactly.  Any other value is treated as a target bitrate
-        # for libx264/aac re-encoding.
-        #
-        # IMPORTANT: "copy" is a codec selector (-c:v copy), NOT a bitrate value.
-        # Passing it to -b:v is invalid and causes FFmpeg to silently ignore the
-        # bitrate or error out.  The two modes are mutually exclusive.
+        # ── Codec / bitrate arguments ─────────────────────────────────────────
+        # "copy" is a codec keyword (-c:v copy / -c:a copy), NOT a bitrate value.
+        # Passing "copy" to -b:v/-b:a is invalid and silently breaks encoding.
+        # When the user sets copy, we use stream-copy (no re-encoding at all).
+        # When a numeric bitrate is set we re-encode with high-quality settings:
+        #   • preset veryfast  — much better quality than ultrafast, small CPU cost
+        #   • -maxrate + -bufsize (2×)  — proper VBV rate-control, no burst overflow
         _vbr = cfg.video_bitrate.strip().lower()
         _abr = cfg.audio_bitrate.strip().lower()
 
         if _vbr == "copy" and _abr == "copy":
-            # Full pass-through — fastest, lossless, no re-encoding at all.
+            # Full stream copy — fastest path, zero quality loss.
             codec_args = ["-c:v", "copy", "-c:a", "copy"]
         elif _vbr == "copy":
-            # Video pass-through, re-encode audio only.
+            # Video copy, re-encode audio to AAC.
             codec_args = [
                 "-c:v", "copy",
-                "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
+                "-c:a", "aac", "-b:a", cfg.audio_bitrate,
+                "-ar", "44100", "-ac", "2",
             ]
         elif _abr == "copy":
-            # Audio pass-through, re-encode video only.
+            # Re-encode video, copy audio.
             codec_args = [
                 "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                "-b:v", cfg.video_bitrate, "-maxrate", cfg.video_bitrate,
+                "-b:v", cfg.video_bitrate,
+                "-maxrate", cfg.video_bitrate,
                 "-bufsize", _double_bitrate(cfg.video_bitrate),
                 "-pix_fmt", "yuv420p", "-g", "50",
                 "-c:a", "copy",
             ]
         else:
-            # Full re-encode — use high-quality settings.
+            # Full re-encode — high-quality settings.
             codec_args = [
                 "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                "-b:v", cfg.video_bitrate, "-maxrate", cfg.video_bitrate,
+                "-b:v", cfg.video_bitrate,
+                "-maxrate", cfg.video_bitrate,
                 "-bufsize", _double_bitrate(cfg.video_bitrate),
                 "-pix_fmt", "yuv420p", "-g", "50",
-                "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
+                "-c:a", "aac", "-b:a", cfg.audio_bitrate,
+                "-ar", "44100", "-ac", "2",
             ]
 
         cmd = [
@@ -1458,13 +1456,17 @@ class StreamWorker:
         self._log("Starting black-screen feed …")
         _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
         _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
+        # lavfi (synthetic) sources cannot be stream-copied — always encode.
+        # Use a modest fixed bitrate for the blank frame; quality doesn't matter here.
+        _vbr = "500k" if cfg.video_bitrate.strip().lower() == "copy" else cfg.video_bitrate
+        _abr = "64k"  if cfg.audio_bitrate.strip().lower() == "copy" else cfg.audio_bitrate
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error", "-re",
             "-f", "lavfi", "-i", "color=black:size=1280x720:rate=25",
             "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
             "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-            "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", cfg.audio_bitrate,
+            "-b:v", _vbr, "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", _abr,
             "-f", "rtsp", "-rtsp_transport", "tcp",
             _rtsp_target,
         ]
