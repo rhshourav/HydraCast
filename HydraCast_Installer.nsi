@@ -20,11 +20,11 @@ Unicode True
 ;    - Full uninstaller registered in Add/Remove Programs
 ;    - Silent install support  (/S flag)
 ;
-;  v5.4 changes
-;  ────────────
-;  hydracast_bg.exe removed — merged into hydracast.exe.
-;  One shortcut, one startup entry, one EXE to kill on uninstall.
-;  hydracast_guardian.exe stays as a separate EXE (lean watchdog).
+;  v5.5 changes
+;  ─────────────
+;  hydracast_bg.exe fully removed — unified into hydracast.exe.
+;  Single-instance mutex prevents double-launch without UAC on restart.
+;  Guardian restarts never trigger UAC (inherits elevated token).
 ; ============================================================================
 
 ; -- Compression --------------------------------------------------------------
@@ -181,14 +181,12 @@ Section "HydraCast (required)" SecMain
             SW_SHOWNORMAL "" "HydraCast — RTSP multi-stream scheduler"
     ${EndIf}
 
-    ; Startup registry — points to hydracast.exe (no separate bg exe needed)
+    ; Startup registry — HKCU only (no admin needed at runtime)
+    ; Points to hydracast.exe (unified TUI+tray, no separate bg exe).
     ${If} $DoStartup = ${BST_CHECKED}
-        WriteRegStr HKLM "${STARTUP_REG_KEY}" "${PRODUCT_NAME}" \
-            '"$INSTDIR\${PRODUCT_EXE}"'
         WriteRegStr HKCU "${STARTUP_REG_KEY}" "${PRODUCT_NAME}" \
             '"$INSTDIR\${PRODUCT_EXE}"'
     ${Else}
-        DeleteRegValue HKLM "${STARTUP_REG_KEY}" "${PRODUCT_NAME}"
         DeleteRegValue HKCU "${STARTUP_REG_KEY}" "${PRODUCT_NAME}"
     ${EndIf}
 
@@ -197,7 +195,7 @@ SectionEnd
 ; -- Uninstaller --------------------------------------------------------------
 Section "Uninstall"
 
-    ; Kill processes — order: workers first, then supervisors.
+    ; Kill processes — workers first, then supervisors.
     ExecWait 'taskkill /F /IM "${FFMPEG_EXE}"'           $0
     ExecWait 'taskkill /F /IM "${FFPROBE_EXE}"'          $0
     ExecWait 'taskkill /F /IM "${MEDIAMTX_EXE}"'         $0
@@ -217,7 +215,7 @@ Section "Uninstall"
 
     ; Ask whether to keep user data (config, logs, media).
     MessageBox MB_YESNO|MB_ICONQUESTION \
-        "Do you want to keep your configuration, logs, and media files?$\r$\n$\r$\nYES = keep config\, logs\, media folders.$\r$\nNO  = delete everything." \
+        "Do you want to keep your configuration, logs, and media files?$\r$\n$\r$\nYES = keep config, logs, media folders.$\r$\nNO  = delete everything." \
         IDYES KeepUserData
 
     RMDir /r "$INSTDIR\config"
@@ -238,7 +236,6 @@ Section "Uninstall"
     Delete   "$DESKTOP\HydraCast.lnk"
 
     DeleteRegKey   HKLM "${REG_KEY}"
-    DeleteRegValue HKLM "${STARTUP_REG_KEY}" "${PRODUCT_NAME}"
     DeleteRegValue HKCU "${STARTUP_REG_KEY}" "${PRODUCT_NAME}"
 
 SectionEnd
