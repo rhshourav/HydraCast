@@ -1,14 +1,8 @@
 """
 hc/json_manager.py  —  Replaces csv_manager.py entirely.
 
-v6.2 additions vs v6.1
+v6.1 additions vs v6.0
 ───────────────────────
-• Camera registry persistence: load_cameras() / save_cameras().
-• Hybrid stream fields serialised/deserialised: source_mode, camera_id,
-  camera_windows.
-
-v6.1 additions (kept)
-─────────────────────
 • compliance_alert_enabled serialised/deserialised (default True).
 
 v6.0 fixes (kept)
@@ -29,9 +23,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hc.constants import CAMERAS_FILE, CONFIG_DIR, WEEKDAY_MAP
+from hc.constants import CONFIG_DIR, WEEKDAY_MAP
 from hc.folder_scanner import SortMode, scan_folder
-from hc.models import CameraConfig, OneShotEvent, PlaylistItem, StreamConfig
+from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 
 log = logging.getLogger(__name__)
 
@@ -52,10 +46,6 @@ def _streams_path() -> Path:
 
 def _events_path() -> Path:
     return _config_dir() / "events.hcf"
-
-
-def _cameras_path() -> Path:
-    return CAMERAS_FILE()
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +93,7 @@ def _normalise_weekdays(raw) -> List[int]:
 
 
 # ---------------------------------------------------------------------------
-# Serialisation helpers — streams
+# Serialisation helpers
 # ---------------------------------------------------------------------------
 
 def _playlist_to_json(items: List[PlaylistItem]) -> List[Dict[str, Any]]:
@@ -152,10 +142,6 @@ def _config_to_dict(cfg: StreamConfig) -> Dict[str, Any]:
         "playlist": (
             _playlist_to_json(cfg.playlist) if not cfg.folder_source else []
         ),
-        # Hybrid source switching fields
-        "source_mode":    cfg.source_mode,
-        "camera_id":      cfg.camera_id,
-        "camera_windows": cfg.camera_windows,
     }
 
 
@@ -183,8 +169,8 @@ def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
             enabled                = bool(d.get("enabled", True)),
             weekdays               = _normalise_weekdays(d.get("weekdays", [])),
             shuffle                = bool(d.get("shuffle", False)),
-            video_bitrate          = d.get("video_bitrate", "8000k"),
-            audio_bitrate          = d.get("audio_bitrate", "320k"),
+            video_bitrate          = d.get("video_bitrate", "2500k"),
+            audio_bitrate          = d.get("audio_bitrate", "128k"),
             hls_enabled            = bool(d.get("hls_enabled", False)),
             compliance_enabled     = bool(d.get("compliance_enabled", False)),
             compliance_start       = d.get("compliance_start", "06:00:00"),
@@ -192,10 +178,6 @@ def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
             compliance_alert_enabled = bool(d.get("compliance_alert_enabled", True)),
             folder_source          = folder_source,
             playlist               = playlist,
-            # Hybrid source switching fields
-            source_mode            = d.get("source_mode", "playlist"),
-            camera_id              = d.get("camera_id", None),
-            camera_windows         = d.get("camera_windows", []),
         )
     except Exception as exc:
         log.error(
@@ -206,59 +188,10 @@ def _config_from_dict(d: Dict[str, Any]) -> Optional[StreamConfig]:
 
 
 # ---------------------------------------------------------------------------
-# Serialisation helpers — cameras
-# ---------------------------------------------------------------------------
-
-def _camera_to_dict(cam: CameraConfig) -> Dict[str, Any]:
-    """Serialise a CameraConfig to a plain dict (passwords included — local storage only)."""
-    return {
-        "camera_id":   cam.camera_id,
-        "name":        cam.name,
-        "protocol":    cam.protocol,
-        "host":        cam.host,
-        "port":        cam.port,
-        "path":        cam.path,
-        "username":    cam.username,
-        "password":    cam.password,   # stored in full locally; stripped from backups
-        "source_type": cam.source_type,
-        "enabled":     cam.enabled,
-        "notes":       cam.notes,
-    }
-
-
-def _camera_from_dict(d: Dict[str, Any]) -> Optional[CameraConfig]:
-    """Deserialise a dict into a CameraConfig; returns None on unrecoverable error."""
-    try:
-        return CameraConfig(
-            camera_id   = d.get("camera_id", str(uuid.uuid4())),
-            name        = d.get("name", ""),
-            protocol    = d.get("protocol", "rtsp"),
-            host        = d.get("host", ""),
-            port        = int(d.get("port", 554)),
-            path        = d.get("path", "/"),
-            username    = d.get("username", ""),
-            password    = d.get("password", ""),
-            source_type = d.get("source_type", "rtsp"),
-            enabled     = bool(d.get("enabled", True)),
-            notes       = d.get("notes", ""),
-        )
-    except Exception as exc:
-        log.error(
-            "json_manager: cannot parse camera entry %s — %s",
-            d.get("name", "?"), exc,
-        )
-        return None
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 class JSONManager:
-
-    # ------------------------------------------------------------------ #
-    # Stream config                                                        #
-    # ------------------------------------------------------------------ #
 
     @classmethod
     def load(cls) -> List[StreamConfig]:
@@ -294,61 +227,6 @@ class JSONManager:
             tmp.unlink(missing_ok=True)
             raise
         log.info("json_manager: saved %d stream(s) to '%s'", len(configs), p)
-
-    # ------------------------------------------------------------------ #
-    # Camera registry                                                      #
-    # ------------------------------------------------------------------ #
-
-    @classmethod
-    def load_cameras(cls) -> List[CameraConfig]:
-        """
-        Load camera registry from cameras.hcf.
-        Returns an empty list if the file does not exist yet — never raises.
-        """
-        p = _cameras_path()
-        if not p.exists():
-            log.info("json_manager: no cameras.hcf yet — starting with empty camera registry.")
-            return []
-
-        try:
-            raw: List[Dict[str, Any]] = json.loads(p.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            log.error("json_manager: cameras.hcf is not valid JSON: %s", exc)
-            return []
-
-        cameras: List[CameraConfig] = []
-        for entry in raw:
-            cam = _camera_from_dict(entry)
-            if cam is not None:
-                cameras.append(cam)
-
-        log.info("json_manager: loaded %d camera(s) from '%s'", len(cameras), p)
-        return cameras
-
-    @classmethod
-    def save_cameras(cls, cameras: List[CameraConfig]) -> None:
-        """
-        Serialise camera registry to cameras.hcf atomically via a .tmp rename.
-        Passwords are written in full — stripping happens only in the backup handler.
-        Never log camera URLs directly; use cam.url_masked when logging.
-        """
-        p = _cameras_path()
-        # Ensure the parent directory exists (mirrors _config_dir() behaviour)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        data = [_camera_to_dict(c) for c in cameras]
-        text = json.dumps(data, indent=2, ensure_ascii=False)
-        tmp = p.with_suffix(".hcf.tmp")
-        try:
-            tmp.write_text(text, encoding="utf-8")
-            tmp.replace(p)
-        except Exception:
-            tmp.unlink(missing_ok=True)
-            raise
-        log.info("json_manager: saved %d camera(s) to '%s'", len(cameras), p)
-
-    # ------------------------------------------------------------------ #
-    # One-shot events                                                      #
-    # ------------------------------------------------------------------ #
 
     @classmethod
     def load_events(cls) -> List[OneShotEvent]:
