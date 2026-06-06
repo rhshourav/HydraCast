@@ -2432,15 +2432,35 @@ async function api(action,data){
 // ═══════════════════════════════════
 // DOWNLOAD URLS CSV
 // ═══════════════════════════════════
-function downloadUrlsCsv(){
+async function downloadUrlsCsv(){
   const incFiles=document.getElementById('csv-files')?.checked?'1':'0';
-  const a=document.createElement('a');
-  a.href='/api/urls_csv?include_files='+incFiles;
-  a.download='';           // filename comes from Content-Disposition
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  toast('Downloading URLs CSV\u2026','info');
+  toast('Preparing URLs CSV\u2026','info');
+  try{
+    const r=await fetch('/api/urls_csv?include_files='+incFiles);
+    if(!r.ok){
+      let msg='Server error '+r.status;
+      try{const j=await r.json();msg=j.msg||msg;}catch(_){}
+      toast('CSV download failed: '+msg,'err');
+      return;
+    }
+    const blob=await r.blob();
+    if(blob.size===0){toast('CSV download failed: empty response from server','err');return;}
+    // Extract filename from Content-Disposition or fall back to a timestamped name
+    let fname='stream_urls.csv';
+    const cd=r.headers.get('Content-Disposition')||'';
+    const m=cd.match(/filename\*?=(?:UTF-8''|")?([^";\r\n]+)/i);
+    if(m&&m[1]) fname=decodeURIComponent(m[1].replace(/"/g,'').trim());
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=fname;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    toast('URLs CSV downloaded','ok');
+  }catch(e){
+    toast('CSV download failed: '+(e.message||e),'err');
+  }
 }
 
 // ═══════════════════════════════════
@@ -3849,8 +3869,8 @@ function showNewStreamForm(){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="8000k" placeholder="e.g. 8000k, 15M, or copy"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="320k" placeholder="e.g. 320k, 192k, or copy"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="copy" placeholder="copy or e.g. 2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="copy" placeholder="copy or e.g. 128k"></div>
       </div>
     </div>
     <div class="config-section">
@@ -4140,8 +4160,8 @@ async function submitNewStream(){
     name,port,files,weekdays,
     folder_source: folderPath||null,
     stream_path:(document.getElementById('new-spath')?.value||'').trim(),
-    video_bitrate:(document.getElementById('new-vbr')?.value||'8000k').trim()||'8000k',
-    audio_bitrate:(document.getElementById('new-abr')?.value||'320k').trim()||'320k',
+    video_bitrate:(document.getElementById('new-vbr')?.value||'2500k').trim()||'2500k',
+    audio_bitrate:(document.getElementById('new-abr')?.value||'128k').trim()||'128k',
     shuffle:document.getElementById('new-shuffle')?.checked||false,
     enabled:document.getElementById('new-enabled')?.checked!==false,
     hls_enabled:document.getElementById('new-hls')?.checked||false,
