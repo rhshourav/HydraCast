@@ -6755,7 +6755,11 @@ function _fmPopulateDirSelect(selectId, excludePath) {
   const sel = document.getElementById(selectId);
   const _rlEl2 = document.getElementById('fm-root-label');
   const _topLabel = (_rlEl2 && _rlEl2.textContent) ? _rlEl2.textContent + ' (top)' : 'Root (top)';
-  sel.innerHTML = `<option value="">${_topLabel}</option>`;
+  sel.innerHTML = '';
+  const topOpt = document.createElement('option');
+  topOpt.value = '';
+  topOpt.textContent = _topLabel;
+  sel.appendChild(topOpt);
   // Build a label map from _fmRootMeta (populated by loadFiles).
   const labelMap = {};
   (_fmRootMeta || []).forEach(m => { labelMap[m.path] = m.label; });
@@ -6763,7 +6767,10 @@ function _fmPopulateDirSelect(selectId, excludePath) {
     .filter(d => d && d !== excludePath)
     .forEach(d => {
       const label = labelMap[d] || d;
-      sel.insertAdjacentHTML('beforeend', `<option value="${d}">${label}</option>`);
+      const opt = document.createElement('option');
+      opt.value = d;
+      opt.textContent = label;
+      sel.appendChild(opt);
     });
 }
 
