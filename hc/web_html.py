@@ -3620,6 +3620,46 @@ function _attachDirtyListeners(){
   });
 }
 
+// ── Weekday-aware playlist sort ─────────────────────────────
+// Detects _mon_/_monday_, _tue_, … _sun_ tags in file basenames and sorts
+// Mon→Tue→Wed→Thu→Fri→Sat→Sun.  Falls back to numeric priority for non-day files.
+(function(){
+  const _DAY_RANK={monday:0,mon:0,tuesday:1,tue:1,wednesday:2,wed:2,
+                   thursday:3,thu:3,friday:4,fri:4,saturday:5,sat:5,sunday:6,sun:6};
+  const _DAY_RE=/[_\-](monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)[_\-]/i;
+  function _dayRank(path){
+    const m=_DAY_RE.exec((path||'').replace(/\\/g,'/').split('/').pop()||'');
+    return m?_DAY_RANK[m[1].toLowerCase()]:-1;
+  }
+  // Check whether ALL items that have a day tag together cover a full week
+  // (or at least more than one day), so we only apply weekday sort when the
+  // playlist really is a weekly set and not a coincidental single day-tag.
+  function _isWeeklySet(items){
+    const tagged=items.filter(it=>_dayRank(it.path)>=0);
+    if(!tagged.length)return false;
+    const unique=new Set(tagged.map(it=>_dayRank(it.path)));
+    return unique.size>1;  // two or more distinct days → treat as weekly set
+  }
+  window._plSortItems=function(items){
+    if(_isWeeklySet(items)){
+      // Day-tagged files sort Mon→Sun; untagged files go after (stable relative order)
+      items.sort((a,b)=>{
+        const da=_dayRank(a.path),db=_dayRank(b.path);
+        if(da>=0&&db>=0)return da-db;   // both tagged: weekday order
+        if(da>=0)return -1;             // only a tagged: a comes first
+        if(db>=0)return  1;             // only b tagged: b comes first
+        // neither tagged: fall back to priority
+        const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;
+        return ap-bp;
+      });
+    } else {
+      // No weekly set → keep original priority-only sort
+      items.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
+    }
+    return items;
+  };
+})();
+
 // ── Playlist editor helpers ──────────────────────────────────────────────────
 function _parsePL(raw){
   const items=[];
@@ -3660,7 +3700,7 @@ function _plGetStr(cid){
 }
 function renderPlaylistEditor(cid,raw){
   _playlistItems=_parsePL(raw);
-  _playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
+  _plSortItems(_playlistItems);
   _renderPLTable(cid);
 }
 function _renderPLTable(cid){
@@ -3735,7 +3775,7 @@ function _plSort(cid){
     if(pi&&_playlistItems[i])_playlistItems[i].priority=parseInt(pi.value)||0;
     if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
   });
-  _playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
+  _plSortItems(_playlistItems);
   _renderPLTable(cid);
 }
 function _plAdd(cid){
@@ -3743,7 +3783,7 @@ function _plAdd(cid){
   const raw=inp.value.trim();if(!raw){toast('Enter a file path','err');return;}
   const parsed=_parsePL(raw);if(!parsed.length){toast('Invalid path','err');return;}
   _playlistItems.push(...parsed);
-  _playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
+  _plSortItems(_playlistItems);
   inp.value='';_markDirty();_renderPLTable(cid);
 }
 function _plRawView(cid){
@@ -3773,7 +3813,7 @@ function _plRawView(cid){
 }
 function _plTableView(cid){
   const ta=document.querySelector('#'+cid+' textarea');
-  if(ta){_playlistItems=_parsePL(ta.value);_playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});_markDirty();}
+  if(ta){_playlistItems=_parsePL(ta.value);_plSortItems(_playlistItems);_markDirty();}
   _renderPLTable(cid);
 }
 
@@ -4267,7 +4307,7 @@ function _plAddPath(cid, path) {
     if(si&&_playlistItems[i])_playlistItems[i].start=si.value||'00:00:00';
   });
   _playlistItems.push({path, start:'00:00:00', priority:0});
-  _playlistItems.sort((a,b)=>{const ap=a.priority>0?a.priority:999999,bp=b.priority>0?b.priority:999999;return ap-bp;});
+  _plSortItems(_playlistItems);
   _markDirty();
   _renderPLTable(cid);
 }
