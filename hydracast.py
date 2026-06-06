@@ -429,48 +429,61 @@ def _unpatch_signal():
 
 # =============================================================================
 # HYDRACAST CORE WORKER
-# Runs the full hydracast.main() inside a thread, with two patches:
-#   1. run_tui_loop → headless wrapper that respects shutdown/restart events.
-#   2. WebServer.start → hooked to capture the real port+scheme and signal ready.
+#
+# _run_hydracast_once() assembles the HydraCast core directly:
+#   StreamManager  ←  hc.manager
+#   WebServer      ←  hc.web
+#   run_tui_loop   ←  hc.tui
+#
+# It does NOT call hydracast.main().  That function is the outer launcher
+# (UAC + guardian + heartbeat + tray loop).  Calling it from the worker
+# thread would re-enter the full launcher on every run, spawning a new
+# guardian, a new heartbeat sender, and another worker loop — producing the
+# exponential process storm seen in the screenshot.
+#
+# The assembly below mirrors the original manager.py main() exactly.
 # =============================================================================
 
 def _run_hydracast_once(state: _WorkerState) -> bool:
     """
-    Run the HydraCast core once — directly, without re-entering main().
-
-    Calls hc.manager and hc.tui directly so the full launcher path
-    (UAC elevation, guardian spawn, heartbeat setup, worker loop) is
-    never executed again inside this thread.
+    Assemble and run the HydraCast core once.
 
     Returns True  → restart is appropriate (crash / non-fatal exception).
     Returns False → do not restart (clean exit, fatal error, or user quit).
 
-    KEY FIX
-    ───────
-    The previous implementation did:
-        import hydracast as _hc_main
-        _hc_main.main()
-    That re-entered the TOP-LEVEL LAUNCHER which:
-      1. Re-ran UAC elevation (spawning a new elevated process)
-      2. Called launch_guardian() again (second guardian, which spawns a third…)
-      3. Started a second HeartbeatSender
-      4. Started another _run_worker_loop thread
-      5. … and so on exponentially → hundreds of processes within seconds.
-
-    The fix: import and call only the hc *core* (Manager + run_tui_loop)
-    and hook WebServer.__init__ to capture port/scheme and signal ready —
-    exactly as before, but without touching hydracast.main().
+    Steps
+    ─────
+    1.  Pre-flight  : dependency checks, SSL, load streams.json.
+    2.  Core objects: StreamManager + LogBuffer.
+    3.  WS hook     : patch WebServer.__init__ to capture port/scheme and
+                      set state.ready_event once the server responds to HTTP.
+    4.  TUI wrap    : patch run_tui_loop so it exits on state.shutdown_event
+                      or state.restart_event (tray Quit / tray Restart).
+    5.  Run         : start_all(), run_scheduler(), WebServer, run_tui_loop.
+    6.  Teardown    : manager.shutdown(), web.stop(), clean yaml files.
     """
     _patch_signal()
     try:
-        # ── Import core modules ───────────────────────────────────────────────
-        # All of these are already in sys.modules from the initial startup;
-        # these imports are effectively free lookups.
+        # ── All imports are already in sys.modules — effectively free ─────────
         import hc.tui as _tui_mod
-        from hc.manager import Manager
-        from hc.web import WebServer as _WS
+        from hc.web             import WebServer as _WS
+        from hc                 import web as _web_module
+        from hc.json_manager    import JSONManager
+        from hc.dependency      import DependencyManager
+        from hc.firewall        import FirewallManager
+        from hc.manager         import StreamManager
+        from hc.worker          import LogBuffer
+        from hc.ssl_bootstrap   import ensure_ssl
+        from hc.constants       import (
+            get_web_port, set_ffmpeg, set_ffprobe,
+            CONFIGS_DIR, LOGS_DIR,
+        )
+        from hc.utils           import _local_ip
+        from rich.console       import Console
+        import signal as _sig
 
-        # ── Patch 1: WebServer.start → capture port/scheme, signal ready ─────
+        # ── Patch 1: WebServer.__init__ — hook .start() to capture port/scheme
+        #    and fire state.ready_event once the server accepts HTTP.           ─
         _real_ws_init = _WS.__init__
 
         def _patched_ws_init(ws_self, *a, **kw):
@@ -478,21 +491,18 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
             _real_start = ws_self.start
 
             def _hooked_start():
-                result = _real_start()
+                result    = _real_start()
                 try:
-                    from hc.constants import get_web_port as _gwp
-                    state.port = _gwp()
+                    state.port = get_web_port()
                 except Exception:
                     pass
-
-                _use_ssl = getattr(ws_self, "_use_ssl", False)
+                _use_ssl  = getattr(ws_self, "_use_ssl", False)
                 state.scheme = "https" if _use_ssl else "http"
                 port   = state.port
                 scheme = state.scheme
 
-                # Wait for the server to actually respond before signalling ready.
                 import http.client as _hc_lib
-                import ssl as _ssl
+                import ssl as _ssl_mod
                 deadline  = time.time() + 15.0
                 signalled = False
                 while time.time() < deadline:
@@ -500,9 +510,9 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
                         break
                     try:
                         if _use_ssl:
-                            ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+                            ctx = _ssl_mod.SSLContext(_ssl_mod.PROTOCOL_TLS_CLIENT)
                             ctx.check_hostname = False
-                            ctx.verify_mode    = _ssl.CERT_NONE
+                            ctx.verify_mode    = _ssl_mod.CERT_NONE
                             conn = _hc_lib.HTTPSConnection(
                                 "127.0.0.1", port, timeout=1.0, context=ctx)
                         else:
@@ -520,7 +530,7 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
                     except Exception:
                         time.sleep(0.15)
                 if not signalled:
-                    log.warning("WebServer did not respond in 15 s — signalling anyway.")
+                    log.warning("WebServer did not respond in 15 s — signalling ready anyway.")
                     state.ready_event.set()
                 return result
 
@@ -528,16 +538,12 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
 
         _WS.__init__ = _patched_ws_init
 
-        # ── Patch 2: replace run_tui_loop with a shutdown/restart-aware wrapper ─
+        # ── Patch 2: run_tui_loop — bridge state events into the TUI's own
+        #    shutdown_event so it exits on tray Quit OR tray Restart.          ─
         _real_tui = _tui_mod.run_tui_loop
 
         def _wrapped_tui(*, manager, glog, console, shutdown_event,
                          export_urls_fn, **kw):
-            """
-            Calls the real run_tui_loop but bridges state.shutdown_event and
-            state.restart_event into the inner shutdown_event so the TUI exits
-            cleanly when either fires.
-            """
             _stop = threading.Event()
 
             def _watch():
@@ -549,7 +555,6 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
 
             threading.Thread(target=_watch, daemon=True,
                              name="hc-tui-watcher").start()
-
             log.info("TUI loop starting.")
             try:
                 _real_tui(manager=manager, glog=glog, console=console,
@@ -558,25 +563,119 @@ def _run_hydracast_once(state: _WorkerState) -> bool:
             finally:
                 _stop.set()
                 log.info("TUI loop exited.")
-                try:
-                    from hc.web_handler import _WEB_MANAGER
-                    if _WEB_MANAGER is not None:
-                        log.info("Calling manager.shutdown() from TUI finally …")
-                        _WEB_MANAGER.shutdown()
-                except Exception as exc:
-                    log.warning("manager.shutdown() in TUI finally: %s", exc)
 
         _tui_mod.run_tui_loop = _wrapped_tui
 
-        # ── Run the core ──────────────────────────────────────────────────────
-        # Import hc.main (the core entry point, NOT hydracast.main) and run it.
-        # hc.main sets up the Manager, web server, and TUI — nothing else.
+        # ── Core assembly (mirrors original manager.py main()) ────────────────
         try:
-            import hc.main as _hc_core
-            _hc_core.main()
+            console = Console(force_terminal=True, highlight=False)
+
+            # Clean stale per-stream mediamtx yaml files from a prior run.
+            for _f in CONFIGS_DIR().glob("mediamtx_*.yml"):
+                try:
+                    _f.unlink()
+                except Exception:
+                    pass
+
+            # Dependency checks.
+            if not DependencyManager.download_mediamtx(console):
+                log.error("Cannot continue without MediaMTX.")
+                state.fatal = True
+                return False
+
+            _ffmpeg = DependencyManager.ensure_ffmpeg(console)
+            if not _ffmpeg:
+                log.error("FFmpeg not found — cannot start.")
+                state.fatal = True
+                return False
+            set_ffmpeg(_ffmpeg)
+
+            _ffprobe = DependencyManager.ensure_ffprobe(console)
+            if _ffprobe:
+                set_ffprobe(_ffprobe)
+
+            try:
+                ensure_ssl(console)
+            except RuntimeError as _ssl_exc:
+                log.error("SSL error: %s", _ssl_exc)
+                state.fatal = True
+                return False
+
+            try:
+                configs = JSONManager.load()
+            except Exception as _cfg_exc:
+                log.error("Config load error: %s", _cfg_exc)
+                state.fatal = True
+                return False
+
+            enabled_ports = [c.port for c in configs if c.enabled]
+            if enabled_ports:
+                FirewallManager.open_ports(enabled_ports, console)
+
+            # Core objects.
+            glog    = LogBuffer()
+            manager = StreamManager(configs, glog)
+
+            # Expose the manager to the web module so upload handlers can
+            # trigger in-memory folder rescans after a file is uploaded.
+            _web_module._WEB_MANAGER = manager
+
+            # Per-run shutdown event.  Forwards from state events so the TUI
+            # and web server both exit on tray Quit or tray Restart.
+            _shutdown = threading.Event()
+
+            def _fwd_shutdown():
+                while not _shutdown.is_set():
+                    if state.shutdown_event.is_set() or state.restart_event.is_set():
+                        _shutdown.set()
+                        return
+                    time.sleep(0.1)
+
+            threading.Thread(target=_fwd_shutdown, daemon=True,
+                             name="hc-shutdown-fwd").start()
+
+            # SIGTERM → _shutdown (signal.signal is patched to no-op in worker
+            # threads on Windows, so this is best-effort).
+            try:
+                _sig.signal(_sig.SIGTERM, lambda s, f: _shutdown.set())
+            except Exception:
+                pass
+
+            # Start streams + scheduler.
+            glog.add(f"{APP_NAME} v{APP_VER} started — {len(configs)} stream(s) configured.")
+            manager.start_all()
+            manager.run_scheduler()
+
+            # Web server.
+            web = WebServer(get_web_port())
+            web.start()
+            glog.add(f"Web UI -> http://{_local_ip()}:{get_web_port()}", "INFO")
+
+            # TUI — blocks until _shutdown fires (which _wrapped_tui bridges
+            # to _stop so run_tui_loop exits promptly).
+            _tui_mod.run_tui_loop(
+                manager=manager,
+                glog=glog,
+                console=console,
+                shutdown_event=_shutdown,
+                export_urls_fn=manager.export_urls,
+            )
+
+            # Graceful teardown.
+            log.info("TUI exited — shutting down manager and web server.")
+            manager.shutdown()
+            web.stop()
+
+            for _f in CONFIGS_DIR().glob("mediamtx_*.yml"):
+                try:
+                    _f.unlink()
+                except Exception:
+                    pass
+
         finally:
+            # Always restore patches so a hot-restart gets a clean injection.
             _tui_mod.run_tui_loop = _real_tui
-            _WS.__init__ = _real_ws_init
+            _WS.__init__          = _real_ws_init
 
     except SystemExit as exc:
         code = exc.code
@@ -803,18 +902,6 @@ def _run_tray(state: _WorkerState, log_dir: Path) -> None:
 # =============================================================================
 
 def main() -> None:
-    # ── Re-entry guard ────────────────────────────────────────────────────────
-    # Prevent recursive calls: the worker thread must NEVER call hydracast.main()
-    # again (it would re-launch the guardian, re-start heartbeat, re-enter the
-    # worker loop, and create hundreds of processes).
-    if os.environ.get("_HYDRACAST_RUNNING") == str(os.getpid()):
-        raise RuntimeError(
-            "hydracast.main() called recursively inside the same process "
-            "(pid=%d). The worker thread must call hc core functions directly, "
-            "not re-enter the launcher." % os.getpid()
-        )
-    os.environ["_HYDRACAST_RUNNING"] = str(os.getpid())
-
     # ── UAC elevation ─────────────────────────────────────────────────────────
     if not _request_admin_if_needed():
         sys.exit(0)
