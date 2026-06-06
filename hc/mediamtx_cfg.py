@@ -15,15 +15,26 @@ PORT SCHEME (v6.2+)
     • all four derived ports (RTSP, HLS, RTP, RTCP) are free
     • no OS firewall rule blocks them
 
-FIX (v6.5.1 — writeTimeout note):
-  • readTimeout / writeTimeout remain at 30 s (set in v6.3).
-    These values are NOT the root cause of the broken-pipe restart loop —
-    that was -preset slow with -re causing encoder stalls (fixed in worker.py
-    v6.5.1 by switching to -preset medium).  30 s is the correct headroom
-    for a high-quality encode on a loaded host; reducing it would reintroduce
-    the very problem it was raised to avoid.
+FIX (v5.0.6 / v6.0):
+  • spath = cfg.rtsp_path  (no "~all" fallback).
+    The new version used  spath = cfg.rtsp_path if cfg.rtsp_path else "~all"
+    because models.py was returning "" for empty stream_path.  models.py is
+    now fixed to always return "stream" as the default, so rtsp_path is never
+    empty and the ~all wildcard is not needed.
 
+    Using ~all caused two problems:
+      1. MediaMTX v1.9.1 does not reliably match the bare root path "/" under
+         ~all, so FFmpeg's push to rtsp://127.0.0.1:<port>/ was rejected.
+      2. All streams on the same server shared one wildcard path block, which
+         broke multi-stream isolation.
 
+  • hlsAllowOrigin: '*'  — singular, plain string (unchanged from v5.0.6).
+  • hlsPartDuration: 0s  — disables Low-Latency HLS (LL-HLS).
+
+Previously fixed:
+  v5.0.5 — hlsAlwaysRemux: true, removed `source: publisher` from paths
+  v5.0.4 — rtmp/srt/webrtc: false (correct v1.9.1 disable keys)
+  v5.0.3 — log file opened with "w" so stale errors don't pollute new runs
 """
 from __future__ import annotations
 
@@ -73,16 +84,6 @@ class MediaMTXConfig:
         rtp_addr  = f"{addr}:{rtp_base}"
         rtcp_addr = f"{addr}:{rtp_base + 1}"
 
-        # ── HLS bind address (v6.5.2 fix) ────────────────────────────────────
-        # The HLS reverse-proxy in _proxy_hls() always connects to
-        # http://127.0.0.1:<hls_port>/... regardless of the configured
-        # LISTEN_ADDR.  If hlsAddress were bound to a specific external IP
-        # (e.g. "192.168.20.10:30162" when --listen 192.168.20.10 is set),
-        # the loopback connection would be refused → 502 → manifestLoadError.
-        # Binding HLS to 0.0.0.0 lets the loopback proxy always reach it
-        # while still accepting external connections on the network interface.
-        hls_bind_addr = f"0.0.0.0:{cfg.hls_port}"
-
         log.info(
             "[%s] Port assignment: RTSP=%d (odd✓)  HLS=%d  RTP=%d (even✓)  RTCP=%d",
             cfg.name, port, cfg.hls_port, rtp_base, rtp_base + 1,
@@ -112,23 +113,12 @@ class MediaMTXConfig:
                 f"webrtc: false\n"
                 f"\n"
                 f"hls: true\n"
-                f"hlsAddress: {hls_bind_addr}\n"
+                f"hlsAddress: {addr}:{cfg.hls_port}\n"
                 f"hlsAlwaysRemux: true\n"
                 f"hlsVariant: mpegts\n"
-                # ── HLS/RTSP sync (v6.3) ──────────────────────────────────────
-                # 4 s segments align exactly with FFmpeg -force_key_frames every
-                # 4 s (worker.py).  Each segment therefore starts on an IDR frame
-                # so HLS and RTSP playback stay in lock-step.  Changing this
-                # value requires a matching change to worker.py.
-                f"hlsSegmentCount: 10\n"
+                f"hlsSegmentCount: 7\n"
                 f"hlsSegmentDuration: 4s\n"
                 f"hlsPartDuration: 0s\n"
-                # hlsSegmentMaxSize intentionally omitted — MediaMTX uses its
-                # internal default.  The bare-integer form (20971520) crashes
-                # the Go JSON unmarshaller with "cannot unmarshal number into
-                # Go struct field alias.hlsSegmentMaxSize of type string".
-                # The quoted form ('20971520') requires a newer MediaMTX build.
-                # Omitting the field entirely is compatible with all versions.
                 f"hlsAllowOrigin: '*'\n"
             )
         else:
@@ -147,7 +137,7 @@ class MediaMTXConfig:
         yaml_text = (
             f"# HydraCast v{APP_VER} — {cfg.name} (:{port})\n"
             f"# Stream path: /{spath}   RTSP push → rtsp://127.0.0.1:{port}/{spath}\n"
-            f"# RTSP={port} (odd✓)  HLS={cfg.hls_port} (0.0.0.0, proxy via 127.0.0.1)  RTP={rtp_base} (even✓)  RTCP={rtp_base+1}\n"
+            f"# RTSP={port} (odd✓)  HLS={cfg.hls_port}  RTP={rtp_base} (even✓)  RTCP={rtp_base+1}\n"
             f"# rtmp/srt/webrtc: false prevents port-1935/8890/8889 collisions\n"
             f"logLevel: error\n"
             f"logDestinations: [file]\n"
@@ -156,12 +146,9 @@ class MediaMTXConfig:
             f"rtspAddress: {addr}:{port}\n"
             f"rtpAddress:  {rtp_addr}\n"
             f"rtcpAddress: {rtcp_addr}\n"
-            # readTimeout/writeTimeout raised to 30 s (v6.3): the high-quality
-            # slow preset encoder can briefly stall on CPU-heavy frames; 15 s
-            # was tight enough to trigger spurious RTSP session teardowns.
-            f"readTimeout: 30s\n"
-            f"writeTimeout: 30s\n"
-            f"writeQueueSize: 2048\n"
+            f"readTimeout: 15s\n"
+            f"writeTimeout: 15s\n"
+            f"writeQueueSize: 1024\n"
             f"udpMaxPayloadSize: 1472\n"
             f"\n"
             f"api: false\n"
