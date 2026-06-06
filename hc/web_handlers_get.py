@@ -14,43 +14,10 @@ from typing import Any, Dict, List, Optional
 
 import psutil
 
-from hc.constants import APP_VER, BASE_DIR, CONFIG_DIR, MEDIA_DIR, SUPPORTED_EXTS, get_web_port, get_auto_start
+from hc.constants import APP_VER, BASE_DIR, CONFIG_DIR, MEDIA_DIR, SUPPORTED_EXTS, get_web_port
 from hc.utils import _fmt_duration, _fmt_size, _local_ip
 
 log = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# HLS proxy URL helper (imported from web_handler to keep the definition DRY)
-# ---------------------------------------------------------------------------
-def _hls_proxy_url(cfg, full: bool = False) -> str:
-    """
-    Return the proxied HLS URL for use in the Web UI.
-
-    When full=False (default): returns a relative path like
-      /hls/<port>/<path>/index.m3u8
-    used by the in-browser HLS.js video player (same HTTPS origin, no mixed-content).
-
-    When full=True: returns the absolute URL like
-      https://<server_ip>/hls/<port>/<path>/index.m3u8
-    used in copy-to-clipboard and display fields so external players (VLC etc) work.
-
-    Returns "" when HLS is not enabled for this stream.
-    """
-    if not cfg.hls_enabled:
-        return ""
-    spath = (cfg.rtsp_path or cfg.stream_path or "stream").strip("/")
-    rel = f"/hls/{cfg.hls_port}/{spath}/index.m3u8"
-    if not full:
-        return rel
-    from hc.utils import _local_ip
-    from hc.constants import get_web_port, LISTEN_ADDR
-    ip     = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
-    port   = get_web_port()
-    scheme = "https"
-    port_sfx = f":{port}" if port not in (443, 80) else ""
-    return f"{scheme}://{ip}{port_sfx}{rel}"
-
 
 
 def _clean_error_msg(msg):
@@ -128,57 +95,6 @@ def _invalidate_lib_cache() -> None:
         _LIB_CACHE = None; _LIB_CACHE_TS = 0.0
 
 
-
-# ---------------------------------------------------------------------------
-# Next-in-queue helper (mirrors _get_next_in_queue in web_handler.py)
-# ---------------------------------------------------------------------------
-def _next_in_queue(st, cfg, n: int = 2):
-    """
-    Return the next *n* playlist file names after the currently playing item.
-
-    Mirrors web_handler._get_next_in_queue exactly so the viewer tab gets
-    identical queue information to the main streams panel.  Kept here rather
-    than imported from web_handler to avoid a circular-import between the two
-    modules (web_handler imports _GetHandlersMixin from this file).
-    """
-    import re as _re
-    from datetime import datetime as _dt
-
-    playlist = cfg.playlist
-    if not playlist:
-        return []
-    order = getattr(st, "playlist_order", None) or list(range(len(playlist)))
-    idx   = getattr(st, "playlist_index", 0) or 0
-
-    remaining = []
-    for offset in range(1, len(order)):
-        next_ord_idx = (idx + offset) % len(order)
-        pl_idx = order[next_ord_idx]
-        try:
-            remaining.append(playlist[pl_idx].file_path.name)
-        except (IndexError, AttributeError):
-            pass
-
-    _DAY_TAG = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
-    _DAY_RE  = _re.compile(r'_(MON|TUE|WED|THU|FRI|SAT|SUN)_', _re.IGNORECASE)
-    _is_shuffled = getattr(cfg, "shuffle", False)
-
-    if not _is_shuffled and len(remaining) > 1:
-        if any(_DAY_RE.search(f) for f in remaining):
-            today = _dt.now().weekday()
-
-            def _day_distance(filename: str) -> int:
-                m = _DAY_RE.search(filename)
-                if not m:
-                    return 7 + len(remaining)
-                file_day = _DAY_TAG.get(m.group(1).upper(), 7)
-                dist = (file_day - today) % 7
-                return dist if dist > 0 else 7
-
-            remaining.sort(key=_day_distance)
-
-    return remaining[:n]
-
 # ---------------------------------------------------------------------------
 # Mixin
 # ---------------------------------------------------------------------------
@@ -235,7 +151,7 @@ class _GetHandlersMixin:
                 "time_remaining": st.time_remaining(),
                 "fps":            st.fps,
                 "rtsp_url":       cfg.rtsp_url_external,
-                "hls_url":        _hls_proxy_url(cfg, full=True),
+                "hls_url":        cfg.hls_url if cfg.hls_enabled else "",
                 "shuffle":        cfg.shuffle,
                 "playlist_count": len(cfg.playlist),
                 "enabled":        cfg.enabled,
@@ -243,30 +159,14 @@ class _GetHandlersMixin:
                 "loop_count":     st.loop_count,
                 "restart_count":  st.restart_count,
                 "bitrate":        st.bitrate,
-                "video_bitrate":  cfg.video_bitrate,
-                "audio_bitrate":  cfg.audio_bitrate,
                 "speed":          st.speed,
                 "app_ver":        APP_VER,
                 # ── Oneshot / event state ─────────────────────────────────
                 "oneshot_active": st.oneshot_active,
                 "active_event":   active_event_name,
                 "current_file":   cur_file,
-                # ── Compliance (non-None alert = show banner in UI) ───────
-                "compliance_enabled":       cfg.compliance_enabled,
-                "compliance_alert":         st.compliance_alert,
-                "compliance_alert_enabled": getattr(cfg, "compliance_alert_enabled", True),
-                # ── Next-in-queue (viewer card queue display) ─────────────
-                # Show up to 2 upcoming playlist filenames so the viewer card
-                # can render the queue chips below the progress bar.
-                "next_in_queue": _next_in_queue(st, cfg, n=2),
-                # ── Buffering badge (v5.3.7+) ─────────────────────────────
-                # True while _start_ffmpeg_with_retry absorbs transient
-                # broken-pipe / 400 Bad Request failures; viewer renders
-                # BUFFERING instead of STARTING during this window.
-                "buffering":      getattr(st, "buffering", False),
-                # ── Hybrid source switching ───────────────────────────────
-                "source_mode":    getattr(cfg, "source_mode",   "playlist"),
-                "active_source":  getattr(st,  "active_source", "playlist"),
+                # Compliance alert (non-None = show banner in UI)
+                "compliance_alert": st.compliance_alert,
             })
         self._json(result)
 
@@ -295,10 +195,6 @@ class _GetHandlersMixin:
                 "compliance_enabled":   cfg.compliance_enabled,
                 "compliance_start":     cfg.compliance_start,
                 "compliance_loop":      cfg.compliance_loop,
-                # ── Hybrid source switching (graceful fallback for older models) ──
-                "source_mode":    getattr(cfg, "source_mode",    "file"),
-                "camera_id":      getattr(cfg, "camera_id",      None),
-                "camera_windows": getattr(cfg, "camera_windows", []),
             })
         self._json(result)
 
@@ -373,7 +269,6 @@ class _GetHandlersMixin:
                 "disk_total":   _fmt_size(disk.total),
                 "web_port":     get_web_port(),
                 "lan_ip":       _local_ip(),
-                "auto_start":   get_auto_start(),
             })
         except Exception as exc:
             self._json({"error": str(exc)}, 500)
@@ -407,7 +302,8 @@ class _GetHandlersMixin:
             "name":          cfg.name,
             "port":          cfg.port,
             "rtsp_url":      cfg.rtsp_url_external,
-            "hls_url":       _hls_proxy_url(cfg, full=True),
+            "hls_url":       cfg.hls_url if cfg.hls_enabled else "",
+            "weekdays":      cfg.weekdays_display(),
             "status":        st.status.label,
             "progress":      st.progress,
             "current_pos":   st.current_pos,
@@ -434,115 +330,15 @@ class _GetHandlersMixin:
             self._json({"error": "not found"}, 404)
             return
         cfg = st.config
-        # RTSP-first: when HLS is not enabled, viewer URL should default to RTSP
-        hls_url = _hls_proxy_url(cfg, full=True)
         self._json({
-            "name":          cfg.name,
-            "status":        st.status.label,
-            "rtsp_url":      cfg.rtsp_url_external,
-            "hls_url":       hls_url,
-            "current_pos":   st.current_pos,
-            "duration":      st.duration,
-            "progress":      st.progress,
-            # ── Hybrid source switching (graceful fallback for older models) ──
-            "source_mode":   getattr(cfg, "source_mode",   "file"),
-            "active_source": getattr(st,  "active_source", "file"),
+            "name":        cfg.name,
+            "status":      st.status.label,
+            "rtsp_url":    cfg.rtsp_url_external,
+            "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
+            "current_pos": st.current_pos,
+            "duration":    st.duration,
+            "progress":    st.progress,
         })
-
-    def _get_cameras(self) -> None:
-        """GET /api/cameras — returns the full camera registry (passwords masked).
-
-        Reads cameras.hcf directly so it works even when JSONManager.load_cameras()
-        is absent in older builds.  Falls back to an empty list gracefully.
-        """
-        try:
-            import json as _json
-            from hc.constants import CAMERAS_FILE
-            from hc.models import CameraConfig
-
-            cameras_file = CAMERAS_FILE()
-            cameras_raw: list = []
-            if cameras_file.exists():
-                try:
-                    cameras_raw = _json.loads(cameras_file.read_text(encoding="utf-8"))
-                    if not isinstance(cameras_raw, list):
-                        cameras_raw = []
-                except Exception:
-                    cameras_raw = []
-
-            result = []
-            for raw in cameras_raw:
-                try:
-                    cam = CameraConfig(
-                        camera_id   = str(raw.get("camera_id", "")),
-                        name        = str(raw.get("name", "")),
-                        protocol    = str(raw.get("protocol", "rtsp")),
-                        host        = str(raw.get("host", "")),
-                        port        = int(raw.get("port", 554)),
-                        path        = str(raw.get("path", "/")),
-                        username    = str(raw.get("username", "")),
-                        password    = str(raw.get("password", "")),
-                        source_type = str(raw.get("source_type", "rtsp")),
-                        enabled     = bool(raw.get("enabled", True)),
-                        notes       = str(raw.get("notes", "")),
-                    )
-                    result.append({
-                        "camera_id":   cam.camera_id,
-                        "name":        cam.name,
-                        "protocol":    cam.protocol,
-                        "host":        cam.host,
-                        "port":        cam.port,
-                        "path":        cam.path,
-                        "username":    cam.username,
-                        # Never send the real password to the browser — mask it
-                        "password":    "••••••••" if cam.password else "",
-                        "source_type": cam.source_type,
-                        "enabled":     cam.enabled,
-                        "notes":       cam.notes,
-                        "url_masked":  cam.url_masked,
-                        "url_display": cam.url_masked,
-                    })
-                except Exception as exc2:
-                    log.warning("_get_cameras: skipping malformed entry: %s", exc2)
-                    continue
-
-            self._json(result)
-        except Exception as exc:
-            log.error("_get_cameras error: %s", exc)
-            self._json({"error": str(exc)}, 500)
-
-
-
-    def _get_holidays(self, qs: Dict[str, Any]) -> None:
-        """GET /api/holidays — delegate to _CalendarHandlersMixin with safe fallback.
-
-        BUG FIX: If the calendar mixin's _get_holidays crashes (missing holidays
-        package, bad country code, etc.) the UI spins forever on "loading".
-        This override calls super() and catches any exception, returning an empty
-        but valid payload so the UI renders instead of hanging.
-        """
-        try:
-            # _CalendarHandlersMixin is later in the MRO; call it via super().
-            super()._get_holidays(qs)
-        except AttributeError:
-            # Calendar mixin not present in this build — return safe empty payload.
-            year = datetime.now().year
-            self._json({
-                "holidays": [],
-                "custom":   [],
-                "country":  "",
-                "year":     year,
-            })
-        except Exception as exc:
-            log.error("_get_holidays error: %s", exc)
-            year = datetime.now().year
-            self._json({
-                "holidays": [],
-                "custom":   [],
-                "country":  "",
-                "year":     year,
-                "error":    str(exc),
-            })
 
     def _get_mail_config(self) -> None:
         import json as _json
