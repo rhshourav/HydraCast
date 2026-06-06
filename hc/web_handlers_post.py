@@ -346,8 +346,8 @@ class _PostHandlersMixin:
                     enabled=bool(data.get("enabled", True)),
                     shuffle=bool(data.get("shuffle", False)),
                     stream_path=stream_path,
-                    video_bitrate=str(data.get("video_bitrate", "8000k")).strip() or "8000k",
-                    audio_bitrate=str(data.get("audio_bitrate", "320k")).strip() or "320k",
+                    video_bitrate=str(data.get("video_bitrate", "copy")).strip() or "copy",
+                    audio_bitrate=str(data.get("audio_bitrate", "copy")).strip() or "copy",
                     hls_enabled=bool(data.get("hls_enabled", False)),
                     folder_source=folder_source,
                     compliance_enabled=bool(data.get("compliance_enabled", False)),
@@ -554,6 +554,83 @@ class _PostHandlersMixin:
 
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
+
+    # ── URLs CSV download (GET /api/urls_csv?include_files=0|1) ──────────────
+
+    def _handle_urls_csv(self, qs: dict) -> None:
+        """
+        Build and send a CSV file of all stream URLs.
+
+        Columns (always present):
+          name, rtsp_url, rtsp_url_external
+
+        Optional column (include_files=1):
+          files  — semicolon-separated list of playlist file paths
+
+        Optional column (when HLS is enabled on a stream):
+          hls_url
+        """
+        from hc.web import _WEB_MANAGER, _SEC_HEADERS  # type: ignore
+        import csv
+        import io
+        from datetime import datetime as _dt
+
+        mgr = _WEB_MANAGER
+        if not mgr:
+            self._json({"ok": False, "msg": "Manager not ready"}, 503)
+            return
+
+        try:
+            inc_files = str(qs.get("include_files", ["0"])[0]) == "1"
+
+            buf = io.StringIO()
+            fieldnames = ["name", "rtsp_url", "rtsp_url_external", "hls_url"]
+            if inc_files:
+                fieldnames.append("files")
+
+            writer = csv.DictWriter(
+                buf, fieldnames=fieldnames, extrasaction="ignore",
+                lineterminator="\r\n",
+            )
+            writer.writeheader()
+
+            for st in mgr.states:
+                cfg = st.config
+                row: dict = {
+                    "name":              cfg.name,
+                    "rtsp_url":          cfg.rtsp_url,
+                    "rtsp_url_external": cfg.rtsp_url_external,
+                    "hls_url":           cfg.hls_url if cfg.hls_enabled else "",
+                }
+                if inc_files:
+                    row["files"] = ";".join(
+                        str(item.file_path) for item in cfg.playlist
+                    )
+                writer.writerow(row)
+
+            body = buf.getvalue().encode("utf-8")
+            ts   = _dt.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"stream_urls_{ts}.csv"
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header(
+                "Content-Disposition", f'attachment; filename="{fname}"'
+            )
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            for k, v in _SEC_HEADERS.items():
+                self.send_header(k, v)
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            log.info("URLs CSV downloaded: %s (%d bytes)", fname, len(body))
+
+        except Exception as exc:
+            log.error("_handle_urls_csv error: %s", exc)
+            self._json({"ok": False, "msg": f"CSV error: {exc}"}, 500)
 
     # ── Multipart upload ──────────────────────────────────────────────────────
 
