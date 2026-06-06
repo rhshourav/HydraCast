@@ -12,7 +12,16 @@ v6.3 changes
   list survives restarts.
 • Backup/restore includes the roots list via the "media_roots" key.
 
+v6.2 changes
+────────────
+• apply_cli_args(args) helper: call it from main.py after argparse.parse_args()
+  to wire --web-port / --port, --listen, --ssl-cert, --ssl-key, --no-firewall
+  into the shared _flags dict in one place.
+• WEB_PORT default changed to 443 (HTTPS); WebServer auto-generates a
+  self-signed cert when ssl/cert.pem + ssl/key.pem are absent.
+• validate_port() utility used by both CLI and the TUI port-change prompt.
 
+v6.0 / v6.1 changes kept below.
 """
 from __future__ import annotations
 
@@ -24,7 +33,7 @@ from typing import Dict, List, Optional
 
 # ── App metadata ──────────────────────────────────────────────────────────────
 APP_NAME   = "HydraCast"
-APP_VER    = "6.5.0"
+APP_VER    = "6.4.0"
 APP_AUTHOR = "rhshourav"
 APP_GITHUB = "https://github.com/rhshourav/HydraCast"
 
@@ -96,7 +105,6 @@ def set_base_dir(script_path: Path) -> None:
     _dirs["SSL"]    = wb / "ssl"
     _dirs["STREAMS_JSON"] = wb / "config" / "streams.hcf"
     _dirs["EVENTS_JSON"]  = wb / "config" / "events.hcf"
-    _dirs["CAMERAS_JSON"] = wb / "config" / "cameras.hcf"
     # Legacy paths — migration helpers only
     _dirs["CSV"]        = wb / "streams.csv"
     _dirs["EVENTS_CSV"] = wb / "events.csv"
@@ -126,7 +134,6 @@ def SSL_CERT()       -> Path: return _require("SSL") / "cert.pem"
 def SSL_KEY()        -> Path: return _require("SSL") / "key.pem"
 def STREAMS_JSON()   -> Path: return _require("STREAMS_JSON")
 def EVENTS_FILE()    -> Path: return _require("EVENTS_JSON")
-def CAMERAS_FILE()   -> Path: return _require("CAMERAS_JSON")
 def CSV_FILE()       -> Path: return _require("CSV")
 def EVENTS_CSV()     -> Path: return _require("EVENTS_CSV")
 
@@ -323,10 +330,6 @@ _flags: Dict[str, object] = {
     "http_port":   HTTP_REDIRECT_PORT,
     "ssl_cert":    None,
     "ssl_key":     None,
-    # When False: streams are NOT started automatically at launch or by the
-    # scheduler.  The user must press Start in the Web UI.  One-shot events
-    # will still auto-start a stopped stream so they can fire on time.
-    "auto_start":  True,
 }
 
 def NO_FIREWALL()    -> bool: return bool(_flags["no_firewall"])
@@ -341,8 +344,6 @@ def set_web_port(v: int)      -> None: _flags["web_port"]    = int(v)
 def set_http_port(v: int)     -> None: _flags["http_port"]   = int(v)
 def set_ssl_cert(v: str)      -> None: _flags["ssl_cert"]    = v
 def set_ssl_key(v: str)       -> None: _flags["ssl_key"]     = v
-def get_auto_start() -> bool:  return bool(_flags["auto_start"])
-def set_auto_start(v: bool)  -> None: _flags["auto_start"] = bool(v)
 
 
 # ── Port validation ───────────────────────────────────────────────────────────
@@ -449,17 +450,6 @@ def build_arg_parser():
         default=False,
         help="Skip automatic OS firewall rule setup.",
     )
-    parser.add_argument(
-        "--no-auto-start",
-        dest="no_auto_start",
-        action="store_true",
-        default=False,
-        help=(
-            "Do not start streams automatically at launch or via the scheduler. "
-            "Streams must be started manually from the Web UI. "
-            "One-shot events will still auto-start a stopped stream so they fire on time."
-        ),
-    )
     return parser
 
 
@@ -483,8 +473,6 @@ def apply_cli_args(args) -> None:
     if args.ssl_key:
         set_ssl_key(args.ssl_key)
     set_no_firewall(args.no_firewall)
-    if getattr(args, "no_auto_start", False):
-        set_auto_start(False)
 
 
 # ── Weekdays ──────────────────────────────────────────────────────────────────
