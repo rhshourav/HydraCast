@@ -3849,8 +3849,8 @@ function showNewStreamForm(){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="copy" placeholder="copy or e.g. 2500k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="copy" placeholder="copy or e.g. 128k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="8000k" placeholder="e.g. 8000k, 15M, or copy"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="320k" placeholder="e.g. 320k, 192k, or copy"></div>
       </div>
     </div>
     <div class="config-section">
@@ -3948,7 +3948,7 @@ async function suggestNextPort(inputId, resultId){
   // Always start 2 above the current value so the button advances to a
   // genuinely *next* free port instead of returning the same port when
   // the current one happens to be free already.
-  const cur = parseInt(inp.value||0)||30121;
+  const cur = parseInt(inp.value||0)||60121;
   const from = cur + 2;
   const suggestBtn = document.getElementById('suggest-btn-'+inputId);
   if(suggestBtn){
@@ -4140,8 +4140,8 @@ async function submitNewStream(){
     name,port,files,weekdays,
     folder_source: folderPath||null,
     stream_path:(document.getElementById('new-spath')?.value||'').trim(),
-    video_bitrate:(document.getElementById('new-vbr')?.value||'2500k').trim()||'2500k',
-    audio_bitrate:(document.getElementById('new-abr')?.value||'128k').trim()||'128k',
+    video_bitrate:(document.getElementById('new-vbr')?.value||'8000k').trim()||'8000k',
+    audio_bitrate:(document.getElementById('new-abr')?.value||'320k').trim()||'320k',
     shuffle:document.getElementById('new-shuffle')?.checked||false,
     enabled:document.getElementById('new-enabled')?.checked!==false,
     hls_enabled:document.getElementById('new-hls')?.checked||false,
