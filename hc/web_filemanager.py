@@ -351,10 +351,17 @@ class _FileManagerMixin:
                 encoded = _encode_path(root_idx, entry_rel)
 
                 if entry.is_dir(follow_symlinks=True):
+                    # Count items inside the subdir with a single scandir call.
+                    # This is O(1) per entry on most filesystems (same cost as
+                    # iterdir) and avoids sending "-1" to the UI.
+                    try:
+                        sub_count = sum(1 for _ in _os.scandir(entry.path))
+                    except OSError:
+                        sub_count = 0
                     dirs_out.append({
                         "name":        entry.name,
                         "path":        encoded,
-                        "items":       -1,   # lazy — skip N×iterdir() per subdir
+                        "items":       sub_count,
                         "has_media":   None,
                         "has_subdirs": None,
                     })
