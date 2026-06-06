@@ -4,7 +4,7 @@ hc/watchdog.py  —  HydraCast Guardian Watchdog
 Architecture
 ────────────
 The watchdog runs as its own SEPARATE PROCESS (not a thread), launched by
-hydracast_bg.py via subprocess before the main HC process starts.  It outlives
+hydracast.py via subprocess before the main HC process starts.  It outlives
 the main process and restarts it whenever it crashes or becomes unresponsive.
 
                     ┌──────────────────────────────┐
@@ -19,7 +19,7 @@ the main process and restarts it whenever it crashes or becomes unresponsive.
                                │ subprocess.Popen
                                ▼
                     ┌──────────────────────────────┐
-                    │  hydracast_bg.exe (main app)  │
+                    │  hydracast.exe (main app)     │
                     │                               │
                     │  • Sends heartbeat UDP pings  │
                     │  • Writes PID to guardian.pid │
@@ -48,19 +48,23 @@ IPC / Status endpoint
 
 Heartbeat
 ─────────
-The main app (hc/heartbeat.py — see bottom of this file) calls
-`send_heartbeat()` every HEARTBEAT_INTERVAL seconds from a daemon thread.
-This sends a tiny UDP packet to 127.0.0.1:HEARTBEAT_PORT.  If the guardian
-sees no packet for HEARTBEAT_TIMEOUT seconds it assumes the process is frozen
-and kills + restarts it.
+The main app calls HeartbeatSender.start() from a daemon thread.
+This sends a tiny UDP packet to 127.0.0.1:HEARTBEAT_PORT every
+HEARTBEAT_INTERVAL seconds.  If the guardian sees no packet for
+HEARTBEAT_TIMEOUT seconds it assumes the process is frozen and
+kills + restarts it.
+
+IMPORTANT: last_heartbeat is reset to None every time a new child
+is launched so stale timestamps from the previous run never cause
+instant false-positive kills.
 
 Usage
 ─────
-Launched automatically by hydracast_bg.py (or build integration).
+Launched automatically by hydracast.py at startup.
 Can also run standalone for testing:
 
-    python -m hc.watchdog --guardian --target hydracast_bg.exe
-    python -m hc.watchdog --guardian --target "python hydracast_bg.py"
+    python -m hc.watchdog --guardian --target hydracast.exe
+    python -m hc.watchdog --guardian --target "python hydracast.py"
 
 Playlist watchdog (legacy API preserved)
 ─────────────────────────────────────────
@@ -76,6 +80,7 @@ import logging
 import os
 import platform
 import re
+import shlex
 import signal
 import socket
 import subprocess
@@ -92,17 +97,21 @@ if TYPE_CHECKING:
     from hc.models import PlaylistItem, StreamState, StreamStatus
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-GUARDIAN_VERSION   = "2.0.0"
-HEARTBEAT_PORT     = 17777        # UDP — main process sends pings here
-STATUS_PORT        = 17778        # TCP — guardian exposes JSON status here
-HEARTBEAT_INTERVAL = 10.0         # seconds between pings from main process
-HEARTBEAT_TIMEOUT  = 45.0         # seconds before guardian considers process frozen
-MAX_RESTARTS       = 10           # give up after this many consecutive crashes
-BASE_RESTART_DELAY = 3.0          # initial backoff delay (doubles each crash)
-MAX_RESTART_DELAY  = 120.0        # cap backoff at 2 minutes
-CHECK_INTERVAL     = 30.0         # playlist watchdog poll interval (seconds)
-MIN_FILE_BYTES     = 1024         # files smaller than this are treated as corrupt
-GUARDIAN_PID_FILE  = "guardian.pid"  # written relative to LOGS_DIR
+GUARDIAN_VERSION    = "2.1.0"
+HEARTBEAT_PORT      = 17777        # UDP — main process sends pings here
+STATUS_PORT         = 17778        # TCP — guardian exposes JSON status here
+HEARTBEAT_INTERVAL  = 10.0         # seconds between pings from main process
+HEARTBEAT_TIMEOUT   = 45.0         # seconds before guardian considers process frozen
+# Startup grace period: after launching the child, ignore heartbeat absence
+# for this many seconds.  Gives the app time to import, boot the web server,
+# and start the HeartbeatSender thread before the guardian starts checking.
+HEARTBEAT_GRACE     = 60.0         # seconds — covers slow cold-start on HDD
+MAX_RESTARTS        = 10           # give up after this many consecutive crashes
+BASE_RESTART_DELAY  = 3.0          # initial backoff delay (doubles each crash)
+MAX_RESTART_DELAY   = 120.0        # cap backoff at 2 minutes
+CHECK_INTERVAL      = 30.0         # playlist watchdog poll interval (seconds)
+MIN_FILE_BYTES      = 1024         # files smaller than this are treated as corrupt
+GUARDIAN_PID_FILE   = "guardian.pid"  # written relative to LOGS_DIR
 
 IS_WIN = platform.system() == "Windows"
 
@@ -126,7 +135,7 @@ class _GuardianStatus:
         self.last_crash_reason: str = ""
         self.last_heartbeat: Optional[float] = None  # time.monotonic()
         self.heartbeat_ok: bool = False
-        self.crash_log: List[str] = []              # last 40 lines
+        self.crash_log: List[str] = []              # last 200 lines
         self.file_warnings: Dict[str, List[str]] = {}  # stream→[warnings]
         self.stopping: bool = False
 
@@ -172,12 +181,45 @@ class _GuardianStatus:
             self.last_heartbeat = time.monotonic()
             self.heartbeat_ok = True
 
-    def check_heartbeat_freshness(self) -> bool:
-        """Return True if heartbeat is within tolerance (or never received yet)."""
+    def reset_heartbeat(self) -> None:
+        """
+        Clear heartbeat state when a new child is launched.
+
+        FIX (Bug #4 + #5): Without this, last_heartbeat holds the timestamp
+        from the previous run.  The new process needs HEARTBEAT_GRACE seconds
+        to boot; checking against a stale old timestamp would immediately fire
+        a false-positive timeout and kill the freshly-started child.
+        """
         with self._lock:
+            self.last_heartbeat = None
+            self.heartbeat_ok = False
+
+    def check_heartbeat_freshness(self, launch_time: float) -> bool:
+        """
+        Return True if the heartbeat is within tolerance.
+
+        FIX (Bug #4): Adds a per-launch startup grace window.
+        If the child was launched less than HEARTBEAT_GRACE seconds ago AND
+        no heartbeat has been received yet, we return True (not timed out).
+        This prevents killing a freshly-started process that hasn't had time
+        to boot its HeartbeatSender thread yet.
+
+        Parameters
+        ──────────
+        launch_time : time.monotonic() value recorded just before Popen().
+        """
+        with self._lock:
+            now = time.monotonic()
+
+            # Still inside the startup grace window — don't check yet.
             if self.last_heartbeat is None:
-                return True   # not started yet; don't raise false alarm
-            age = time.monotonic() - self.last_heartbeat
+                if (now - launch_time) < HEARTBEAT_GRACE:
+                    return True          # give it time to boot
+                # Grace expired and still no heartbeat — timed out.
+                self.heartbeat_ok = False
+                return False
+
+            age = now - self.last_heartbeat
             self.heartbeat_ok = age < HEARTBEAT_TIMEOUT
             return self.heartbeat_ok
 
@@ -234,7 +276,8 @@ def _start_status_server() -> Optional[threading.Thread]:
     t = threading.Thread(target=server.serve_forever, daemon=True,
                          name="guardian-status-http")
     t.start()
-    log.info("Guardian status HTTP running on http://127.0.0.1:%d/guardian/status", STATUS_PORT)
+    log.info("Guardian status HTTP running on http://127.0.0.1:%d/guardian/status",
+             STATUS_PORT)
     return t
 
 
@@ -249,8 +292,9 @@ def _start_heartbeat_listener() -> Optional[threading.Thread]:
         sock.bind(("127.0.0.1", HEARTBEAT_PORT))
         sock.settimeout(2.0)
     except OSError as exc:
-        log.warning("Guardian heartbeat listener could not bind to UDP :%d — %s",
-                    HEARTBEAT_PORT, exc)
+        log.warning(
+            "Guardian heartbeat listener could not bind to UDP :%d — %s",
+            HEARTBEAT_PORT, exc)
         return None
 
     def _loop() -> None:
@@ -279,24 +323,68 @@ def _resolve_cmd(target: str) -> List[str]:
     """
     Convert a target string to an argv list.
 
+    FIX (Bug #7): The original used target.split() which breaks on paths
+    containing spaces (e.g. "C:\\Program Files\\HydraCast\\hydracast.exe").
+    We now use shlex.split() on POSIX and a smarter parser on Windows that
+    respects double-quoted tokens, so paths with spaces work correctly.
+
     Examples
     ────────
-    "hydracast_bg.exe"         → ["hydracast_bg.exe"]
-    "python hydracast_bg.py"   → ["python", "hydracast_bg.py"]
-    If the string is a frozen .exe beside the guardian, resolve its full path.
+    "C:\\Program Files\\HydraCast\\hydracast.exe"  → one element (quoted path)
+    "python hydracast.py"                          → ["python", "hydracast.py"]
+    '"C:\\Program Files\\HC\\hydracast.exe"'       → one element, quotes stripped
     """
-    parts = target.split()
+    target = target.strip()
+
+    if IS_WIN:
+        # On Windows, shlex uses POSIX rules which mishandles backslashes.
+        # Use a simple quoted-token parser instead.
+        parts: List[str] = []
+        i = 0
+        while i < len(target):
+            if target[i] == '"':
+                end = target.find('"', i + 1)
+                if end == -1:
+                    parts.append(target[i + 1:])
+                    break
+                parts.append(target[i + 1:end])
+                i = end + 1
+            elif target[i] == ' ':
+                i += 1
+            else:
+                j = i
+                while j < len(target) and target[j] != ' ':
+                    j += 1
+                parts.append(target[i:j])
+                i = j
+    else:
+        parts = shlex.split(target)
+
+    if not parts:
+        return [target]
+
     # If running as frozen exe, look for the target beside our own executable.
     if getattr(sys, "frozen", False):
         exe_dir = Path(sys.executable).parent
-        candidate = exe_dir / parts[0]
+        candidate = exe_dir / Path(parts[0]).name
         if candidate.exists():
             parts[0] = str(candidate)
+
     return parts
 
 
 def _launch(cmd: List[str]) -> subprocess.Popen:
-    """Launch the target process."""
+    """
+    Launch the target process.
+
+    FIX (Bug #8): The original used CREATE_NO_WINDOW (0x08000000) which
+    suppresses the console window of hydracast.exe — a console app.  That
+    made the TUI invisible when the guardian restarted the app.
+
+    We now use CREATE_NEW_CONSOLE (0x00000010) so the restarted process
+    gets its own console window, which hydracast.py then manages via
+    ShowWindow() / SetConsoleTitle() exactly as on first launch.
+    """
     kwargs: dict = dict(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,   # merge so we capture everything
@@ -305,8 +393,10 @@ def _launch(cmd: List[str]) -> subprocess.Popen:
         errors="replace",
     )
     if IS_WIN:
-        # Don't create a console window for the child.
-        kwargs["creationflags"] = 0x08000000   # CREATE_NO_WINDOW
+        # CREATE_NEW_CONSOLE: give the child its own console window.
+        # hydracast.py's _show_console() / _set_console_title() will manage it.
+        CREATE_NEW_CONSOLE = 0x00000010
+        kwargs["creationflags"] = CREATE_NEW_CONSOLE
     return subprocess.Popen(cmd, **kwargs)
 
 
@@ -330,8 +420,7 @@ def _drain_output(proc: subprocess.Popen) -> None:
 def _stream_output(proc: subprocess.Popen) -> threading.Thread:
     """
     Background thread that continuously reads proc stdout and feeds it into
-    the crash log buffer + Python logger (at DEBUG level, so it only appears
-    in the guardian log file when level=DEBUG is set).
+    the crash log buffer + Python logger (at DEBUG level).
     """
     def _reader():
         if proc.stdout is None:
@@ -345,7 +434,8 @@ def _stream_output(proc: subprocess.Popen) -> threading.Thread:
         except Exception:
             pass
 
-    t = threading.Thread(target=_reader, daemon=True, name="guardian-output-drain")
+    t = threading.Thread(target=_reader, daemon=True,
+                         name="guardian-output-drain")
     t.start()
     return t
 
@@ -380,13 +470,28 @@ def guardian_loop(target: str, log_dir: Path) -> None:
     Main guardian supervisor loop.
 
     Runs until MAX_RESTARTS is exceeded or _STATUS.stopping is set.
+
+    Key fixes in this version
+    ─────────────────────────
+    • Bug #1: Removed the broken `proc._start_new_session` uptime calculation.
+      launch_time is now recorded with time.monotonic() right before Popen().
+
+    • Bug #2: attempts incremented correctly; first restart always gets a delay.
+
+    • Bug #3: frozen_kills > 0 forces non-zero rc so the guardian never
+      mistakes a force-killed process for a clean user-quit.
+
+    • Bug #4 + #5: _STATUS.reset_heartbeat() is called before each new launch.
+      check_heartbeat_freshness() now receives launch_time and honours a
+      HEARTBEAT_GRACE startup window so a freshly-booted child is never
+      instantly killed because of a stale timestamp from the previous run.
     """
     _STATUS.target_cmd = target
     cmd = _resolve_cmd(target)
     pid_path = log_dir / GUARDIAN_PID_FILE
 
-    delay     = BASE_RESTART_DELAY
-    attempts  = 0
+    delay    = BASE_RESTART_DELAY
+    attempts = 0
     proc: Optional[subprocess.Popen] = None
 
     while not _STATUS.stopping:
@@ -395,13 +500,13 @@ def guardian_loop(target: str, log_dir: Path) -> None:
             reason = _STATUS.last_crash_reason or "unknown"
             log.warning(
                 "Restarting target (attempt %d/%d) in %.0fs — reason: %s",
-                attempts, MAX_RESTARTS, delay, reason
+                attempts, MAX_RESTARTS, delay, reason,
             )
             _STATUS.append_crash_log(
                 f"--- Restart #{attempts}/{MAX_RESTARTS} in {delay:.0f}s "
                 f"(reason: {reason}) ---"
             )
-            # Interruptible sleep so we can react to _STATUS.stopping quickly.
+            # Interruptible sleep so we react to _STATUS.stopping quickly.
             deadline = time.monotonic() + delay
             while time.monotonic() < deadline and not _STATUS.stopping:
                 time.sleep(0.2)
@@ -413,16 +518,25 @@ def guardian_loop(target: str, log_dir: Path) -> None:
             msg = (
                 f"HydraCast crashed {MAX_RESTARTS} times and the guardian "
                 f"has given up restarting.\n\nLast reason: {_STATUS.last_crash_reason}\n\n"
-                f"Check logs\\hydracast_bg.log and logs\\guardian.log for details."
+                f"Check logs\\guardian.log for details."
             )
             _show_fatal_error("HydraCast — Guardian Gave Up", msg)
             _STATUS.stopping = True
             break
 
+        # FIX (Bug #4 + #5): Reset heartbeat state BEFORE launching the child.
+        # This clears the stale last_heartbeat from the previous run so the
+        # new process gets a fresh HEARTBEAT_GRACE window to boot up.
+        _STATUS.reset_heartbeat()
+
         # ── Launch the target ─────────────────────────────────────────────────
         log.info("Guardian launching: %s", " ".join(cmd))
-        _STATUS.append_crash_log(f"=== Guardian launching (attempt {attempts + 1}): {' '.join(cmd)} ===")
+        _STATUS.append_crash_log(
+            f"=== Guardian launching (attempt {attempts + 1}): {' '.join(cmd)} ==="
+        )
         try:
+            # Record launch time BEFORE Popen so the grace window starts now.
+            launch_time = time.monotonic()   # FIX (Bug #1)
             proc = _launch(cmd)
         except Exception as exc:
             reason = f"Launch failed: {exc}"
@@ -436,7 +550,7 @@ def guardian_loop(target: str, log_dir: Path) -> None:
         _write_pid_file(pid_path, proc.pid)
         log.info("Target PID %d started.", proc.pid)
 
-        # Start draining output in background
+        # Start draining output in background.
         output_thread = _stream_output(proc)
 
         # ── Poll loop — watch for crash OR heartbeat timeout ───────────────────
@@ -444,18 +558,17 @@ def guardian_loop(target: str, log_dir: Path) -> None:
         while True:
             rc = proc.poll()
             if rc is not None:
-                # Process exited.
+                # Process exited on its own.
                 output_thread.join(timeout=3)
                 break
 
-            # Check heartbeat — but only after the process has had time to start.
-            uptime = time.monotonic() - (proc._start_new_session if hasattr(proc, "_start_new_session") else 0)
-            if not _STATUS.check_heartbeat_freshness():
+            # FIX (Bug #4): pass launch_time so check honours the grace window.
+            if not _STATUS.check_heartbeat_freshness(launch_time):
                 frozen_kills += 1
                 log.error(
                     "Heartbeat timeout after %.0fs — process PID %d appears frozen. "
                     "Sending SIGKILL (kill #%d).",
-                    HEARTBEAT_TIMEOUT, proc.pid, frozen_kills
+                    HEARTBEAT_TIMEOUT, proc.pid, frozen_kills,
                 )
                 _STATUS.append_crash_log(
                     f"HEARTBEAT TIMEOUT — PID {proc.pid} frozen after "
@@ -471,7 +584,11 @@ def guardian_loop(target: str, log_dir: Path) -> None:
                 except Exception:
                     pass
                 output_thread.join(timeout=3)
-                rc = proc.poll() or -9
+
+                # FIX (Bug #3): If we force-killed, always treat rc as non-zero
+                # so the guardian never mistakes this for a clean user-quit.
+                polled = proc.poll()
+                rc = polled if (polled is not None and polled != 0) else -9
                 break
 
             if _STATUS.stopping:
@@ -480,7 +597,10 @@ def guardian_loop(target: str, log_dir: Path) -> None:
                     proc.terminate()
                     proc.wait(timeout=8)
                 except Exception:
-                    proc.kill()
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
                 output_thread.join(timeout=3)
                 rc = 0
                 break
@@ -492,24 +612,28 @@ def guardian_loop(target: str, log_dir: Path) -> None:
         _remove_pid_file(pid_path)
         attempts += 1
 
-        if _STATUS.stopping or rc == 0:
-            # Clean exit or requested stop — don't restart.
-            log.info("Target exited cleanly (rc=%s) or stop was requested.", rc)
-            if _STATUS.stopping:
-                break
-            # rc==0 from the main app means user quit deliberately (e.g. web UI
-            # Quit button).  Respect that — don't loop forever.
+        # FIX (Bug #3): Only treat rc==0 as intentional quit when we did NOT
+        # force-kill the process.  frozen_kills > 0 means we killed it ourselves;
+        # a rc of 0 in that case is a Windows quirk, not a clean user quit.
+        if _STATUS.stopping:
+            log.info("Stop was requested — not restarting.")
+            break
+
+        if rc == 0 and frozen_kills == 0:
+            # Clean exit — user pressed Quit in the UI or closed the tray.
             log.info("Target exited with code 0 — treating as intentional quit.")
             _STATUS.stopping = True
             break
 
-        # Non-zero exit — crash.
+        # Non-zero exit, or we killed it — schedule a restart.
         reason = (
             f"exited with code {rc}"
             if frozen_kills == 0
             else f"force-killed after heartbeat timeout (code {rc})"
         )
-        _STATUS.record_restart(reason)
+        if not _STATUS.last_crash_reason:
+            # Only set if not already set by the heartbeat-kill path above.
+            _STATUS.record_restart(reason)
         log.warning("Target %s — scheduling restart.", reason)
 
     log.info("Guardian loop finished. Total restarts: %d.", _STATUS.restart_count)
@@ -537,14 +661,14 @@ def _setup_guardian_logging(log_dir: Path) -> None:
 def run_guardian(target: str, log_dir: Path) -> None:
     """
     Full guardian main — sets up logging, IPC, status server, then supervises.
-    Called from guardian_main() or directly from hydracast_bg.py.
+    Called from guardian_main() or directly from hydracast.py.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
     _setup_guardian_logging(log_dir)
 
     log.info(
         "HydraCast Guardian v%s starting. Target: %s  PID: %d",
-        GUARDIAN_VERSION, target, os.getpid()
+        GUARDIAN_VERSION, target, os.getpid(),
     )
 
     # Write our own PID so the main app can check if we're alive.
@@ -590,39 +714,39 @@ def guardian_main() -> None:
     """
     Entry point when watchdog.py / hydracast_guardian.exe is run directly.
 
-        hydracast_guardian.exe --target hydracast_bg.exe --log-dir logs
+        hydracast_guardian.exe --target hydracast.exe --log-dir logs
     """
     parser = argparse.ArgumentParser(
         prog="hydracast_guardian",
-        description="HydraCast Guardian Watchdog — supervises the main process."
+        description="HydraCast Guardian Watchdog — supervises the main process.",
     )
     parser.add_argument(
         "--target", "-t",
-        default="hydracast_bg.exe" if IS_WIN else "python hydracast_bg.py",
-        help="Command to launch and supervise (default: hydracast_bg.exe)."
+        default="hydracast.exe" if IS_WIN else "python hydracast.py",
+        help="Command to launch and supervise (default: hydracast.exe).",
     )
     parser.add_argument(
         "--log-dir", "-l",
         default="logs",
-        help="Directory for guardian.log (default: logs/)."
+        help="Directory for guardian.log (default: logs/).",
     )
     parser.add_argument(
         "--guardian", action="store_true",
-        help="Alias for compatibility — always implied."
+        help="Alias for compatibility — always implied.",
     )
     args = parser.parse_args()
     run_guardian(args.target, Path(args.log_dir).resolve())
 
 
 # =============================================================================
-# HEARTBEAT SENDER  (runs inside the MAIN PROCESS — hc/heartbeat.py companion)
+# HEARTBEAT SENDER  (runs inside the MAIN PROCESS)
 # =============================================================================
 
 class HeartbeatSender:
     """
     Lightweight UDP heartbeat sender.  One instance lives in the main HC process.
 
-    Usage (in hydracast_bg.py or hydracast.py):
+    Usage (in hydracast.py):
 
         from hc.watchdog import HeartbeatSender
         _hb = HeartbeatSender()
@@ -711,7 +835,7 @@ def fetch_guardian_status(timeout: float = 0.5) -> Optional[dict]:
 
 
 # =============================================================================
-# GUARDIAN LAUNCHER  (called from hydracast_bg.py to spawn the guardian process)
+# GUARDIAN LAUNCHER  (called from hydracast.py to spawn the guardian process)
 # =============================================================================
 
 def launch_guardian(
@@ -723,18 +847,22 @@ def launch_guardian(
     """
     Spawn the guardian as a completely independent (detached) process.
 
-    hydracast_bg.py calls this at startup BEFORE starting its own worker
-    thread.  The guardian then launches hydracast_bg.exe as its supervised
-    child.  If the guardian is already running (guardian_self.pid exists and
-    the process is alive) this is a no-op.
+    hydracast.py calls this at startup BEFORE starting its own worker thread.
+    The guardian then restarts hydracast.exe if it crashes.  If the guardian
+    is already running (guardian_self.pid exists and the process is alive)
+    this is a no-op.
+
+    FIX (Bug #6): Process-name verification added.  pid_exists() alone is not
+    sufficient on Windows because PIDs are recycled.  We now also check the
+    process name to make sure the PID actually belongs to the guardian and not
+    to some unrelated process that reused the number.
 
     Parameters
     ──────────
     target_cmd   : the command the guardian should supervise, e.g.
-                   "hydracast_bg.exe" or "python hydracast_bg.py"
+                   "hydracast.exe" or '"C:\\Program Files\\HC\\hydracast.exe"'
     log_dir      : Path to the logs/ directory
-    guardian_exe : override guardian executable; defaults to detecting whether
-                   we're frozen (hydracast_guardian.exe) or source (this file)
+    guardian_exe : override guardian executable path (optional)
 
     Returns the Popen handle (detached — don't call wait() on it) or None.
     """
@@ -745,10 +873,25 @@ def launch_guardian(
             existing_pid = int(self_pid_path.read_text().strip())
             import psutil as _psutil
             if _psutil.pid_exists(existing_pid):
-                log.info("Guardian already running (PID %d) — skipping launch.", existing_pid)
-                return None
+                try:
+                    p = _psutil.Process(existing_pid)
+                    # FIX (Bug #6): verify the process name, not just the PID.
+                    pname = p.name().lower()
+                    if "guardian" in pname or "python" in pname:
+                        log.info(
+                            "Guardian already running (PID %d, name=%s) — skipping launch.",
+                            existing_pid, p.name(),
+                        )
+                        return None
+                    # PID exists but belongs to a different program — stale file.
+                    log.info(
+                        "PID %d exists but is '%s', not the guardian — relaunching.",
+                        existing_pid, p.name(),
+                    )
+                except (_psutil.NoSuchProcess, _psutil.AccessDenied):
+                    pass  # process gone between pid_exists and Process() — relaunch
         except Exception:
-            pass   # stale PID file — continue with launch
+            pass   # stale or malformed PID file — continue with launch
 
     # ── Build the guardian command ────────────────────────────────────────────
     if guardian_exe:
@@ -761,8 +904,7 @@ def launch_guardian(
             cmd = [str(g_exe)]
         else:
             # Fall back: run the bundled watchdog module via the main exe
-            # (hydracast_bg.exe --guardian-mode).  This requires hydracast_bg.py
-            # to handle --guardian-mode and call guardian_main().
+            # (requires hydracast.exe to handle --guardian-mode).
             cmd = [sys.executable, "--guardian-mode"]
     else:
         # Source run: python -m hc.watchdog
@@ -779,7 +921,7 @@ def launch_guardian(
     )
     if IS_WIN:
         # Fully detached — survives the parent exiting.
-        DETACHED_PROCESS        = 0x00000008
+        DETACHED_PROCESS         = 0x00000008
         CREATE_NEW_PROCESS_GROUP = 0x00000200
         kw["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         kw["close_fds"]     = True
