@@ -3799,7 +3799,7 @@ function showNewStreamForm(){
             </i>
           </label>
           <div class="port-field-row">
-            <input id="new-port" type="number" value="60123" min="1025" max="65533" step="2"
+            <input id="new-port" type="number" value="30123" min="1025" max="65533" step="2"
               oninput="if(+this.value%2===0&&this.value)this.value=+this.value+1"
               title="Must be an ODD number. HLS will use this port + 1 (even).">
             <button type="button" id="suggest-btn-new-port"
