@@ -182,35 +182,6 @@ _SEC_HEADERS: Dict[str, str] = {
 }
 
 
-def _hls_proxy_url(cfg, full: bool = False) -> str:
-    """
-    Return the proxied HLS URL for use in the Web UI.
-
-    When full=False (default): returns a relative path like
-      /hls/<port>/<path>/index.m3u8
-    used by the in-browser video player (same HTTPS origin, no mixed-content).
-
-    When full=True: returns the full absolute URL like
-      https://<server_ip>/hls/<port>/<path>/index.m3u8
-    used in the UI copy-to-clipboard fields so external players (VLC etc) work.
-
-    Returns "" when HLS is not enabled for this stream.
-    """
-    if not cfg.hls_enabled:
-        return ""
-    spath = (cfg.rtsp_path or cfg.stream_path or "stream").strip("/")
-    rel = f"/hls/{cfg.hls_port}/{spath}/index.m3u8"
-    if not full:
-        return rel
-    from hc.utils import _local_ip
-    from hc.constants import get_web_port, LISTEN_ADDR
-    ip   = LISTEN_ADDR() if LISTEN_ADDR() != "0.0.0.0" else _local_ip()
-    port = get_web_port()
-    scheme = "https" if port == 443 else "https"
-    port_sfx = f":{port}" if port not in (443, 80) else ""
-    return f"{scheme}://{ip}{port_sfx}{rel}"
-
-
 # =============================================================================
 # LIBRARY CACHE
 # =============================================================================
@@ -332,81 +303,21 @@ def _notify_folder_upload(upload_dir: Path) -> None:
         log.debug("_notify_folder_upload error: %s", exc)
 
 def _get_next_in_queue(st, cfg, n=2):
-    """
-    Return the next *n* playlist file names after the currently playing item.
-
-    Uses playlist_order (which reflects compliance pinning and shuffle state)
-    so the sequence shown always matches what will actually play next.
-
-    Weekday ordering
-    ────────────────
-    For any playlist whose files carry day-tags (_MON_, _TUE_, … _SUN_),
-    the remaining items are re-sorted by their day-of-week distance from
-    today so the UI always shows the true broadcast week ahead:
-      today=THU → +1=FRI, +2=SAT, +3=SUN, +4=MON, +5=TUE, +6=WED
-
-    This applies regardless of whether compliance mode is enabled.  Without
-    this sort, a folder scan that returns files alphabetically would show
-    the wrong sequence (_MON_ +1, _TUE_ +2) when today is Thursday.
-
-    Shuffle streams keep their random walk order (shuffled playlists never
-    have meaningful day-tags).  Untagged files always sort to the end.
-    """
-    import re as _re
-    from datetime import datetime as _dt
-
+    """Return the next *n* playlist file names after the currently playing item."""
     playlist = cfg.playlist
     if not playlist:
         return []
     order = getattr(st, "playlist_order", None) or list(range(len(playlist)))
     idx   = getattr(st, "playlist_index", 0) or 0
-
-    # Collect ALL remaining items in walk order (wraps around).
-    remaining = []
-    for offset in range(1, len(order)):
+    result = []
+    for offset in range(1, n + 1):
         next_ord_idx = (idx + offset) % len(order)
         pl_idx = order[next_ord_idx]
         try:
-            remaining.append(playlist[pl_idx].file_path.name)
+            result.append(playlist[pl_idx].file_path.name)
         except (IndexError, AttributeError):
             pass
-
-    # Re-order by weekday distance from today whenever the playlist contains
-    # day-tagged files (works for both compliance and non-compliance streams).
-    # Shuffle streams are excluded — their intentional random order must be
-    # preserved, and shuffled playlists don't use day-tags.
-    _DAY_TAG = {
-        "MON": 0, "TUE": 1, "WED": 2, "THU": 3,
-        "FRI": 4, "SAT": 5, "SUN": 6,
-    }
-    _DAY_RE = _re.compile(r'_(MON|TUE|WED|THU|FRI|SAT|SUN)_', _re.IGNORECASE)
-
-    _is_shuffled = getattr(cfg, "shuffle", False)
-
-    if not _is_shuffled and len(remaining) > 1:
-        # Check if at least one remaining file has a day-tag.
-        _has_day_tags = any(_DAY_RE.search(f) for f in remaining)
-
-        if _has_day_tags:
-            today = _dt.now().weekday()  # 0=Mon … 6=Sun
-
-            def _day_distance(filename: str) -> int:
-                """
-                Days forward from today until this file's tagged weekday.
-                Returns 7 for same-day (next cycle, plays last among tagged)
-                and 7+pos for untagged files so they always trail tagged ones.
-                """
-                m = _DAY_RE.search(filename)
-                if not m:
-                    return 7 + len(remaining)
-                file_day = _DAY_TAG.get(m.group(1).upper(), 7)
-                dist = (file_day - today) % 7
-                # dist == 0 means same weekday as today → put at end of tagged
-                return dist if dist > 0 else 7
-
-            remaining.sort(key=_day_distance)
-
-    return remaining[:n]
+    return result
 
 
 
@@ -484,10 +395,8 @@ def _active_event_name(st, cfg, mgr) -> Optional[str]:
 # =============================================================================
 from hc.web_filemanager import _FileManagerMixin   # provides _get_files, _handle_file_op
 from hc.web_handlers_calendar import _CalendarHandlersMixin
-from hc.web_handlers_get import _GetHandlersMixin   # provides _get_cameras, _get_streams, etc.
-from hc.web_handlers_post import _PostHandlersMixin  # provides _dispatch and POST action handlers
 
-class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandler):
+class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandler):
 
     def log_message(self, *args: Any) -> None:
         pass  # access logging is done in _send() via hc.web_access_log
@@ -594,7 +503,6 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
             "/api/urls_csv":               lambda: self._get_urls_csv(qs),
             "/api/mail_config":              self._get_mail_config,
             "/api/upload/status":            lambda: self._get_upload_status(qs),
-            "/api/cameras":                  self._get_cameras,
         }
 
         handler = routes.get(path)
@@ -604,130 +512,10 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
             except Exception as exc:
                 log.error("WebHandler GET %s: %s", path, exc)
                 self._json({"error": "internal server error"}, 500)
-        elif path.startswith("/hls/"):
-            self._proxy_hls(path, parsed.query)
         elif path.startswith("/static/") or path.startswith("/resources/") or path == "/favicon.ico":
             self._serve_static(path)
         else:
             self._send(404, b"Not Found", "text/plain")
-
-
-    # ── HLS reverse proxy ────────────────────────────────────────────────────
-    def _proxy_hls(self, path: str, query: str) -> None:
-        """
-        Reverse-proxy HLS segments from MediaMTX to the browser.
-
-        URL scheme  : /hls/<hls_port>/<stream_path...>
-        Proxied to  : http://127.0.0.1:<hls_port>/<stream_path...>
-
-        Why this exists
-        ───────────────
-        • MediaMTX binds its HLS listener on a plain HTTP port (e.g. 8556).
-          The Web UI is served over HTTPS (port 443).  A browser will block a
-          mixed-content fetch — HTTPS page loading HTTP resources — so the
-          player can never reach MediaMTX directly.
-        • Routing HLS through the existing HTTPS server avoids opening the HLS
-          port to the outside world entirely; the browser only ever contacts the
-          single Web-UI port.
-        • It also eliminates any residual CORS concern because the origin of the
-          playlist and segment requests matches the origin of the page.
-
-        Security
-        ────────
-        • Only numeric HLS ports that belong to a known, HLS-enabled StreamConfig
-          are accepted.  Every other port is rejected with 403 — this cannot be
-          used as an open HTTP proxy.
-        • Connections are made to 127.0.0.1 only — never to external hosts.
-
-        Path parsing
-        ────────────
-          /hls/8556/stream/index.m3u8  → http://127.0.0.1:8556/stream/index.m3u8
-          /hls/8556/stream/seg0.ts     → http://127.0.0.1:8556/stream/seg0.ts
-        """
-        import urllib.request as _urlreq
-        import urllib.error   as _urlerr
-
-        # ── Parse /hls/<port>/<rest> ──────────────────────────────────────
-        parts = path.lstrip("/").split("/", 2)   # ["hls", "<port>", "<rest>"]
-        if len(parts) < 3 or not parts[1].isdigit():
-            self._send(400, b"Bad HLS path", "text/plain")
-            return
-
-        hls_port  = int(parts[1])
-        rest_path = parts[2]   # e.g. "stream/index.m3u8"
-
-        # ── Authorise: port must belong to a known, HLS-enabled stream ────
-        mgr     = _WEB_MANAGER
-        allowed = False
-        if mgr:
-            for st in mgr.states:
-                cfg = st.config
-                if cfg.hls_enabled and cfg.hls_port == hls_port:
-                    allowed = True
-                    break
-        if not allowed:
-            self._send(403, b"HLS port not allowed", "text/plain")
-            return
-
-        # ── Build upstream URL ────────────────────────────────────────────
-        upstream = f"http://127.0.0.1:{hls_port}/{rest_path}"
-        if query:
-            upstream += f"?{query}"
-
-        # ── Content-type map ─────────────────────────────────────────────
-        _HLS_MIME = {
-            ".m3u8": "application/vnd.apple.mpegurl",
-            ".ts":   "video/mp2t",
-            ".aac":  "audio/aac",
-            ".mp4":  "video/mp4",
-            ".m4s":  "video/mp4",
-        }
-        suffix = ("." + rest_path.rsplit(".", 1)[-1]) if "." in rest_path else ""
-        ct = _HLS_MIME.get(suffix.lower(), "application/octet-stream")
-
-        try:
-            req = _urlreq.Request(
-                upstream,
-                headers={"User-Agent": "HydraCast-HLSProxy/1.0"},
-            )
-            with _urlreq.urlopen(req, timeout=10) as resp:
-                body = resp.read()
-        except _urlerr.HTTPError as exc:
-            self._send(exc.code, str(exc).encode(), "text/plain")
-            return
-        except Exception as exc:
-            log.warning("HLS proxy error for %s: %s", upstream, exc)
-            self._send(502, b"HLS upstream unreachable", "text/plain")
-            return
-
-        # Rewrite .m3u8 segment URLs so the browser always hits the proxy,
-        # never MediaMTX directly.
-        if suffix.lower() == ".m3u8":
-            # Compute the directory prefix for relative segment paths
-            dir_parts = rest_path.split("/")[:-1]
-            prefix = f"/hls/{hls_port}/" + "/".join(dir_parts) if dir_parts else f"/hls/{hls_port}"
-
-            def _rewrite(line: str) -> str:
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#") or stripped.startswith("http"):
-                    return line
-                if stripped.startswith("/hls/"):
-                    return line
-                return f"{prefix}/{stripped.lstrip('/')}"
-
-            text = body.decode("utf-8", errors="replace")
-            body = "\n".join(_rewrite(ln) for ln in text.splitlines()).encode("utf-8")
-
-        self.send_response(200)
-        self.send_header("Content-Type",   ct)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Cache-Control",  "no-cache")
-        self.end_headers()
-        try:
-            self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
@@ -808,16 +596,10 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
             self._json({"ok": False, "msg": "Invalid JSON"}, 400)
             return
 
-        # Determine the action name from either:
-        #   /api/action    -- body contains {"action": "<name>", ...}
-        #   /api/<name>    -- action is the path segment after /api/
-        #   /api or /api/  -- bare path; fall back to body's "action" key
-        #
-        # Bug fix: POST to /api (no trailing slash) previously yielded
-        # action="api" because path.replace("/api/", "") left "/api" untouched
-        # (the needle requires a trailing slash).  /api and /api/ now behave
-        # identically to /api/action -- the action is read from the JSON body.
-        if path in ("/api/action", "/api", "/api/"):
+        # The calendar React component posts to /api/action with the real
+        # action name inside the JSON body ({"action": "delete_event", ...}).
+        # All other callers post to /api/<action_name> directly.
+        if path == "/api/action":
             action = str(data.pop("action", "")).strip()
         else:
             action = path.replace("/api/", "").strip("/")
@@ -860,7 +642,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
                 "time_remaining": st.time_remaining(),
                 "fps":            st.fps,
                 "rtsp_url":       cfg.rtsp_url_external,
-                "hls_url":        _hls_proxy_url(cfg, full=True),
+                "hls_url":        cfg.hls_url if cfg.hls_enabled else "",
                 "shuffle":        cfg.shuffle,
                 "playlist_count": len(cfg.playlist),
                 "enabled":        cfg.enabled,
@@ -912,10 +694,6 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
                 "compliance_enabled":       cfg.compliance_enabled,
                 "compliance_alert":         getattr(st, "compliance_alert", None),
                 "compliance_alert_enabled": getattr(cfg, "compliance_alert_enabled", True),
-                # True while _start_ffmpeg_with_retry is absorbing transient broken-pipe
-                # / 400 Bad Request failures.  Web UI renders a BUFFERING badge instead
-                # of STARTING during the retry window (v5.3.7).
-                "buffering":      getattr(st, "buffering", False),
             })
         self._json(result)
 
@@ -961,12 +739,6 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
 
         Optional column (include_files=1):
           filenames   — pipe-separated list of playlist file basenames
-
-        FIX: All row-building and CSV serialisation now happens BEFORE
-        send_response() is called.  This prevents the double-header
-        corruption that caused "Failed - Network error" in the browser
-        download manager: if anything throws while building the payload
-        the do_GET exception handler can still send a clean JSON 500.
         """
         import io, csv as _csv
         from hc.utils import _local_ip
@@ -990,7 +762,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
                     "port":        cfg.port,
                     "stream_path": cfg.stream_path or "",
                     "rtsp_url":    cfg.rtsp_url_external,
-                    "hls_url":     _hls_proxy_url(cfg, full=True),
+                    "hls_url":     cfg.hls_url if cfg.hls_enabled else "",
                     "status":      st.status.label,
                     "enabled":     "yes" if cfg.enabled else "no",
                 }
@@ -1000,10 +772,6 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
                     )
                 rows.append(row)
 
-        # ── Serialise to CSV bytes BEFORE touching the socket ────────────
-        # Any exception raised here will be caught by do_GET's try/except
-        # and a clean JSON 500 will be returned — no partial/corrupt HTTP
-        # response is possible because send_response() hasn't been called yet.
         buf = io.StringIO()
         writer = _csv.DictWriter(buf, fieldnames=fieldnames, lineterminator="\r\n")
         writer.writeheader()
@@ -1013,7 +781,6 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
         ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
         fname = f"hydracast_urls_{ts}.csv"
 
-        # ── Send response — nothing below this point may raise ───────────
         self.send_response(200)
         self.send_header("Content-Type",        "text/csv; charset=utf-8")
         self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
@@ -1197,12 +964,6 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
         with st._lock:
             log_snap = list(st.log[-80:])
         cur_real = st.playlist_order[st.playlist_index] if st.playlist_order else 0
-        # Build a mapping: real playlist index → 1-based play sequence number.
-        # playlist_order is a list whose positions are sequence slots (0, 1, 2…)
-        # and whose values are real cfg.playlist indices.
-        # Inverting it gives: real_index → sequence_position (1-based for the UI).
-        order = st.playlist_order if st.playlist_order else list(range(len(cfg.playlist)))
-        order_pos = {real_idx: seq + 1 for seq, real_idx in enumerate(order)}
         playlist = []
         for i, item in enumerate(cfg.playlist):
             playlist.append({
@@ -1210,7 +971,6 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
                 "path":     str(item.file_path),
                 "start":    item.start_position,
                 "priority": item.priority,
-                "sequence": order_pos.get(i, i + 1),  # 1-based play position
                 "exists":   item.file_path.exists(),
                 "current":  (i == cur_real),
             })
@@ -1218,7 +978,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
             "name":          cfg.name,
             "port":          cfg.port,
             "rtsp_url":      cfg.rtsp_url_external,
-            "hls_url":       _hls_proxy_url(cfg, full=True),
+            "hls_url":       cfg.hls_url if cfg.hls_enabled else "",
             "weekdays":      cfg.weekdays_display(),
             "status":        st.status.label,
             "progress":      st.progress,
@@ -1259,7 +1019,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
             "name":           cfg.name,
             "status":         st.status.label,
             "rtsp_url":       cfg.rtsp_url_external,
-            "hls_url":        _hls_proxy_url(cfg, full=True),
+            "hls_url":        cfg.hls_url if cfg.hls_enabled else "",
             "current_pos":    st.current_pos,
             "duration":       st.duration,
             "progress":       st.progress,
@@ -1294,7 +1054,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
 
     def _get_check_port(self, qs: Dict[str, Any]) -> None:
         """
-        GET /api/check_port?port=30121
+        GET /api/check_port?port=8555
 
         Check whether a proposed RTSP base port is safe to use.
 
@@ -1310,14 +1070,14 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
         Returns JSON:
           {
             "ok": true/false,      // overall safe to use
-            "port": 30121,
-            "hls_port": 30122,
-            "rtp_port": 30124,
-            "rtcp_port": 30125,
+            "port": 8555,
+            "hls_port": 8556,
+            "rtp_port": 8558,
+            "rtcp_port": 8559,
             "odd_ok": true,        // port is odd
             "ports": {             // per-port status
-              "30121": {"free": true,  "process": null},
-              "30122": {"free": false, "process": "nginx (pid 1234)"},
+              "8555": {"free": true,  "process": null},
+              "8556": {"free": false, "process": "nginx (pid 1234)"},
               ...
             },
             "firewall": {
@@ -1541,7 +1301,7 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
 
     def _get_suggest_port(self, qs: Dict[str, Any]) -> None:
         """
-        GET /api/suggest_port?from=30121
+        GET /api/suggest_port?from=8555
 
         Scan odd ports starting from ``from`` (inclusive, must be odd;
         bumped +1 if even) and return the first port where all four
@@ -1549,17 +1309,17 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
 
         Returns JSON:
           {
-            "port": 30121,         // suggested free odd port (or null if none found)
+            "port": 8561,          // suggested free odd port (or null if none found)
             "searched": 50         // how many candidates were checked
           }
         """
         import socket as _socket
 
         try:
-            raw  = qs.get("from", ["30121"])[0].strip()
-            base = int(raw) if raw else 30121
+            raw  = qs.get("from", ["8555"])[0].strip()
+            base = int(raw) if raw else 8555
         except (ValueError, TypeError):
-            base = 30121
+            base = 8555
 
         # Clamp and make odd
         base = max(1025, min(base, 65520))
@@ -2570,235 +2330,8 @@ class WebHandler(_GetHandlersMixin, _PostHandlersMixin, _CalendarHandlersMixin, 
         elif action == "reset":
             self._handle_reset(data)
 
-        # Camera registry
-        elif action == "add_camera":
-            self._camera_add(data)
-
-        elif action == "edit_camera":
-            self._camera_edit(data)
-
-        elif action == "delete_camera":
-            self._camera_delete(data)
-
-        # Source switching
-        elif action == "source_switch":
-            self._source_switch(data)
-
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
-
-    # ── Camera CRUD ──────────────────────────────────────────────────────────
-    def _camera_add(self, data: Dict[str, Any]) -> None:
-        """POST action: add_camera — Add a new camera to cameras.hcf."""
-        try:
-            from hc.models import CameraConfig, CAMERA_PROTOCOL_DEFAULTS
-            import uuid as _uuid
-            import json as _json
-            from hc.constants import CAMERAS_FILE
-
-            name = str(data.get("name", "")).strip()
-            if not name:
-                self._json({"ok": False, "msg": "Camera name is required"}); return
-            if len(name) > 64:
-                self._json({"ok": False, "msg": "Camera name too long (max 64 chars)"}); return
-
-            source_type = str(data.get("source_type", "rtsp")).strip().lower()
-            protocol    = str(data.get("protocol", "rtsp")).strip().lower()
-            host        = str(data.get("host", "")).strip()
-            if not host:
-                self._json({"ok": False, "msg": "Host / device path is required"}); return
-
-            port     = int(data.get("port", CAMERA_PROTOCOL_DEFAULTS.get(protocol, 554)))
-            path     = str(data.get("path", "/")).strip() or "/"
-            username = str(data.get("username", "")).strip()
-            password = str(data.get("password", ""))
-            enabled  = bool(data.get("enabled", True))
-            notes    = str(data.get("notes", "")).strip()[:500]
-
-            # Load existing list
-            cameras_file = CAMERAS_FILE()
-            cameras_raw: list = []
-            if cameras_file.exists():
-                try:
-                    cameras_raw = _json.loads(cameras_file.read_text(encoding="utf-8"))
-                except Exception:
-                    cameras_raw = []
-
-            # Check for duplicate name
-            if any(c.get("name", "").lower() == name.lower() for c in cameras_raw):
-                self._json({"ok": False, "msg": f"A camera named '{name}' already exists"}); return
-
-            cam_id = str(_uuid.uuid4())
-            cameras_raw.append({
-                "camera_id":   cam_id,
-                "name":        name,
-                "protocol":    protocol,
-                "host":        host,
-                "port":        port,
-                "path":        path,
-                "username":    username,
-                "password":    password,
-                "source_type": source_type,
-                "enabled":     enabled,
-                "notes":       notes,
-            })
-            cameras_file.write_text(
-                _json.dumps(cameras_raw, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            log.info("Camera added: %s (id=%s, host=%s)", name, cam_id, host)
-            self._json({"ok": True, "msg": f"Camera '{name}' added.", "camera_id": cam_id})
-        except Exception as exc:
-            log.error("_camera_add error: %s", exc)
-            self._json({"ok": False, "msg": str(exc)})
-
-    def _camera_edit(self, data: Dict[str, Any]) -> None:
-        """POST action: edit_camera — Update an existing camera in cameras.hcf."""
-        try:
-            import json as _json
-            from hc.constants import CAMERAS_FILE
-            from hc.models import CAMERA_PROTOCOL_DEFAULTS
-
-            camera_id = str(data.get("camera_id", "")).strip()
-            if not camera_id:
-                self._json({"ok": False, "msg": "camera_id is required"}); return
-
-            cameras_file = CAMERAS_FILE()
-            cameras_raw: list = []
-            if cameras_file.exists():
-                try:
-                    cameras_raw = _json.loads(cameras_file.read_text(encoding="utf-8"))
-                except Exception:
-                    cameras_raw = []
-
-            cam_idx = next((i for i, c in enumerate(cameras_raw) if c.get("camera_id") == camera_id), None)
-            if cam_idx is None:
-                self._json({"ok": False, "msg": f"Camera '{camera_id}' not found"}); return
-
-            cam = cameras_raw[cam_idx]
-            name = str(data.get("name", cam.get("name", ""))).strip()
-            if not name:
-                self._json({"ok": False, "msg": "Camera name is required"}); return
-
-            # Check duplicate name (ignore self)
-            for i, c in enumerate(cameras_raw):
-                if i != cam_idx and c.get("name", "").lower() == name.lower():
-                    self._json({"ok": False, "msg": f"A camera named '{name}' already exists"}); return
-
-            source_type = str(data.get("source_type", cam.get("source_type", "rtsp"))).strip().lower()
-            protocol    = str(data.get("protocol",    cam.get("protocol",    "rtsp"))).strip().lower()
-            host        = str(data.get("host",        cam.get("host",        ""))).strip()
-            if not host:
-                self._json({"ok": False, "msg": "Host / device path is required"}); return
-
-            port     = int(data.get("port", cam.get("port", CAMERA_PROTOCOL_DEFAULTS.get(protocol, 554))))
-            path     = str(data.get("path", cam.get("path", "/"))).strip() or "/"
-            username = str(data.get("username", cam.get("username", ""))).strip()
-            enabled  = bool(data.get("enabled", cam.get("enabled", True)))
-            notes    = str(data.get("notes",   cam.get("notes",   ""))).strip()[:500]
-
-            # Password: only update if explicitly sent; else keep existing
-            if "password" in data and str(data["password"]) not in ("", "••••••••"):
-                password = str(data["password"])
-            else:
-                password = cam.get("password", "")
-
-            cameras_raw[cam_idx] = {
-                "camera_id":   camera_id,
-                "name":        name,
-                "protocol":    protocol,
-                "host":        host,
-                "port":        port,
-                "path":        path,
-                "username":    username,
-                "password":    password,
-                "source_type": source_type,
-                "enabled":     enabled,
-                "notes":       notes,
-            }
-            cameras_file.write_text(
-                _json.dumps(cameras_raw, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            log.info("Camera updated: %s (id=%s)", name, camera_id)
-            self._json({"ok": True, "msg": f"Camera '{name}' updated."})
-        except Exception as exc:
-            log.error("_camera_edit error: %s", exc)
-            self._json({"ok": False, "msg": str(exc)})
-
-    def _camera_delete(self, data: Dict[str, Any]) -> None:
-        """POST action: delete_camera — Remove a camera from cameras.hcf."""
-        try:
-            import json as _json
-            from hc.constants import CAMERAS_FILE
-
-            camera_id = str(data.get("camera_id", "")).strip()
-            if not camera_id:
-                self._json({"ok": False, "msg": "camera_id is required"}); return
-
-            cameras_file = CAMERAS_FILE()
-            cameras_raw: list = []
-            if cameras_file.exists():
-                try:
-                    cameras_raw = _json.loads(cameras_file.read_text(encoding="utf-8"))
-                except Exception:
-                    cameras_raw = []
-
-            before = len(cameras_raw)
-            cameras_raw = [c for c in cameras_raw if c.get("camera_id") != camera_id]
-            if len(cameras_raw) == before:
-                self._json({"ok": False, "msg": "Camera not found"}); return
-
-            cameras_file.write_text(
-                _json.dumps(cameras_raw, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-
-            # Detach deleted camera from any stream configs that referenced it
-            mgr = _WEB_MANAGER
-            if mgr:
-                for st in mgr.states:
-                    if getattr(st.config, "camera_id", None) == camera_id:
-                        st.config.camera_id   = None
-                        st.config.source_mode = "playlist"
-                        log.info("Camera %s removed from stream '%s'", camera_id, st.config.name)
-                try:
-                    from hc.json_manager import JSONManager
-                    JSONManager.save([s.config for s in mgr.states])
-                except Exception as exc2:
-                    log.warning("_camera_delete: could not save stream configs: %s", exc2)
-
-            log.info("Camera deleted: id=%s", camera_id)
-            self._json({"ok": True, "msg": "Camera deleted."})
-        except Exception as exc:
-            log.error("_camera_delete error: %s", exc)
-            self._json({"ok": False, "msg": str(exc)})
-
-    def _source_switch(self, data: Dict[str, Any]) -> None:
-        """POST action: source_switch — Toggle a stream between camera and playlist source."""
-        try:
-            mgr = _WEB_MANAGER
-            if not mgr:
-                self._json({"ok": False, "msg": "Manager not ready"}); return
-
-            name   = str(data.get("name",   "")).strip()
-            target = str(data.get("target", "")).strip()  # "camera" or "playlist"
-            if not name:
-                self._json({"ok": False, "msg": "Stream name is required"}); return
-            if target not in ("camera", "playlist"):
-                self._json({"ok": False, "msg": "target must be 'camera' or 'playlist'"}); return
-
-            st = mgr.get_state(name)
-            if not st:
-                self._json({"ok": False, "msg": f"Stream '{name}' not found"}); return
-
-            st.source_override = target
-            st.active_source   = target
-            log.info("[%s] Source switched to: %s", name, target)
-            self._json({"ok": True, "msg": f"Switched '{name}' to {target} source."})
-        except Exception as exc:
-            log.error("_source_switch error: %s", exc)
-            self._json({"ok": False, "msg": str(exc)})
 
     def _handle_reset(self, data: Dict[str, Any]) -> None:
         """
