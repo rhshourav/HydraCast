@@ -1,27 +1,26 @@
 """
 hc/manager.py  —  StreamManager: orchestrates workers, scheduler, event loop.
 
-v6.3 changes
-─────────────
-• start_all() stagger changed from "groups of 4 × 400 ms" to a true
-  per-stream 2-second gap.  Each stream thread is spawned 2 s after the
-  previous one, so the UI shows streams coming up one-by-one rather than
-  in bursts.  The hard port-binding serialisation is still handled by the
-  _RECONNECT_SEM in worker.py; this delay is purely the visible stagger.
+v6.1 changes (compliance v2)
+─────────────────────────────
+• _event_loop: after firing a one-shot event the loop watches for its
+  completion, then calls _resume_compliance() which:
+    – selects the correct day-tagged compliance file
+    – calculates an accurate seek offset (post-event resume)
+    – injects seek_target into the StreamState so the worker picks it up
+    – sets or clears compliance_alert on the state (Web UI banner)
 
-v6.2 changes
-─────────────
-• start_stream() gains a `fresh_start` parameter (default False).
-  Only a fresh_start=True call resets playlist_index/order to 0 — manual
-  Start button, start_all(), and event-loop auto-starts pass True.
-  Scheduler loop restarts (start_stream called because stream stopped
-  unexpectedly) and _auto_restart() in worker.py pass the default False
-  so playlist sequencing is preserved across restarts.
+• compliance_alert_enabled is respected: if False, no alert banner is set.
 
-• start_all() staggers stream launches in groups of 4 with a 400 ms pause
-  between groups (superseded in v6.3 — see above).
+• reload_csv now syncs compliance_alert_enabled.
 
-
+v6.0 changes (kept)
+────────────────────
+• Replaced csv_manager.CSVManager with json_manager.JSONManager.
+• Added start/stop/restart/get_worker/add_event/remove_event/remove_events/
+  fire_event_now/reload_from_configs methods.
+• add_stream / remove_stream for runtime Web UI management.
+• FolderWatcherRegistry for live folder monitoring.
 """
 from __future__ import annotations
 
@@ -65,7 +64,7 @@ class StreamManager:
     def start(self, name: str) -> None:
         st = self.get_state(name)
         if st:
-            self.start_stream(st, fresh_start=True)
+            self.start_stream(st)
 
     def stop(self, name: str) -> None:
         st = self.get_state(name)
@@ -78,7 +77,7 @@ class StreamManager:
             self.restart_stream(st)
 
     # ── State-based control API (used internally / TUI) ───────────────────────
-    def start_stream(self, state: StreamState, fresh_start: bool = False) -> None:
+    def start_stream(self, state: StreamState) -> None:
         if state.status in (StreamStatus.LIVE, StreamStatus.STARTING, StreamStatus.ONESHOT):
             return
         # Block while _after() owns the resume cycle.  state.resuming is set
@@ -89,24 +88,8 @@ class StreamManager:
         # calls start_stream(), which races _cycle_mediamtx and corrupts ports.
         if state.resuming:
             return
-        # Bug 9 fix: block while _auto_restart() is in its backoff countdown.
-        # _auto_restart() sets status = STOPPED/ERROR but restarting = True.
-        # The scheduler fires every 60 s and sees active=False, then calls
-        # start_stream() — which races the _auto_restart() thread's _do_start()
-        # call.  The _start_lock prevents two _do_start() calls from running
-        # simultaneously but the second one blocks for 20 s then proceeds,
-        # potentially starting a duplicate stream after _auto_restart() already
-        # succeeded.  Returning early here avoids that race entirely.
-        if getattr(state, "restarting", False):
-            return
-        # Only reset playlist position on an explicit fresh start (e.g. manual
-        # Start button press, first launch).  Auto-restarts triggered by the
-        # scheduler, _auto_restart(), or a broken-pipe loop must NOT reset to
-        # index 0 — that breaks multi-file playlist sequencing by always
-        # replaying the first file instead of continuing from where we left off.
-        if fresh_start:
-            state.playlist_index = 0
-            state.playlist_order = []
+        state.playlist_index = 0
+        state.playlist_order = []
         # Clear any stale initial_offset from a previous compliance start —
         # _apply_compliance_start() below will set it correctly if needed.
         state.initial_offset = 0.0
@@ -149,46 +132,11 @@ class StreamManager:
                              name=f"skip-{state.config.port}").start()
 
     def start_all(self) -> None:
-        from hc.constants import get_auto_start
-        if not get_auto_start():
-            log.info(
-                "start_all() skipped — auto-start is disabled (--no-auto-start). "
-                "Start streams manually from the Web UI."
-            )
-            # Still set DISABLED / SCHEDULED status so the UI shows the right state.
-            for s in self.states:
-                if not s.config.enabled:
-                    s.status = StreamStatus.DISABLED
-                else:
-                    s.status = StreamStatus.SCHEDULED
-            return
-        # ── Staggered launch (v6.3) ───────────────────────────────────────────
-        # Each stream is started with a 2-second gap between launches.
-        #
-        # Why 2 s per stream (not the old 4-streams-then-400 ms group model):
-        #   • The slow-preset encoder is more CPU-intensive than ultrafast; the
-        #     OS needs a bit more time for each MediaMTX + FFmpeg pair to settle.
-        #   • The _do_start() boot-jitter (port % 20 × 0.25 s, up to 4 s) and
-        #     the _RECONNECT_SEM (limit 4 concurrent launches) already handle the
-        #     hard port-binding serialisation.  This outer delay is simply a
-        #     human-visible "one stream at a time" stagger so the UI shows
-        #     streams coming up gradually rather than all at once.
-        #   • 2 s × 22 streams = 44 s total, well within the scheduler's 70 s
-        #     initial delay before it starts watching for stopped streams.
-        #
-        # start_stream() spawns a daemon thread, so the sleep here does NOT
-        # block the thread that already started — it only spaces out when each
-        # new thread is born.
-        for i, s in enumerate(self.states):
+        for s in self.states:
             if not s.config.enabled:
                 s.status = StreamStatus.DISABLED
             elif s.config.is_scheduled_today():
-                self.start_stream(s, fresh_start=True)
-                # 2 s between each stream start so launches are clearly
-                # sequential.  The semaphore in _do_start() handles the hard
-                # port-binding cap; this delay is the visible stagger.
-                if i < len(self.states) - 1:
-                    time.sleep(2.0)
+                self.start_stream(s)
             else:
                 if s.config.folder_source:
                     self._fw_registry.register(s)
@@ -432,28 +380,6 @@ class StreamManager:
 
     # ── Scheduler loop ────────────────────────────────────────────────────────
     def _scheduler_loop(self) -> None:
-        # Cold-start race fix: the scheduler's first iteration must not fire
-        # until start_all() has finished launching all streams.  start_all()
-        # staggers 22 streams in groups of 4 × 400 ms ≈ 2.2 s, but _do_start()
-        # adds up to 4.75 s of per-stream boot jitter on top of that.  The
-        # worst-case time for the last stream to call _start_mediamtx() is
-        # approximately 4.75 s + the time to pass through the semaphore (up to
-        # 3 × 11 s ≈ 33 s in a fully-serialised cold start).  A 70 s initial
-        # sleep safely clears that window.  After the first tick the loop
-        # returns to its normal 60 s cadence.
-        #
-        # Without this delay the scheduler fires at t=0, sees every stream as
-        # status=STOPPED (threads are still inside _do_start()), and calls
-        # start_stream() for every stream simultaneously — completely bypassing
-        # the stagger in start_all() and the boot jitter in _do_start(), which
-        # is exactly the storm that produces the "listen udp4: bind: Only one
-        # usage of each socket address" errors at cold start.
-        _initial_delay_ticks = 700  # 70 s × 10 ticks/s
-        for _ in range(_initial_delay_ticks):
-            if not self._running:
-                return
-            time.sleep(0.1)
-
         while self._running:
             for s in self.states:
                 if not s.config.enabled:
@@ -462,29 +388,7 @@ class StreamManager:
                 should = s.config.is_scheduled_today()
                 active = s.status in (StreamStatus.LIVE, StreamStatus.STARTING)
                 if should and not active:
-                    from hc.constants import get_auto_start
-                    if not get_auto_start():
-                        # Auto-start disabled — leave the stream in SCHEDULED
-                        # state; don't touch it.  Only update status if it's
-                        # currently something other than SCHEDULED/STOPPED.
-                        if s.status not in (
-                            StreamStatus.SCHEDULED, StreamStatus.STOPPED,
-                            StreamStatus.ERROR,    StreamStatus.DISABLED,
-                        ):
-                            s.status = StreamStatus.SCHEDULED
-                        continue
                     self._glog.add(f"[{s.config.name}] Scheduler: starting.", "INFO")
-                    # Reset the consecutive-failure counter so the scheduler's
-                    # recovery attempt gets a full auto-restart budget.  Without
-                    # this, a stream that burned through MAX_AUTO_RESTARTS during
-                    # a transient failure storm would refuse all future _auto_restart
-                    # calls even after the underlying problem had cleared.
-                    if s.status == StreamStatus.ERROR:
-                        s.restart_count = 0
-                        self._glog.add(
-                            f"[{s.config.name}] Scheduler: reset restart counter for ERROR stream.",
-                            "INFO",
-                        )
                     self.start_stream(s)
                 elif not should and active:
                     self._glog.add(f"[{s.config.name}] Scheduler: stopping.", "INFO")
