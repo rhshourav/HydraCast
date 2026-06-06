@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from hc.constants import APP_VER, MEDIA_DIR, SUPPORTED_EXTS, UPLOAD_MAX_BYTES
-from hc.models import CameraConfig, OneShotEvent, PlaylistItem, StreamConfig
+from hc.models import OneShotEvent, PlaylistItem, StreamConfig
 from hc.utils import _fmt_duration, _safe_path
 
 log = logging.getLogger(__name__)
@@ -168,13 +168,6 @@ class _PostHandlersMixin:
                         str(data["compliance_start"]))
                 if "compliance_loop" in data:
                     cfg.compliance_loop = bool(data["compliance_loop"])
-                # ── Hybrid source switching ───────────────────────────────────
-                if "source_mode" in data:
-                    cfg.source_mode = str(data["source_mode"]).strip() or "playlist"
-                if "camera_id" in data:
-                    cfg.camera_id = str(data["camera_id"]).strip() or None
-                if "camera_windows" in data and isinstance(data["camera_windows"], list):
-                    cfg.camera_windows = data["camera_windows"]
 
                 CSVManager.save([s.config for s in mgr.states])
                 self._json({"ok": True, "msg": f"Config saved for '{name_s}'"})
@@ -362,10 +355,6 @@ class _PostHandlersMixin:
                     compliance_enabled=bool(data.get("compliance_enabled", False)),
                     compliance_start=comp_start,
                     compliance_loop=bool(data.get("compliance_loop", False)),
-                    # ── Hybrid source switching ───────────────────────────
-                    source_mode=str(data.get("source_mode", "playlist")).strip() or "playlist",
-                    camera_id=str(data.get("camera_id", "")).strip() or None,
-                    camera_windows=data.get("camera_windows", []) if isinstance(data.get("camera_windows"), list) else [],
                 )
                 mgr.add_stream(cfg)
                 path_label = f"/{stream_path}" if stream_path else "/"
@@ -565,186 +554,8 @@ class _PostHandlersMixin:
         elif action == "restart_process":
             self._handle_restart_process()
 
-        # ── Camera registry ───────────────────────────────────────────────────
-        elif action == "add_camera":
-            self._camera_add(data)
-
-        elif action == "edit_camera":
-            self._camera_edit(data)
-
-        elif action == "delete_camera":
-            self._camera_delete(data)
-
-        # ── Source switching ──────────────────────────────────────────────────
-        elif action == "source_switch":
-            self._source_switch(data)
-
         else:
             self._json({"ok": False, "msg": f"Unknown action: {action}"}, 404)
-
-    # ── Camera registry methods ───────────────────────────────────────────────
-
-    def _camera_add(self, data: Dict[str, Any]) -> None:
-        """POST action=add_camera — add a new camera to the registry."""
-        import uuid as _uuid
-        try:
-            from hc.json_manager import JSONManager
-            from hc.models import CameraConfig, CAMERA_PROTOCOL_DEFAULTS
-            name = str(data.get("name", "")).strip()
-            if not name:
-                raise ValueError("Camera name is required")
-            protocol    = str(data.get("protocol", "rtsp")).strip()
-            host        = str(data.get("host", "")).strip()
-            if not host:
-                raise ValueError("Host is required")
-            source_type = str(data.get("source_type", "rtsp")).strip()
-            # Default port based on protocol if not supplied
-            try:
-                port = int(data.get("port", 0))
-            except (TypeError, ValueError):
-                port = 0
-            if port <= 0:
-                port = CAMERA_PROTOCOL_DEFAULTS.get(protocol, 554)
-            path     = str(data.get("path", "/")).strip() or "/"
-            username = str(data.get("username", "")).strip()
-            password = str(data.get("password", "")).strip()
-            notes    = str(data.get("notes", "")).strip()
-            enabled  = bool(data.get("enabled", True))
-            cameras  = JSONManager.load_cameras()
-            # Prevent duplicate names
-            if any(c.name == name for c in cameras):
-                raise ValueError(f"A camera named '{name}' already exists")
-            cam = CameraConfig(
-                camera_id   = str(_uuid.uuid4()),
-                name        = name,
-                protocol    = protocol,
-                host        = host,
-                port        = port,
-                path        = path,
-                username    = username,
-                password    = password,
-                source_type = source_type,
-                enabled     = enabled,
-                notes       = notes,
-            )
-            cameras.append(cam)
-            JSONManager.save_cameras(cameras)
-            log.info("Camera added: %s (%s)", cam.name, cam.url_masked)
-            self._json({"ok": True, "msg": f"Camera '{name}' added.", "camera_id": cam.camera_id})
-        except Exception as exc:
-            self._json({"ok": False, "msg": str(exc)})
-
-    def _camera_edit(self, data: Dict[str, Any]) -> None:
-        """POST action=edit_camera — update an existing camera."""
-        try:
-            from hc.json_manager import JSONManager
-            from hc.models import CAMERA_PROTOCOL_DEFAULTS
-            camera_id = str(data.get("camera_id", "")).strip()
-            if not camera_id:
-                raise ValueError("camera_id is required")
-            cameras = JSONManager.load_cameras()
-            cam = next((c for c in cameras if c.camera_id == camera_id), None)
-            if cam is None:
-                raise ValueError(f"Camera '{camera_id}' not found")
-            # Update only supplied fields
-            if "name" in data:
-                new_name = str(data["name"]).strip()
-                if not new_name:
-                    raise ValueError("Camera name cannot be empty")
-                # Allow rename only if no collision with another camera
-                if any(c.name == new_name and c.camera_id != camera_id for c in cameras):
-                    raise ValueError(f"A camera named '{new_name}' already exists")
-                cam.name = new_name
-            if "protocol" in data:
-                cam.protocol = str(data["protocol"]).strip()
-            if "host" in data:
-                h = str(data["host"]).strip()
-                if not h:
-                    raise ValueError("Host cannot be empty")
-                cam.host = h
-            if "port" in data:
-                try:
-                    p = int(data["port"])
-                except (TypeError, ValueError):
-                    p = 0
-                if p <= 0:
-                    p = CAMERA_PROTOCOL_DEFAULTS.get(cam.protocol, 554)
-                cam.port = p
-            if "path" in data:
-                cam.path = str(data["path"]).strip() or "/"
-            if "username" in data:
-                cam.username = str(data["username"]).strip()
-            # Password: preserve existing unless a new non-empty value is sent.
-            # An explicit empty string clears the password (intentional reset).
-            if "password" in data:
-                new_pw = str(data["password"])
-                if new_pw not in ("••••••••", ""):
-                    # Real new password submitted
-                    cam.password = new_pw
-                elif new_pw == "" and data.get("clear_password"):
-                    # Explicit clear requested via toggle
-                    cam.password = ""
-                # else: masked placeholder or absent — keep existing
-            if "source_type" in data:
-                cam.source_type = str(data["source_type"]).strip()
-            if "enabled" in data:
-                cam.enabled = bool(data["enabled"])
-            if "notes" in data:
-                cam.notes = str(data["notes"]).strip()
-            JSONManager.save_cameras(cameras)
-            log.info("Camera edited: %s (%s)", cam.name, cam.url_masked)
-            self._json({"ok": True, "msg": f"Camera '{cam.name}' updated."})
-        except Exception as exc:
-            self._json({"ok": False, "msg": str(exc)})
-
-    def _camera_delete(self, data: Dict[str, Any]) -> None:
-        """POST action=delete_camera — remove a camera from the registry."""
-        try:
-            from hc.json_manager import JSONManager
-            camera_id = str(data.get("camera_id", "")).strip()
-            if not camera_id:
-                raise ValueError("camera_id is required")
-            cameras = JSONManager.load_cameras()
-            before  = len(cameras)
-            cameras = [c for c in cameras if c.camera_id != camera_id]
-            if len(cameras) == before:
-                raise ValueError(f"Camera '{camera_id}' not found")
-            JSONManager.save_cameras(cameras)
-            log.info("Camera deleted: %s", camera_id)
-            self._json({"ok": True, "msg": "Camera deleted."})
-        except Exception as exc:
-            self._json({"ok": False, "msg": str(exc)})
-
-    # ── Source switching ──────────────────────────────────────────────────────
-
-    def _source_switch(self, data: Dict[str, Any]) -> None:
-        """
-        POST action=source_switch — flip active source between camera and playlist.
-
-        Body: { name: "<stream name>", target: "camera" | "playlist" }
-        """
-        from hc.web import _WEB_MANAGER  # type: ignore
-        try:
-            name   = str(data.get("name", "")).strip()
-            target = str(data.get("target", "")).strip()
-            if not name:
-                raise ValueError("Stream name is required")
-            if target not in ("camera", "playlist"):
-                raise ValueError("target must be 'camera' or 'playlist'")
-            mgr = _WEB_MANAGER
-            if not mgr:
-                raise ValueError("Manager not ready")
-            st = mgr.get_state(name)
-            if not st:
-                raise ValueError(f"Stream '{name}' not found")
-            if st.config.source_mode == "playlist" and target == "camera":
-                raise ValueError("Stream is not configured for camera/hybrid mode")
-            # Delegate to manager — sets source_override, flips active_source, restarts worker
-            mgr.switch_source(name, target, manual=True)
-            log.info("source_switch: '%s' → %s (manual)", name, target)
-            self._json({"ok": True, "msg": f"Switched '{name}' to {target}"})
-        except Exception as exc:
-            self._json({"ok": False, "msg": str(exc)})
 
     # ── Multipart upload ──────────────────────────────────────────────────────
 
@@ -876,29 +687,6 @@ class _PostHandlersMixin:
                         p.read_text(encoding="utf-8")) if p.exists() else {}
                 except Exception:
                     payload["resume_positions"] = {}
-            # ── Camera registry (passwords stripped) ──────────────────────────
-            if include.get("cameras", True):
-                try:
-                    from hc.json_manager import JSONManager
-                    cameras = JSONManager.load_cameras()
-                    payload["cameras"] = [
-                        {
-                            "camera_id":   c.camera_id,
-                            "name":        c.name,
-                            "protocol":    c.protocol,
-                            "host":        c.host,
-                            "port":        c.port,
-                            "path":        c.path,
-                            "username":    c.username,
-                            # passwords are intentionally excluded from backups
-                            "source_type": c.source_type,
-                            "enabled":     c.enabled,
-                            "notes":       c.notes,
-                        }
-                        for c in cameras
-                    ]
-                except Exception:
-                    payload["cameras"] = []
             body  = _json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
             ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
             fname = f"hydracast_backup_{ts}.hc"
@@ -965,37 +753,6 @@ class _PostHandlersMixin:
                     encoding="utf-8",
                 )
                 restored.append("resume_positions")
-            # ── Camera registry ───────────────────────────────────────────────
-            if "cameras" in payload and isinstance(payload["cameras"], list):
-                try:
-                    from hc.json_manager import JSONManager
-                    from hc.models import CameraConfig as _CC
-                    # Re-inject passwords from existing local cameras.hcf
-                    existing_cams = {c.camera_id: c for c in JSONManager.load_cameras()}
-                    merged: list = []
-                    for entry in payload["cameras"]:
-                        cam_id = entry.get("camera_id", "")
-                        # Restore password from local store if not in backup
-                        password = entry.get("password", "")
-                        if not password and cam_id in existing_cams:
-                            password = existing_cams[cam_id].password
-                        merged.append(_CC(
-                            camera_id   = cam_id,
-                            name        = entry.get("name", ""),
-                            protocol    = entry.get("protocol", "rtsp"),
-                            host        = entry.get("host", ""),
-                            port        = int(entry.get("port", 554)),
-                            path        = entry.get("path", "/"),
-                            username    = entry.get("username", ""),
-                            password    = password,
-                            source_type = entry.get("source_type", "rtsp"),
-                            enabled     = bool(entry.get("enabled", True)),
-                            notes       = entry.get("notes", ""),
-                        ))
-                    JSONManager.save_cameras(merged)
-                    restored.append("cameras")
-                except Exception as _ce:
-                    log.warning("restore: cameras restore failed: %s", _ce)
             mgr = _WEB_MANAGER
             if mgr and "streams" in payload:
                 try:
