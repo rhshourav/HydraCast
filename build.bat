@@ -58,50 +58,10 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 
-REM ── Build hydracast_bg.exe (no console, system tray) ─────────────────────
-echo.
-echo [HydraCast] Building hydracast_bg.exe (background + tray) ...
-pyinstaller hydracast_bg.spec --clean --noconfirm
-if errorlevel 1 (
-    echo [HydraCast] ERROR: hydracast_bg.spec build failed.
-    pause & exit /b 1
-)
-
-REM ── Build hydracast_guardian.exe (headless supervisor process) ────────────
-echo.
-echo [HydraCast] Building hydracast_guardian.exe (guardian watchdog) ...
-pyinstaller hydracast_guardian.spec --clean --noconfirm
-if errorlevel 1 (
-    echo [HydraCast] ERROR: hydracast_guardian.spec build failed.
-    pause & exit /b 1
-)
-
-REM ── Merge hydracast_bg.exe into the main HydraCast folder ─────────────────
-echo.
-echo [HydraCast] Merging hydracast_bg.exe into dist\HydraCast\ ...
-copy /Y "dist\HydraCast_BG\hydracast_bg.exe" "dist\HydraCast\hydracast_bg.exe"
-if errorlevel 1 (
-    echo [HydraCast] ERROR: Could not copy hydracast_bg.exe.
-    pause & exit /b 1
-)
-rmdir /S /Q "dist\HydraCast_BG"
-
-REM ── Merge hydracast_guardian.exe into the main HydraCast folder ──────────
-echo.
-echo [HydraCast] Merging hydracast_guardian.exe into dist\HydraCast\ ...
-copy /Y "dist\HydraCast_Guardian\hydracast_guardian.exe" "dist\HydraCast\hydracast_guardian.exe"
-if errorlevel 1 (
-    echo [HydraCast] ERROR: Could not copy hydracast_guardian.exe.
-    pause & exit /b 1
-)
-rmdir /S /Q "dist\HydraCast_Guardian"
-
 echo.
 echo [HydraCast] dist\HydraCast\ is ready.
 echo.
 echo   hydracast.exe          -- TUI / interactive mode
-echo   hydracast_bg.exe       -- background mode (system tray)
-echo   hydracast_guardian.exe -- guardian watchdog (auto-launched by bg mode)
 echo.
 
 REM ── NSIS Installer ───────────────────────────────────────────────────────
