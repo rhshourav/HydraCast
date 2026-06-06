@@ -909,7 +909,7 @@ select option{background:var(--bg3)}
 .config-stream-item .dot.error{background:var(--red)}
 .config-main{
   background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
-  overflow:hidden;display:flex;flex-direction:column;min-height:0;max-height:100%;
+  overflow:hidden;display:flex;flex-direction:column;min-height:0;
   transition:background 0.35s,border-color 0.35s;
 }
 .config-main-hdr{
@@ -917,16 +917,21 @@ select option{background:var(--bg3)}
   display:flex;align-items:center;gap:12px;
 }
 .config-main-hdr h2{font-family:var(--font-display);font-size:17px;font-weight:700}
-.config-main-body{padding:24px 24px 8px;overflow:auto;flex:1;scroll-padding-bottom:80px}
+.config-main-body{padding:24px;overflow-y:auto;overflow-x:hidden;flex:1}
 .config-section{margin-bottom:28px}
 .config-section-title{
   font-size:11px;text-transform:uppercase;letter-spacing:0.1em;
   color:var(--accent);font-weight:700;margin-bottom:14px;padding-bottom:8px;
   border-bottom:1px solid var(--border);font-family:var(--font-display);
 }
-.config-main-footer{
-  padding:16px 22px;border-top:1px solid var(--border);background:var(--bg3);
-  display:flex;gap:10px;justify-content:flex-end;flex-shrink:0;
+/* external footer kept for backward compat but hidden by default */
+.config-main-footer{display:none !important}
+/* inline sticky save bar rendered inside config-main-body */
+.cfg-save-bar{
+  position:sticky;bottom:0;margin:24px -24px -8px;
+  padding:14px 22px;border-top:1px solid var(--border);background:var(--bg3);
+  display:flex;gap:10px;justify-content:flex-end;
+  z-index:10;
 }
 
 /* ─────────── PLAYLIST EDITOR ─────────── */
@@ -3507,9 +3512,12 @@ function renderConfigEditor(s){
         <button class="btn" onclick="api('restart',{name:'${esc(s.name)}'})" title="Restart this stream">↺ Restart</button>
         ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭ Skip</button>`:''}
       </div>
+    </div>
+    <div class="cfg-save-bar" id="cfg-save-bar">
+      <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
+      <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>
     </div>`;
 
-  document.getElementById('config-main-footer').style.display='flex';
   _clearDirty();
   renderPlaylistEditor('cfg-pl-wrap', s.files||'');
   setTimeout(_attachDirtyListeners, 0);
@@ -3586,7 +3594,8 @@ let _playlistItems=[];
 function _markDirty(){
   if(_configDirty)return;
   _configDirty=true;
-  const ftr=document.getElementById('config-main-footer');
+  // target the inline sticky save bar; fall back to legacy footer if present
+  const ftr=document.getElementById('cfg-save-bar')||document.getElementById('config-main-footer');
   if(ftr&&!document.getElementById('_dirty-badge')){
     const b=document.createElement('span');
     b.id='_dirty-badge';b.className='dirty-badge';b.textContent='● Unsaved';
@@ -3959,12 +3968,11 @@ function showNewStreamForm(){
           </div>
         </div>
       </div>
+    </div>
+    <div class="cfg-save-bar">
+      <button class="btn" onclick="cancelConfig()" title="Discard and go back without creating a stream">Cancel</button>
+      <button class="btn g" onclick="submitNewStream()" title="Create this new stream and save it to configuration">&#x2713; Create Stream</button>
     </div>`;
-  // Swap footer buttons for Create mode
-  document.getElementById('config-main-footer').innerHTML=`
-    <button class="btn" onclick="cancelConfig()" title="Discard and go back without creating a stream">Cancel</button>
-    <button class="btn g" onclick="submitNewStream()" title="Create this new stream and save it to configuration">&#x2713; Create Stream</button>`;
-  document.getElementById('config-main-footer').style.display='flex';
   _clearDirty();
   renderPlaylistEditor('new-pl-wrap', '');
   setTimeout(_attachDirtyListeners, 0);
@@ -3988,7 +3996,7 @@ async function suggestNextPort(inputId, resultId){
   // Always start 2 above the current value so the button advances to a
   // genuinely *next* free port instead of returning the same port when
   // the current one happens to be free already.
-  const cur = parseInt(inp.value||0)||60121;
+  const cur = parseInt(inp.value||0)||30121;
   const from = cur + 2;
   const suggestBtn = document.getElementById('suggest-btn-'+inputId);
   if(suggestBtn){
