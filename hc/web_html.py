@@ -3418,8 +3418,11 @@ function renderConfigEditor(s){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate==='copy'?'8000k':(s.video_bitrate||'8000k'))}" placeholder="e.g. 8000k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate==='copy'?'320k':(s.audio_bitrate||'320k'))}" placeholder="e.g. 320k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate==='copy'?'':(s.video_bitrate||''))}" placeholder="copy (default) or e.g. 2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate==='copy'?'':(s.audio_bitrate||''))}" placeholder="copy (default) or e.g. 128k"></div>
+        /*COMENT*/
+        /*<div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate==='copy'?'8000k':(s.video_bitrate||'8000k'))}" placeholder="e.g. 8000k"></div>*/
+        /*<div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate==='copy'?'320k':(s.audio_bitrate||'320k'))}" placeholder="e.g. 320k"></div>*/
       </div>
     </div>
     <div class="config-section">
@@ -3913,8 +3916,11 @@ function showNewStreamForm(){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="8000k" placeholder="e.g. 8000k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="320k" placeholder="e.g. 320k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="" placeholder="copy (default) or e.g. 2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="" placeholder="copy (default) or e.g. 128k"></div>
+        /* COMENT */
+        /*<div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="8000k" placeholder="e.g. 8000k"></div>*/
+       /* <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="320k" placeholder="e.g. 320k"></div>*/
       </div>
     </div>
     <div class="config-section">
