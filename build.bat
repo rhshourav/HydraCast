@@ -43,6 +43,9 @@ if "!CUR_HASH!" == "!PREV_HASH!" (
 
 REM ── Tray + SSL + pywin32 dependencies ────────────────────────────────────
 echo [HydraCast] Ensuring tray, SSL and win32 dependencies ...
+REM  pystray + Pillow = system-tray icon (minimize/close hides to tray)
+REM  cryptography     = self-signed SSL cert generation
+REM  pywin32 + psutil = Windows API access and process stats
 pip install pystray Pillow cryptography pywin32 psutil -q
 if errorlevel 1 (
     echo [HydraCast] WARNING: optional dependency install had errors -- continuing.
