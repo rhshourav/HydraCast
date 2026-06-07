@@ -2445,14 +2445,24 @@ async function api(action,data){
 // DOWNLOAD URLS CSV
 // ═══════════════════════════════════
 function downloadUrlsCsv(){
-  const incFiles=document.getElementById('csv-files')?.checked?'1':'0';
-  const a=document.createElement('a');
-  a.href='/api/urls_csv?include_files='+incFiles;
-  a.download='';           // filename comes from Content-Disposition
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  toast('Downloading URLs CSV\u2026','info');
+    try{
+        toast('Downloading URLs CSV…','info');
+        const r=await fetch('/api/urls_csv?include_files='+incFiles);
+        if(!r.ok) throw new Error('Server returned '+r.status);
+            const blob=await r.blob();
+            const cd=r.headers.get('Content-Disposition')||'';
+            const m=cd.match(/filename="([^"]+)"/);
+            const fname=m?m[1]:'hydracast_urls.csv';
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement('a');
+            a.href=url; a.download=fname;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            setTimeout(()=>URL.revokeObjectURL(url),5000);
+            toast('URLs CSV downloaded ✓','ok');
+  }catch(e){
+    toast('CSV download failed: '+e.message,'err');
+  }
 }
 
 // ═══════════════════════════════════
