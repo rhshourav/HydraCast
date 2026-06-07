@@ -924,16 +924,19 @@ select option{background:var(--bg3)}
   color:var(--accent);font-weight:700;margin-bottom:14px;padding-bottom:8px;
   border-bottom:1px solid var(--border);font-family:var(--font-display);
 }
-/* footer is a real flex child of .config-main — always visible below the scroll body */
-.config-main-footer{
-  display:flex !important;gap:10px;justify-content:flex-end;align-items:center;
-  padding:14px 20px;
+/* footer element unused — save bar lives inside body as flex sibling */
+.config-main-footer{display:none !important}
+/* body is now a flex column: scrollable content + always-visible save bar */
+.config-main-body{display:flex;flex-direction:column;overflow:hidden;flex:1;padding:0}
+/* inner scrollable area — replaces old padding on body */
+.config-main-scroll{padding:24px;overflow-y:auto;overflow-x:hidden;flex:1;min-height:0}
+/* save bar is a flex-shrink:0 sibling — always visible at the bottom */
+.cfg-save-bar{
+  display:flex;gap:10px;justify-content:flex-end;align-items:center;
+  padding:14px 20px;flex-shrink:0;
   border-top:1px solid var(--border);
   background:var(--bg3);
-  flex-shrink:0;
 }
-/* cfg-save-bar inside scroll body is now hidden; buttons live in config-main-footer */
-.cfg-save-bar{display:none !important}
 
 /* ─────────── PLAYLIST EDITOR ─────────── */
 .pl-editor{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-top:8px}
