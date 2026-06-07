@@ -2444,15 +2444,40 @@ async function api(action,data){
 // ═══════════════════════════════════
 // DOWNLOAD URLS CSV
 // ═══════════════════════════════════
-function downloadUrlsCsv(){
+async function downloadUrlsCsv(){
   const incFiles=document.getElementById('csv-files')?.checked?'1':'0';
-  const a=document.createElement('a');
-  a.href='/api/urls_csv?include_files='+incFiles;
-  a.download='';           // filename comes from Content-Disposition
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  const url='/api/urls_csv?include_files='+incFiles;
   toast('Downloading URLs CSV\u2026','info');
+  try{
+    const r=await fetch(url,{credentials:'same-origin'});
+    if(!r.ok){
+      let msg='Server error '+r.status;
+      try{const j=await r.json();if(j&&j.error)msg=j.error;}catch(_){}
+      throw new Error(msg);
+    }
+    const blob=await r.blob();
+    const cd=r.headers.get('Content-Disposition')||'';
+    const m=cd.match(/filename="([^"]+)"/);
+    const fname=m?m[1]:'hydracast_urls.csv';
+    const burl=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=burl; a.download=fname;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(burl),5000);
+    toast('URLs CSV downloaded \u2713','ok');
+  }catch(e){
+    // fetch() throws TypeError on network-level failure (server down, CORS, etc.)
+    // Fall back to direct anchor navigation so the browser handles it natively
+    if(e instanceof TypeError){
+      const a=document.createElement('a');
+      a.href=url; a.download='hydracast_urls.csv';
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+    }else{
+      toast('CSV download failed: '+e.message,'err');
+    }
+  }
 }
 
 // ═══════════════════════════════════
@@ -3418,8 +3443,8 @@ function renderConfigEditor(s){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate==='copy'?'':(s.video_bitrate||''))}" placeholder="copy (default) or e.g. 2500k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate==='copy'?'':(s.audio_bitrate||''))}" placeholder="copy (default) or e.g. 128k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate==='copy'?'8000k':(s.video_bitrate||'8000k'))}" placeholder="e.g. 8000k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate==='copy'?'320k':(s.audio_bitrate||'320k'))}" placeholder="e.g. 320k"></div>
       </div>
     </div>
     <div class="config-section">
@@ -3913,8 +3938,8 @@ function showNewStreamForm(){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="" placeholder="copy (default) or e.g. 2500k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="" placeholder="copy (default) or e.g. 128k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="8000k" placeholder="e.g. 8000k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="320k" placeholder="e.g. 320k"></div>
       </div>
     </div>
     <div class="config-section">
