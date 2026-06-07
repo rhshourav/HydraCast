@@ -203,6 +203,232 @@ def _protect_signals(glog: Optional["LogBuffer"] = None) -> None:
 
 
 # =============================================================================
+# SYSTEM TRAY  (Windows only — requires pystray + Pillow)
+# =============================================================================
+
+class _TrayIcon:
+    """
+    Manages a system-tray icon for HydraCast.
+
+    Behaviour
+    ---------
+    - Minimize button  -> hides the console window to tray.
+    - Close (X) button -> hides to tray (does NOT quit).
+    - Tray left-click  -> restores the console window.
+    - Tray right-click menu:
+          Show / Hide HydraCast
+          ──────────────────────
+          Quit HydraCast          <- only way to close from tray
+    - Q key in TUI     -> triggers clean shutdown as before.
+
+    WHY WE DON'T USE SetWindowLongPtrW (WndProc subclassing)
+    ---------------------------------------------------------
+    The console window is owned by conhost.exe — a completely separate
+    Windows process.  SetWindowLongPtrW cannot subclass a window that
+    belongs to a different process; the call silently does nothing.
+
+    We use two correct Windows mechanisms instead:
+      1. SetConsoleCtrlHandler — intercepts CTRL_CLOSE_EVENT (the X button).
+         Returning TRUE suppresses the default termination.
+      2. A lightweight polling thread — calls IsIconic() every 250 ms and
+         hides the window the moment it is minimized.
+    """
+
+    def __init__(self, shutdown_event: threading.Event,
+                 glog: Optional["LogBuffer"] = None) -> None:
+        self._shutdown     = shutdown_event
+        self._glog         = glog
+        self._hwnd: int    = 0
+        self._icon_obj     = None
+        self._hidden       = False
+        self._ctrl_handler = None   # must keep a reference to prevent GC
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def start(self) -> None:
+        """Start the tray icon in a background daemon thread."""
+        t = threading.Thread(target=self._run, name="TrayIcon", daemon=True)
+        t.start()
+
+    def stop(self) -> None:
+        """Stop the tray icon (called on clean shutdown)."""
+        try:
+            if self._icon_obj:
+                self._icon_obj.stop()
+        except Exception:
+            pass
+
+    def show_window(self) -> None:
+        """Restore the console window from tray."""
+        if not self._hwnd:
+            return
+        try:
+            import ctypes
+            ctypes.windll.user32.ShowWindow(self._hwnd, 9)   # SW_RESTORE
+            ctypes.windll.user32.SetForegroundWindow(self._hwnd)
+            self._hidden = False
+        except Exception:
+            pass
+
+    def hide_window(self) -> None:
+        """Hide the console window to tray."""
+        if not self._hwnd:
+            return
+        try:
+            import ctypes
+            ctypes.windll.user32.ShowWindow(self._hwnd, 0)   # SW_HIDE
+            self._hidden = True
+        except Exception:
+            pass
+
+    # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _log(self, msg: str) -> None:
+        if self._glog:
+            self._glog.add(msg, "INFO")
+
+    def _make_icon_image(self):
+        """Load HydraCast.ico from resources/ or fall back to a coloured square."""
+        try:
+            from PIL import Image
+            candidates = [
+                # PyInstaller frozen build
+                Path(sys.executable).parent / "_internal" / "resources" / "HydraCast.ico",
+                # Development run
+                _HERE / "resources" / "HydraCast.ico",
+            ]
+            for p in candidates:
+                if p.exists():
+                    return Image.open(p).convert("RGBA").resize((64, 64))
+            # Fallback: amber square matching the HydraCast accent colour
+            return Image.new("RGBA", (64, 64), (205, 133, 0, 255))
+        except Exception:
+            try:
+                from PIL import Image
+                return Image.new("RGBA", (64, 64), (205, 133, 0, 255))
+            except Exception:
+                return None
+
+    def _install_console_hooks(self) -> None:
+        """
+        Install two mechanisms to intercept close and minimize.
+
+        1. SetConsoleCtrlHandler with CTRL_CLOSE_EVENT
+           The OS calls our handler when the user clicks the console X button.
+           Returning TRUE tells Windows not to terminate the process.
+           ShowWindow(SW_HIDE) is safe to call from this handler because it
+           posts a message to the window queue rather than calling into the
+           window procedure directly.
+
+        2. Minimize-watcher polling thread
+           IsIconic() is polled every 250 ms.  The moment the window becomes
+           iconic we call ShowWindow(SW_HIDE) to move it to the tray instead.
+           A thread is necessary because we cannot subclass conhost.exe's
+           WndProc from our process.
+        """
+        import ctypes
+
+        self._hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+
+        # ── 1. Close (X) button ───────────────────────────────────────────────
+        CTRL_CLOSE_EVENT = 2
+        HandlerRoutine   = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
+
+        def _ctrl_handler(ctrl_type: int) -> bool:
+            if ctrl_type == CTRL_CLOSE_EVENT:
+                self.hide_window()
+                return True     # TRUE = handled — do NOT terminate the process
+            return False        # let the default handler run for Ctrl-C etc.
+
+        # Keep a strong reference so ctypes does not garbage-collect the
+        # callback while the handler is still registered.
+        self._ctrl_handler = HandlerRoutine(_ctrl_handler)
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(self._ctrl_handler, True)
+
+        # ── 2. Minimize button — polling watcher ──────────────────────────────
+        def _minimize_watcher() -> None:
+            IsIconic = ctypes.windll.user32.IsIconic
+            while not self._shutdown.is_set():
+                try:
+                    if self._hwnd and not self._hidden and IsIconic(self._hwnd):
+                        self.hide_window()
+                except Exception:
+                    pass
+                time.sleep(0.25)
+
+        threading.Thread(
+            target=_minimize_watcher, name="MinimizeWatcher", daemon=True
+        ).start()
+
+    def _run(self) -> None:
+        """Thread entry point — creates and runs the pystray icon."""
+        try:
+            import pystray
+        except ImportError:
+            self._log("TrayIcon: pystray not installed — tray icon unavailable.")
+            return
+
+        img = self._make_icon_image()
+        if img is None:
+            self._log("TrayIcon: could not create icon image — tray icon unavailable.")
+            return
+
+        # Install close / minimize intercepts BEFORE starting the tray loop.
+        self._install_console_hooks()
+
+        def _on_show_hide(icon, item):
+            if self._hidden:
+                self.show_window()
+            else:
+                self.hide_window()
+
+        def _on_quit(icon, item):
+            self._log("Quit requested from tray menu.")
+            self.show_window()      # make console visible for the shutdown msg
+            icon.stop()
+            self._shutdown.set()
+
+        # default=True → pystray fires _on_show_hide on a plain left-click too,
+        # so clicking the tray icon toggles the window without needing on_click.
+        menu = pystray.Menu(
+            pystray.MenuItem(
+                lambda _: "Hide HydraCast" if not self._hidden else "Show HydraCast",
+                _on_show_hide,
+                default=True,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit HydraCast", _on_quit),
+        )
+
+        self._icon_obj = pystray.Icon(
+            "HydraCast",
+            img,
+            "HydraCast — running",
+            menu,
+        )
+
+        self._log(
+            "System tray active — close/minimize hides to tray. "
+            "Left-click tray icon to show/hide. Right-click > Quit to exit."
+        )
+
+        # pystray.Icon.run() creates a Win32 message loop and must be called
+        # from the main thread.  We are on a daemon thread, so we use
+        # run_detached() (pystray >= 0.17) which hands off to pystray's own
+        # internal thread and returns immediately.  We then block on the
+        # shutdown event to keep our object (and _ctrl_handler) alive.
+        #
+        # Older pystray falls back to run() which blocks here; it generally
+        # works from a non-main thread because Win32 creates a per-thread
+        # message queue on first GUI call.
+        try:
+            self._icon_obj.run_detached()   # pystray >= 0.17
+            self._shutdown.wait()           # keep alive until Q or Quit
+        except AttributeError:
+            self._icon_obj.run()            # pystray < 0.17, blocks
+
+
+# =============================================================================
 # CLI
 # =============================================================================
 def _parse_args() -> argparse.Namespace:
@@ -456,9 +682,6 @@ def main() -> None:
     # in normal mode it still triggers a clean shutdown.
     if args.protect:
         _protect_signals(glog)
-        if IS_WIN:
-            _win_disable_close_button()
-            _win_set_title(f"{APP_NAME} v{APP_VER}  —  Press Q to quit")
         glog.add(
             "Protect mode active — Ctrl-C disabled. "
             "Use Q in the TUI or the Web UI to stop.", "INFO"
@@ -467,6 +690,16 @@ def main() -> None:
         signal.signal(signal.SIGINT,  _on_signal)
 
     signal.signal(signal.SIGTERM, _on_signal)
+
+    # ── System tray (Windows only) ────────────────────────────────────────────
+    # Always active on Windows regardless of --protect.
+    # Minimize and close buttons hide the window to the tray.
+    # Only Q in the TUI or right-click → Quit from the tray actually exits.
+    _tray: Optional[_TrayIcon] = None
+    if IS_WIN:
+        _win_set_title(f"{APP_NAME} v{APP_VER}  —  Press Q to quit  |  Minimize hides to tray")
+        _tray = _TrayIcon(_shutdown, glog)
+        _tray.start()
 
     # ── Start everything ──────────────────────────────────────────────────────
     glog.add(
@@ -501,6 +734,9 @@ def main() -> None:
     )
 
     # ── Graceful shutdown ─────────────────────────────────────────────────────
+    if _tray:
+        _tray.show_window()   # ensure console is visible for the shutdown message
+        _tray.stop()
     console.clear()
     console.print(f"\n[{CY}]⏳  Stopping all streams … please wait.[/]")
     manager.shutdown()
