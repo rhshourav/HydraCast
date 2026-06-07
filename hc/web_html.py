@@ -1,5 +1,4 @@
-"""
-hc/web_html.py  —  HTML template for the HydraCast Web UI.
+"""hc/web_html.py  —  HTML template for the HydraCast Web UI.
 
 This module contains only the _HTML string. Import it via::
 
@@ -925,9 +924,14 @@ select option{background:var(--bg3)}
   color:var(--accent);font-weight:700;margin-bottom:14px;padding-bottom:8px;
   border-bottom:1px solid var(--border);font-family:var(--font-display);
 }
-.config-main-footer{
+/* external footer hidden, replaced by inline .cfg-save-bar */
+.config-main-footer{display:none !important}
+/* save bar rendered at the bottom of the scrollable form body */
+.cfg-save-bar{
   display:flex;gap:10px;justify-content:flex-end;align-items:center;
-  padding:16px 22px;border-top:1px solid var(--border);background:var(--bg3);
+  padding:16px 0 4px;
+  border-top:1px solid var(--border);
+  margin-top:8px;
 }
 
 /* ─────────── PLAYLIST EDITOR ─────────── */
@@ -1056,7 +1060,7 @@ select option{background:var(--bg3)}
 
 /* ─────────── APP FOOTER ─────────── */
 .app-footer{
-  background:var(--bg2);border:top:1px solid var(--border);
+  background:var(--bg2);border-top:1px solid var(--border);
   padding:7px 24px;display:flex;align-items:center;justify-content:center;
   gap:10px;font-size:11px;color:var(--text3);flex-shrink:0;
   font-family:var(--font-sans);
@@ -1299,6 +1303,7 @@ select option{background:var(--bg3)}
 
 <div class="app">
 
+<!-- ══ TOP BAR ══ -->
 <header class="topbar">
   <div class="logo">
     <div class="logo-icon" id="logo-icon-wrap" style="cursor:default">
@@ -1348,6 +1353,7 @@ select option{background:var(--bg3)}
     <div class="stat-pill">RAM <b id="h-ram">—</b></div>
     <div class="stat-pill" style="font-variant-numeric:tabular-nums"><b id="h-time">—</b></div>
 
+    <!-- ── Holidays pill ── -->
     <div style="position:relative" id="hd-wrap">
       <button class="stat-pill" id="hd-btn" onclick="toggleHolidays(event)"
           title="Public Holidays"
@@ -1391,6 +1397,7 @@ select option{background:var(--bg3)}
   </div>
 </header>
 
+<!-- ══ STREAMS TAB ══ -->
 <div id="tab-streams" class="tab-panel active">
   <div class="section-hdr">
     <h2>Live Streams</h2>
@@ -1430,6 +1437,7 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ══ VIEWER TAB ══ -->
 <div id="tab-viewer" class="tab-panel">
   <div class="section-hdr">
     <h2>Stream Viewer</h2>
@@ -1441,6 +1449,7 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ══ LOGS TAB ══ -->
 <div id="tab-logs" class="tab-panel">
   <div class="section-hdr">
     <h2>Event Log</h2>
@@ -1462,14 +1471,18 @@ select option{background:var(--bg3)}
   <div id="logbox"></div>
 </div>
 
+<!-- ══ UPLOAD TAB ══ -->
+<!-- ══ MEDIA TAB (Upload + File Manager merged) ══ -->
 <div id="tab-media" class="tab-panel">
 
+  <!-- Top bar: upload strip -->
   <div class="section-hdr">
     <h2>Media Library</h2><span class="sep"></span>
     <button class="btn b" onclick="loadFiles(_fmCurrentPath)" title="Refresh the current folder listing">↻ Refresh</button>
     <button class="btn g" onclick="fmNewFolder()" title="Create a new folder in the current directory">＋ New Folder</button>
   </div>
 
+  <!-- Upload drop zone (collapsed bar at top) -->
   <div class="card" style="padding:0;overflow:visible">
     <div style="padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--bg3);border-radius:var(--radius-lg) var(--radius-lg) 0 0">
       <div style="font-size:13px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:8px">
@@ -1493,12 +1506,15 @@ select option{background:var(--bg3)}
       </div>
       <input type="file" id="fpick" multiple accept="video/*,audio/*" style="display:none" onchange="doUpload(this.files)">
     </div>
+    <!-- Upload progress list -->
     <div id="uplist-wrap" style="display:none;padding:10px 16px;border-bottom:1px solid var(--border)">
       <ul id="uplist" style="list-style:none;display:flex;flex-direction:column;gap:6px;margin:0;padding:0"></ul>
     </div>
 
+    <!-- File Manager layout -->
     <div style="display:grid;grid-template-columns:210px 1fr;min-height:520px">
 
+      <!-- Sidebar -->
       <div style="border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
         <div style="padding:10px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border);font-family:var(--font-display)">Folders</div>
         <div class="fm-dir-list" id="fm-dir-list" style="flex:1;overflow-y:auto">
@@ -1508,18 +1524,22 @@ select option{background:var(--bg3)}
         </div>
       </div>
 
+      <!-- Main file list -->
       <div style="display:flex;flex-direction:column;overflow:hidden">
+        <!-- Breadcrumb + toolbar -->
         <div style="padding:9px 14px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <div class="fm-breadcrumb" id="fm-breadcrumb" style="flex:1;min-width:0">
             <span onclick="loadFiles('')" id="fm-breadcrumb-root">Files</span>
           </div>
         </div>
+        <!-- File rows -->
         <div class="fm-body" id="fm-body" style="flex:1;overflow-y:auto">
           <div class="fm-empty">
             <div class="empty-icon">📂</div>
             <div>Open the Media tab to browse files.</div>
           </div>
         </div>
+        <!-- Status bar -->
         <div class="fm-status-bar" id="fm-status">Ready</div>
       </div>
 
@@ -1528,6 +1548,7 @@ select option{background:var(--bg3)}
 
 </div>
 
+<!-- FM dialogs (shared, outside tab panel) -->
 <div class="fm-dialog-overlay" id="fm-rename-overlay">
   <div class="fm-dialog">
     <h4>✏ Rename</h4>
@@ -1575,10 +1596,12 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ══ EVENTS TAB ══ -->
 <div id="tab-events" class="tab-panel">
   <div id="events-calendar-root"></div>
 </div>
 
+<!-- ══ CONFIGURE TAB ══ -->
 <div id="tab-config" class="tab-panel">
   <div class="section-hdr">
     <h2>Stream Configuration</h2>
@@ -1608,6 +1631,7 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ══ SETTINGS TAB ══ -->
 <div id="tab-settings" class="tab-panel">
   <div class="section-hdr">
     <h2>Application Settings</h2><span class="sep"></span>
@@ -1616,8 +1640,10 @@ select option{background:var(--bg3)}
       style="color:var(--red);border-color:var(--red)">↺ Reset to Defaults</button>
   </div>
   <div id="settings-reset-status" style="font-size:11px;padding:0 2px 10px;display:none"></div>
+  <!-- ── Server-persisted settings (appearance + notifications + system) ── -->
   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">Server Settings — saved across sessions</div>
   <div class="settings-grid">
+    <!-- Accent Color -->
     <div class="setting-card">
       <h3>Accent Color</h3>
       <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
@@ -1637,6 +1663,7 @@ select option{background:var(--bg3)}
             title="Enter a hex colour code">
         </div>
       </div>
+      <!-- Preset swatches -->
       <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px">
         <button onclick="setAccentSwatch('#b87333')" title="Copper (default)"
           style="width:22px;height:22px;border-radius:5px;background:#b87333;border:2px solid transparent;cursor:pointer;padding:0;transition:transform 0.15s"
@@ -1667,6 +1694,7 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
+    <!-- Branding -->
     <div class="setting-card">
       <h3>Branding</h3>
       <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
@@ -1710,8 +1738,12 @@ select option{background:var(--bg3)}
       </div>
     </div>
   </div>
+  <!-- end server settings-grid -->
+
+  <!-- ── UI-only settings (not persisted to server) ── -->
   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--text3);margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)">Browser Settings — stored locally in this browser only</div>
   <div class="settings-grid">
+    <!-- UI Preferences -->
     <div class="setting-card">
       <h3>UI Preferences</h3>
       <div class="setting-row">
@@ -1732,6 +1764,7 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
+    <!-- Notifications (browser-only) -->
     <div class="setting-card">
       <h3>Browser Notifications</h3>
       <div class="setting-row">
@@ -1748,6 +1781,7 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
+    <!-- Refresh Intervals -->
     <div class="setting-card">
       <h3>Refresh Intervals</h3>
       <div class="setting-row">
@@ -1777,6 +1811,7 @@ select option{background:var(--bg3)}
       </div>
     </div>
 
+    <!-- System Info -->
     <div class="setting-card">
       <h3>System Info</h3>
       <div class="setting-row">
@@ -1800,11 +1835,14 @@ select option{background:var(--bg3)}
       </div>
     </div>
   </div>
+  <!-- end browser settings-grid -->
+
   <div style="margin-top:4px">
     <div class="section-hdr"><h2>Holidays</h2><span class="sep"></span>
       <button class="btn b" onclick="loadHolidaySettings();loadCustomHolidays();" title="Reload holiday settings from server">↻ Load</button>
     </div>
     <div class="card card-body" style="padding:16px">
+      <!-- ── Public Holiday Country ── -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Public Holiday Country</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
         Sets the country used to show public holidays in the Events calendar.
@@ -1891,11 +1929,13 @@ select option{background:var(--bg3)}
         <div id="hol-status" style="font-size:11px;color:var(--text3)"></div>
       </div>
 
+      <!-- ── Custom Holidays ── -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Custom Holidays</div>
       <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
         Add your own holidays to overlay on the Events calendar alongside public holidays.
         Custom holidays are stored locally and are never overwritten by library updates.
       </div>
+      <!-- Table of existing custom holidays -->
       <div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:14px">
         <table style="width:100%;border-collapse:collapse">
           <thead>
@@ -1911,6 +1951,7 @@ select option{background:var(--bg3)}
           </tbody>
         </table>
       </div>
+      <!-- Add form -->
       <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:500">Add new custom holiday</div>
       <div class="form-grid" style="grid-template-columns:150px 1fr 100px;margin-bottom:10px;align-items:end">
         <div class="fg">
@@ -1933,12 +1974,14 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- Mail Alerts -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2>Mail Alerts</h2><span class="sep"></span>
       <button class="btn b" onclick="loadMailConfig()" title="Load saved mail alert settings from disk">↻ Load</button>
     </div>
     <div class="card card-body" style="padding:16px">
 
+      <!-- Info banner -->
       <div style="font-size:12px;color:var(--text2);margin-bottom:16px;line-height:1.8;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px">
         Sends alerts via <b style="color:var(--accent-light)">Microsoft Graph API</b> (Outlook / Office 365).<br>
         Requires an <b>Azure App Registration</b> with <code style="color:var(--accent-light)">Mail.Send</code> (Application permission) and admin consent.<br>
@@ -1946,6 +1989,7 @@ select option{background:var(--bg3)}
         → App registrations → New → Certificates &amp; secrets → API permissions → Microsoft Graph → Application → Mail.Send
       </div>
 
+      <!-- Azure credentials -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Azure App Credentials</div>
       <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
         <div class="fg">
@@ -1970,6 +2014,7 @@ select option{background:var(--bg3)}
         </div>
       </div>
 
+      <!-- Recipients + options -->
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Recipients &amp; Options</div>
       <div class="form-grid" style="grid-template-columns:1fr auto;align-items:end;margin-bottom:12px">
         <div class="fg">
@@ -2004,6 +2049,7 @@ select option{background:var(--bg3)}
 
     </div>
   </div>
+  <!-- Media Root Directories -->
   <div style="margin-top:4px" id="media-roots-section">
     <div class="section-hdr">
       <h2>Media Root Directories</h2><span class="sep"></span>
@@ -2017,8 +2063,10 @@ select option{background:var(--bg3)}
         Extra roots must be absolute paths on the server.
       </div>
 
+      <!-- Root list -->
       <div id="mr-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px"></div>
 
+      <!-- Add new root row -->
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="mr-new-path" type="text"
           placeholder="/absolute/path/to/extra/media"
@@ -2033,11 +2081,13 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- Backup & Restore -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2>Backup &amp; Restore</h2><span class="sep"></span></div>
     <div class="card card-body" style="padding:16px">
       <div class="rg-2">
 
+        <!-- Backup -->
         <div>
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--accent);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Create Backup</div>
           <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
@@ -2075,6 +2125,7 @@ select option{background:var(--bg3)}
           <div id="bk-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
         </div>
 
+        <!-- Restore -->
         <div>
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--yellow);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">Restore from Backup</div>
           <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.7">
@@ -2099,6 +2150,7 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- Service Restart -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2>⚡ Service Control</h2><span class="sep"></span></div>
     <div class="card card-body" style="padding:16px">
@@ -2120,16 +2172,19 @@ select option{background:var(--bg3)}
     </div>
   </div>
 
+  <!-- Danger Zone -->
   <div style="margin-top:4px">
     <div class="section-hdr"><h2 style="color:var(--red)">Danger Zone</h2><span class="sep"></span></div>
     <div class="card card-body" style="border-color:rgba(194,120,120,0.3);padding:16px;background:rgba(194,120,120,0.03)">
       <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start">
+        <!-- Stop All -->
         <div style="flex:1;min-width:180px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
           <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px">■ Stop All Streams</div>
           <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.5">Immediately stop every running stream process.</div>
           <button class="btn r" onclick="if(confirm('Force-stop ALL streams?')) api('stop_all',{})"
             title="Immediately stop every running stream" style="width:100%">■ Stop All</button>
         </div>
+        <!-- Clear Events -->
         <div style="flex:1;min-width:180px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
           <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px">🗑 Clear Played Events</div>
           <div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.5">Delete all played events from schedule history permanently.</div>
@@ -2137,6 +2192,7 @@ select option{background:var(--bg3)}
             title="Delete all played events from schedule history"
             style="background:rgba(194,120,120,0.1);border-color:var(--red);width:100%">🗑 Clear Events</button>
         </div>
+        <!-- Factory Reset -->
         <div style="flex:1;min-width:220px;background:rgba(194,120,120,0.06);border:1.5px solid rgba(194,120,120,0.45);border-radius:var(--radius);padding:12px">
           <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px;display:flex;align-items:center;gap:6px">
             <i class="ti ti-alert-triangle" style="font-size:14px"></i>Factory Reset
@@ -2156,7 +2212,10 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
-</div><footer class="app-footer">
+</div><!-- /app -->
+
+<!-- ══ FOOTER ══ -->
+<footer class="app-footer">
   <span id="ft-app-name" style="display:inline-flex;align-items:center;gap:6px;">
     <img id="ft-brand-logo"
          src="https://raw.githubusercontent.com/rhshourav/HydraCast/refs/heads/main/resources/HydraCast.svg"
@@ -2182,6 +2241,7 @@ select option{background:var(--bg3)}
      style="font-size:11px;color:var(--text3)">GitHub ↗</a>
 </footer>
 
+<!-- ══ SEEK MODAL ══ -->
 <div class="modal-bg" id="seek-modal">
   <div class="modal">
     <h3>Seek Stream</h3>
@@ -2200,9 +2260,12 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ══ UNSAVED CHANGES MODAL ══ -->
+<!-- ══ MEDIA BROWSER MODAL ══ -->
 <div class="modal-bg" id="mb-modal" onclick="if(event.target===this)mbClose()">
   <div class="modal" style="width:min(760px,96vw);max-width:none;padding:0;display:flex;flex-direction:column;max-height:88vh">
 
+    <!-- Header -->
     <div style="padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0">
       <span id="mb-mode-icon" style="font-size:20px">📁</span>
       <div style="flex:1;min-width:0">
@@ -2212,24 +2275,31 @@ select option{background:var(--bg3)}
       <button class="btn" onclick="mbClose()" title="Close browser" style="padding:5px 11px">✕</button>
     </div>
 
+    <!-- Breadcrumb -->
     <div style="padding:8px 16px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0">
       <div id="mb-breadcrumb" style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;flex:1;min-width:0;font-size:12px"></div>
       <button class="btn" onclick="mbRefresh()" title="Reload this folder" style="padding:3px 9px;font-size:11px;flex-shrink:0">↻</button>
     </div>
 
+    <!-- Body: sidebar + file list -->
     <div style="display:grid;grid-template-columns:180px 1fr;flex:1;overflow:hidden;min-height:0">
 
+      <!-- Sidebar: top-level folders -->
       <div style="border-right:1px solid var(--border);overflow-y:auto;background:var(--bg2)">
         <div style="padding:8px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border)">Folders</div>
         <div id="mb-sidebar"></div>
       </div>
 
+      <!-- Main listing -->
       <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--bg2)">
+        <!-- Listing -->
         <div id="mb-listing" style="flex:1;overflow-y:auto"></div>
+        <!-- Status bar -->
         <div id="mb-status-bar" style="padding:6px 14px;font-size:11px;color:var(--text3);border-top:1px solid var(--border);background:var(--bg3);flex-shrink:0"></div>
       </div>
     </div>
 
+    <!-- Footer: current selection + action -->
     <div style="padding:12px 18px;border-top:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:10px;flex-shrink:0">
       <div style="flex:1;min-width:0">
         <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px">Selection</div>
@@ -2257,6 +2327,7 @@ select option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ══ PORT NOTIFICATION PANEL ══ -->
 <div id="port-notif-panel" class="port-notif-panel">
   <div class="port-notif-hdr">
     <i class="ti ti-router" style="font-size:13px;color:var(--accent)"></i>
@@ -2266,6 +2337,7 @@ select option{background:var(--bg3)}
   <div class="port-notif-body" id="port-notif-body"></div>
 </div>
 
+<!-- ══ TOAST ══ -->
 <div id="toast"></div>
 
 <script>
@@ -3082,8 +3154,7 @@ async function loadHolidays(){
     // Render list
     const list = document.getElementById('hd-list');
     if(!_hdData.length){
-      list.innerHTML='<div style="padding:14px;text-align:center
-;color:var(--text3);font-size:12px">No holiday data for '+esc(countryName)+'</div>';
+      list.innerHTML='<div style="padding:14px;text-align:center;color:var(--text3);font-size:12px">No holiday data for '+esc(countryName)+'</div>';
       return;
     }
     list.innerHTML = _hdData.map(h=>{
@@ -3340,8 +3411,8 @@ function renderConfigEditor(s){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate==='8000k'?'':(s.video_bitrate||''))}" placeholder="8000k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate==='320k'?'':(s.audio_bitrate||''))}" placeholder="320k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="cfg-vbr" value="${esc(s.video_bitrate==='copy'?'':(s.video_bitrate||''))}" placeholder="copy (default) or e.g. 2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="cfg-abr" value="${esc(s.audio_bitrate==='copy'?'':(s.audio_bitrate||''))}" placeholder="copy (default) or e.g. 128k"></div>
       </div>
     </div>
     <div class="config-section">
@@ -3827,8 +3898,8 @@ function showNewStreamForm(){
     <div class="config-section">
       <div class="config-section-title">Encoding</div>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
-        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="8000k" placeholder="8000k"></div>
-        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="320k" placeholder="320k"></div>
+        <div class="fg"><label>Video Bitrate</label><input id="new-vbr" value="" placeholder="copy (default) or e.g. 2500k"></div>
+        <div class="fg"><label>Audio Bitrate</label><input id="new-abr" value="" placeholder="copy (default) or e.g. 128k"></div>
       </div>
     </div>
     <div class="config-section">
@@ -4117,8 +4188,8 @@ async function submitNewStream(){
     name,port,files,weekdays,
     folder_source: folderPath||null,
     stream_path:(document.getElementById('new-spath')?.value||'').trim(),
-    video_bitrate:(document.getElementById('new-vbr')?.value||'8000k').trim()||'8000k',
-    audio_bitrate:(document.getElementById('new-abr')?.value||'320k').trim()||'320k',
+    video_bitrate:(document.getElementById('new-vbr')?.value||'copy').trim()||'copy',
+    audio_bitrate:(document.getElementById('new-abr')?.value||'copy').trim()||'copy',
     shuffle:document.getElementById('new-shuffle')?.checked||false,
     enabled:document.getElementById('new-enabled')?.checked!==false,
     hls_enabled:document.getElementById('new-hls')?.checked||false,
@@ -6126,12 +6197,12 @@ function fmCloseDialogs() {
  * EventsCalendar.jsx  — v2.0
  *
  * Changes vs v1:
- * • Calendar grid fills the full tab width (no fixed-width sidebar push)
- * • Past dates/times are blocked — clicking them shows a tooltip, not the form
- * • Created events are editable (click chip → EditModal with all fields)
- * • Loop mode: play once / loop N times / loop indefinitely
- * • Multi-date selection: pick multiple dates in one session, schedule all at once
- * • Sidebar scrolls alongside and shows edit/delete buttons per event
+ *   • Calendar grid fills the full tab width (no fixed-width sidebar push)
+ *   • Past dates/times are blocked — clicking them shows a tooltip, not the form
+ *   • Created events are editable (click chip → EditModal with all fields)
+ *   • Loop mode: play once / loop N times / loop indefinitely
+ *   • Multi-date selection: pick multiple dates in one session, schedule all at once
+ *   • Sidebar scrolls alongside and shows edit/delete buttons per event
  */
 
 const { useState, useEffect, useRef, useCallback } = React;
@@ -7380,4 +7451,5 @@ function EventsCalendar() {
 </script>
 </body>
 </html>
+
 """
