@@ -602,7 +602,7 @@ a:hover{color:var(--accent)}
 
 /* ─────────── SECTION HEADER ─────────── */
 .section-hdr{
-  display:flex;align-items:center;gap:12px;margin-bottom:4px;
+  display:flex;align-items:center;gap:12px;margin-bottom:4px;flex-shrink:0;
 }
 .section-hdr h2{
   font-family:var(--font-display);font-size:11px;font-weight:700;
@@ -871,7 +871,8 @@ select option{background:var(--bg3)}
    sidebar scrolls internally.  We lock the tab to its viewport height
    and let the sidebar flex-child consume the leftover space. */
 #tab-config{overflow:hidden;padding-bottom:0}
-.config-layout{display:grid;grid-template-columns:235px 1fr;gap:18px;height:100%}
+#tab-config.active{display:flex;flex-direction:column}
+.config-layout{display:grid;grid-template-columns:235px 1fr;gap:18px;flex:1;min-height:0}
 .config-sidebar{
   background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);
   overflow:hidden;transition:background 0.35s,border-color 0.35s;
@@ -924,18 +925,20 @@ select option{background:var(--bg3)}
   color:var(--accent);font-weight:700;margin-bottom:14px;padding-bottom:8px;
   border-bottom:1px solid var(--border);font-family:var(--font-display);
 }
-/* footer element unused — save bar lives inside body as flex sibling */
+/* external footer hidden, replaced by inline .cfg-save-bar */
 .config-main-footer{display:none !important}
-/* body is now a flex column: scrollable content + always-visible save bar */
-.config-main-body{display:flex;flex-direction:column;overflow:hidden;flex:1;padding:0}
-/* inner scrollable area — replaces old padding on body */
-.config-main-scroll{padding:24px;overflow-y:auto;overflow-x:hidden;flex:1;min-height:0}
-/* save bar is a flex-shrink:0 sibling — always visible at the bottom */
+/* save bar — always pinned to the bottom of .config-main,
+   OUTSIDE the scrollable .config-main-body */
 .cfg-save-bar{
   display:flex;gap:10px;justify-content:flex-end;align-items:center;
-  padding:14px 20px;flex-shrink:0;
+  padding:14px 24px;
   border-top:1px solid var(--border);
-  background:var(--bg3);
+  background:var(--bg2);
+  z-index:10;
+  box-shadow:0 -2px 10px var(--shadow);
+  flex-shrink:0;
+  /* override any margin injected by the JS template */
+  margin:0 !important;
 }
 
 /* ─────────── PLAYLIST EDITOR ─────────── */
@@ -3517,13 +3520,19 @@ function renderConfigEditor(s){
         ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭ Skip</button>`:''}
       </div>
     </div>
-    </div>`;
+    `;
 
-  const ftr=document.getElementById('config-main-footer');
-  ftr.innerHTML=`
-    <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
+  // Inject save bar as a direct child of .config-main (outside the scroll body)
+  let cfgSaveBar = document.getElementById('cfg-save-bar');
+  if (!cfgSaveBar) {
+    cfgSaveBar = document.createElement('div');
+    cfgSaveBar.id = 'cfg-save-bar';
+    cfgSaveBar.className = 'cfg-save-bar';
+    document.getElementById('config-main-body').parentNode.appendChild(cfgSaveBar);
+  }
+  cfgSaveBar.innerHTML = `<button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
     <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>`;
-  ftr.style.display='';
+  cfgSaveBar.style.display = 'flex';
 
   _clearDirty();
   renderPlaylistEditor('cfg-pl-wrap', s.files||'');
@@ -3531,9 +3540,8 @@ function renderConfigEditor(s){
 }
 
 function _restoreFooter(){
-  document.getElementById('config-main-footer').innerHTML=`
-    <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
-    <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>`;
+  const bar = document.getElementById('cfg-save-bar');
+  if (bar) bar.style.display = 'none';
 }
 
 function cancelConfig(){
@@ -3601,7 +3609,8 @@ let _playlistItems=[];
 function _markDirty(){
   if(_configDirty)return;
   _configDirty=true;
-  const ftr=document.getElementById('config-main-footer');
+  // target the inline sticky save bar; fall back to legacy footer if present
+  const ftr=document.getElementById('cfg-save-bar')||document.getElementById('config-main-footer');
   if(ftr&&!document.getElementById('_dirty-badge')){
     const b=document.createElement('span');
     b.id='_dirty-badge';b.className='dirty-badge';b.textContent='● Unsaved';
@@ -3974,13 +3983,20 @@ function showNewStreamForm(){
           </div>
         </div>
       </div>
-    </div>`;
+    </div>
+    `;
 
-  const ftr=document.getElementById('config-main-footer');
-  ftr.innerHTML=`
-    <button class="btn" onclick="cancelConfig()" title="Discard and go back without creating a stream">Cancel</button>
+  // Inject save bar as a direct child of .config-main (outside the scroll body)
+  let cfgSaveBar2 = document.getElementById('cfg-save-bar');
+  if (!cfgSaveBar2) {
+    cfgSaveBar2 = document.createElement('div');
+    cfgSaveBar2.id = 'cfg-save-bar';
+    cfgSaveBar2.className = 'cfg-save-bar';
+    document.getElementById('config-main-body').parentNode.appendChild(cfgSaveBar2);
+  }
+  cfgSaveBar2.innerHTML = `<button class="btn" onclick="cancelConfig()" title="Discard and go back without creating a stream">Cancel</button>
     <button class="btn g" onclick="submitNewStream()" title="Create this new stream and save it to configuration">&#x2713; Create Stream</button>`;
-  ftr.style.display='';
+  cfgSaveBar2.style.display = 'flex';
 
   _clearDirty();
   renderPlaylistEditor('new-pl-wrap', '');
