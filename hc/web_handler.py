@@ -741,7 +741,6 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
           filenames   — pipe-separated list of playlist file basenames
         """
         import io, csv as _csv
-        from hc.utils import _local_ip
 
         include_files = qs.get("include_files", ["0"])[0] == "1"
         lan_ip        = _local_ip()
@@ -791,6 +790,7 @@ class WebHandler(_CalendarHandlersMixin, _FileManagerMixin, BaseHTTPRequestHandl
         self.end_headers()
         try:
             self.wfile.write(body)
+            self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
         log.info("URL CSV downloaded: %s (%d stream(s), files=%s)",
