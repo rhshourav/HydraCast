@@ -1,3 +1,4 @@
+"""
 hc/web_html.py  —  HTML template for the HydraCast Web UI.
 
 This module contains only the _HTML string. Import it via::
