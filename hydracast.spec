@@ -69,6 +69,11 @@ a = Analysis(
         'cryptography.hazmat.primitives.serialization',
         'cryptography.hazmat.primitives.asymmetric.rsa',
         'email.mime.text',
+        # ── tray icon ────────────────────────────────────────────────────────
+        'pystray',
+        'pystray._win32',
+        'PIL',
+        'PIL.Image',
     ],
     # Explicitly exclude Google Auth packages to keep the EXE small.
     excludes=[
