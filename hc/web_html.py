@@ -924,19 +924,16 @@ select option{background:var(--bg3)}
   color:var(--accent);font-weight:700;margin-bottom:14px;padding-bottom:8px;
   border-bottom:1px solid var(--border);font-family:var(--font-display);
 }
-/* external footer hidden, replaced by inline .cfg-save-bar */
-.config-main-footer{display:none !important}
-/* save bar — sticky at the bottom of the scrollable form body */
-.cfg-save-bar{
-  display:flex;gap:10px;justify-content:flex-end;align-items:center;
-  padding:14px 24px;
+/* footer is a real flex child of .config-main — always visible below the scroll body */
+.config-main-footer{
+  display:flex !important;gap:10px;justify-content:flex-end;align-items:center;
+  padding:14px 20px;
   border-top:1px solid var(--border);
-  margin:8px -24px -24px;
-  position:sticky;bottom:0;
-  background:var(--bg2);
-  z-index:10;
-  box-shadow:0 -2px 10px var(--shadow);
+  background:var(--bg3);
+  flex-shrink:0;
 }
+/* cfg-save-bar inside scroll body is now hidden; buttons live in config-main-footer */
+.cfg-save-bar{display:none !important}
 
 /* ─────────── PLAYLIST EDITOR ─────────── */
 .pl-editor{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-top:8px}
@@ -3517,10 +3514,13 @@ function renderConfigEditor(s){
         ${s.playlist_count>1?`<button class="btn" onclick="api('skip_next',{name:'${esc(s.name)}'})" title="Skip to the next file in the playlist">⏭ Skip</button>`:''}
       </div>
     </div>
-    <div class="cfg-save-bar" id="cfg-save-bar">
-      <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
-      <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>
     </div>`;
+
+  const ftr=document.getElementById('config-main-footer');
+  ftr.innerHTML=`
+    <button class="btn" onclick="cancelConfig()" title="Discard unsaved changes and go back">Cancel</button>
+    <button class="btn g" onclick="saveConfig()" title="Save changes to this stream configuration">Save Changes</button>`;
+  ftr.style.display='';
 
   _clearDirty();
   renderPlaylistEditor('cfg-pl-wrap', s.files||'');
@@ -3598,8 +3598,7 @@ let _playlistItems=[];
 function _markDirty(){
   if(_configDirty)return;
   _configDirty=true;
-  // target the inline sticky save bar; fall back to legacy footer if present
-  const ftr=document.getElementById('cfg-save-bar')||document.getElementById('config-main-footer');
+  const ftr=document.getElementById('config-main-footer');
   if(ftr&&!document.getElementById('_dirty-badge')){
     const b=document.createElement('span');
     b.id='_dirty-badge';b.className='dirty-badge';b.textContent='● Unsaved';
@@ -3972,11 +3971,14 @@ function showNewStreamForm(){
           </div>
         </div>
       </div>
-    </div>
-    <div class="cfg-save-bar">
-      <button class="btn" onclick="cancelConfig()" title="Discard and go back without creating a stream">Cancel</button>
-      <button class="btn g" onclick="submitNewStream()" title="Create this new stream and save it to configuration">&#x2713; Create Stream</button>
     </div>`;
+
+  const ftr=document.getElementById('config-main-footer');
+  ftr.innerHTML=`
+    <button class="btn" onclick="cancelConfig()" title="Discard and go back without creating a stream">Cancel</button>
+    <button class="btn g" onclick="submitNewStream()" title="Create this new stream and save it to configuration">&#x2713; Create Stream</button>`;
+  ftr.style.display='';
+
   _clearDirty();
   renderPlaylistEditor('new-pl-wrap', '');
   setTimeout(_attachDirtyListeners, 0);
