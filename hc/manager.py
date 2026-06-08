@@ -1,6 +1,41 @@
 """
 hc/manager.py  —  StreamManager: orchestrates workers, scheduler, event loop.
 
+v6.3 bug fixes
+──────────────
+• BUG FIX 1 — _apply_compliance_start: replaced cfg.playlist.index(item) with a
+  Path-based next() search.  select_compliance_file() may return a freshly-
+  constructed PlaylistItem (e.g. after a folder re-scan via folder_source) that
+  will never match the old object in cfg.playlist by identity/equality, causing a
+  silent ValueError fallback that left playlist_index at 0 — the alphabetically
+  first file (e.g. _FRI_) instead of today's correct file.  This was the primary
+  cause of streams playing the wrong weekday file.
+
+• BUG FIX 2 — _resume_compliance: same list.index() / object-identity bug fixed
+  with the same Path-based next() search.  Affected post-one-shot resumption when
+  folder_source re-scanning was active.
+
+• BUG FIX 3 — _scheduler_loop: added midnight-rollover detection for compliance
+  streams that stay live across midnight.  Previously, streams running 24/7 never
+  had _apply_compliance_start() called after startup, so Monday's file would keep
+  playing all day Tuesday.  The scheduler now tracks the last known weekday per
+  stream and calls _apply_compliance_start + w.compliance_resync when the day
+  changes, without restarting the stream.
+
+v6.2 changes
+─────────────
+• start_stream() gains a `fresh_start` parameter (default False).
+  Only a fresh_start=True call resets playlist_index/order to 0 — manual
+  Start button, start_all(), and event-loop auto-starts pass True.
+  Scheduler loop restarts (start_stream called because stream stopped
+  unexpectedly) and _auto_restart() in worker.py pass the default False
+  so playlist sequencing is preserved across restarts.
+
+• start_all() staggers stream launches in groups of 4 with a 400 ms pause
+  between groups so that 20+ simultaneous MediaMTX processes don't race for
+  UDP RTP/RTCP port release, eliminating the
+  "bind: Only one usage of each socket address" cascade on server restart.
+
 v6.1 changes (compliance v2)
 ─────────────────────────────
 • _event_loop: after firing a one-shot event the loop watches for its
@@ -64,7 +99,7 @@ class StreamManager:
     def start(self, name: str) -> None:
         st = self.get_state(name)
         if st:
-            self.start_stream(st)
+            self.start_stream(st, fresh_start=True)
 
     def stop(self, name: str) -> None:
         st = self.get_state(name)
@@ -77,7 +112,7 @@ class StreamManager:
             self.restart_stream(st)
 
     # ── State-based control API (used internally / TUI) ───────────────────────
-    def start_stream(self, state: StreamState) -> None:
+    def start_stream(self, state: StreamState, fresh_start: bool = False) -> None:
         if state.status in (StreamStatus.LIVE, StreamStatus.STARTING, StreamStatus.ONESHOT):
             return
         # Block while _after() owns the resume cycle.  state.resuming is set
@@ -88,8 +123,14 @@ class StreamManager:
         # calls start_stream(), which races _cycle_mediamtx and corrupts ports.
         if state.resuming:
             return
-        state.playlist_index = 0
-        state.playlist_order = []
+        # Only reset playlist position on an explicit fresh start (e.g. manual
+        # Start button press, first launch).  Auto-restarts triggered by the
+        # scheduler, _auto_restart(), or a broken-pipe loop must NOT reset to
+        # index 0 — that breaks multi-file playlist sequencing by always
+        # replaying the first file instead of continuing from where we left off.
+        if fresh_start:
+            state.playlist_index = 0
+            state.playlist_order = []
         # Clear any stale initial_offset from a previous compliance start —
         # _apply_compliance_start() below will set it correctly if needed.
         state.initial_offset = 0.0
@@ -132,11 +173,18 @@ class StreamManager:
                              name=f"skip-{state.config.port}").start()
 
     def start_all(self) -> None:
-        for s in self.states:
+        for i, s in enumerate(self.states):
             if not s.config.enabled:
                 s.status = StreamStatus.DISABLED
             elif s.config.is_scheduled_today():
-                self.start_stream(s)
+                self.start_stream(s, fresh_start=True)
+                # Stagger launches: pause every 4 streams so the OS has time
+                # to release UDP RTP/RTCP sockets from any prior MediaMTX
+                # instances.  Without this, 20+ simultaneous launches race for
+                # the same UDP ports and several streams fail with
+                # "bind: Only one usage of each socket address".
+                if (i + 1) % 4 == 0:
+                    time.sleep(0.4)
             else:
                 if s.config.folder_source:
                     self._fw_registry.register(s)
@@ -183,11 +231,19 @@ class StreamManager:
 
         if item is not None:
             # Pin the playlist to the selected item so the worker starts here.
-            try:
-                idx = cfg.playlist.index(item)
-                state.playlist_index = idx
-            except ValueError:
-                pass
+            # Use Path comparison, not object identity — select_compliance_file()
+            # may return a freshly-constructed PlaylistItem (e.g. after a
+            # folder re-scan) that will never match the old object in cfg.playlist
+            # via list.index() / __eq__, causing a silent ValueError fallback that
+            # leaves playlist_index pointing at the wrong (often alphabetically
+            # first) file.  Path comparison is always reliable across re-scans.
+            comp_idx = next(
+                (i for i, it in enumerate(cfg.playlist)
+                 if it.file_path == item.file_path),
+                0,
+            )
+            state.playlist_index = comp_idx
+            state.playlist_order = list(range(len(cfg.playlist)))
 
         if seek > 0:
             state.initial_offset = seek
@@ -214,11 +270,15 @@ class StreamManager:
 
         item, file_error = select_compliance_file(cfg.playlist)
         if item is not None:
-            try:
-                idx = cfg.playlist.index(item)
-                state.playlist_index = idx
-            except ValueError:
-                pass
+            # Use Path comparison for the same reason as _apply_compliance_start:
+            # the returned item may be a freshly-scanned object that won't match
+            # any object in cfg.playlist by identity.
+            comp_idx = next(
+                (i for i, it in enumerate(cfg.playlist)
+                 if it.file_path == item.file_path),
+                0,
+            )
+            state.playlist_index = comp_idx
 
         seek, explanation = calculate_compliance_offset_after_event(
             event_end_time  = event_end_time,
@@ -380,7 +440,13 @@ class StreamManager:
 
     # ── Scheduler loop ────────────────────────────────────────────────────────
     def _scheduler_loop(self) -> None:
+        # Track the last known weekday for each stream so we can detect the
+        # midnight rollover and re-pin the compliance file without stopping the
+        # stream.  Key: stream name → weekday int (0=Mon … 6=Sun).
+        _last_weekday: Dict[str, int] = {}
+
         while self._running:
+            today_wd = datetime.now().weekday()
             for s in self.states:
                 if not s.config.enabled:
                     s.status = StreamStatus.DISABLED
@@ -396,6 +462,34 @@ class StreamManager:
                 elif not should and not active:
                     if s.status not in (StreamStatus.SCHEDULED, StreamStatus.DISABLED):
                         s.status = StreamStatus.SCHEDULED
+
+                # ── Midnight rollover for compliance streams ───────────────────
+                # When a compliance stream stays live across midnight the scheduler
+                # never calls start_stream() again, so _apply_compliance_start()
+                # is never called to switch from Monday's file to Tuesday's.
+                # Detect the day change here and re-pin + resync while the stream
+                # keeps running — no restart required.
+                if (should and active
+                        and s.config.compliance_enabled
+                        and _last_weekday.get(s.config.name) != today_wd):
+                    prev = _last_weekday.get(s.config.name)
+                    if prev is not None:
+                        # Day actually changed (not just first tick).
+                        self._glog.add(
+                            f"[{s.config.name}] Midnight rollover detected "
+                            f"(day {prev} → {today_wd}) — re-pinning compliance file.",
+                            "INFO",
+                        )
+                        self._apply_compliance_start(s)
+                        w = self._workers.get(s.config.name)
+                        if w:
+                            threading.Thread(
+                                target=w.compliance_resync,
+                                daemon=True,
+                                name=f"midnight-{s.config.port}",
+                            ).start()
+                _last_weekday[s.config.name] = today_wd
+
             for _ in range(600):
                 if not self._running:
                     return
