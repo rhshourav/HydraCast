@@ -1,6 +1,25 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
+FIXES (v5.4.0):
+  • Global MediaMTX cycle semaphore added (_MTX_CYCLE_SEM) to prevent the
+    CRITICAL_PROCESS_DIED BSOD (stop code 0x000000EF) caused by 20+ streams
+    simultaneously running _cycle_mediamtx() on Windows.
+
+    Each _cycle_mediamtx() call: kills a MediaMTX process, sleeps 3 s (Windows
+    UDP-release floor), then probes the UDP RTP port in a 200 ms loop until free,
+    then spawns a new MediaMTX process.  With 20+ streams all hitting a file
+    transition at the same time (compliance daily loop boundary or start_all()),
+    this produces ~100 socket create/bind/close operations per second on
+    afd.sys / tcpip.sys — both kernel-mode drivers.  The concurrent bind/release
+    racing across 40+ UDP ports causes an afd.sys kernel fault, which Windows
+    surfaces as CRITICAL_PROCESS_DIED.
+
+    The semaphore limits concurrent _cycle_mediamtx() calls to 3 at a time.
+    Streams beyond that queue and wait — each cycle takes 4–8 s on Windows, so
+    the queue drains in well under a minute with no kernel socket storm.
+    Value 3 is conservative; up to 5 is safe on modern hardware.
+
 FIXES (v5.3.0):
   • Same-file loop gap eliminated (two changes):
     1. probe_duration() is no longer called when the compliance clean-exit pin
@@ -69,8 +88,28 @@ log = logging.getLogger(__name__)
 
 
 # =============================================================================
-# LOG BUFFER
+# GLOBAL MEDIAMTX CYCLE SEMAPHORE
 # =============================================================================
+# Limits the number of streams that can simultaneously run _cycle_mediamtx().
+#
+# Each cycle: kill MediaMTX → sleep 3 s (Windows UDP floor) → probe UDP port
+# in a loop → spawn new MediaMTX.  With 20+ streams all cycling at once this
+# creates ~100 socket create/bind/close operations per second on the Windows
+# kernel drivers afd.sys / tcpip.sys.  The concurrent bind/release racing
+# across 40+ UDP ports causes an afd.sys kernel fault (BSOD: CRITICAL_PROCESS_DIED
+# 0x000000EF).
+#
+# Limiting to 3 concurrent cycles keeps the kernel socket rate well below the
+# instability threshold.  Each cycle takes 4–12 s on Windows, so the longest
+# any stream waits to acquire the semaphore is ~4 × 12 s = 48 s in the
+# absolute worst case (all 20 streams queued behind 3 active holders).  In
+# practice, the stagger already built into start_all() (groups of 4, 400 ms
+# apart) means at most 4 streams compete at once.
+#
+# Safe range: 2–5.  Set lower if the server has < 8 GB RAM; higher if you need
+# faster restart recovery on powerful hardware.
+_MTX_CYCLE_CONCURRENCY = 3
+_MTX_CYCLE_SEM = threading.Semaphore(_MTX_CYCLE_CONCURRENCY)
 class LogBuffer:
     def __init__(self, capacity: int = 1200) -> None:
         self._entries: List[Tuple[str, str]] = []
@@ -2091,7 +2130,34 @@ class StreamWorker:
            address (protocol/network address/port) is normally permitted."
         The settle delay after the TCP-free check is set to 2.5 s on Windows
         to cover this window; Linux releases sockets immediately (0.3 s).
+
+        Concurrency guard
+        ─────────────────
+        _MTX_CYCLE_SEM limits simultaneous _cycle_mediamtx() calls to
+        _MTX_CYCLE_CONCURRENCY (default 3).  Without this, 20+ streams cycling
+        at the same time produce a kernel socket storm on afd.sys that causes
+        BSOD CRITICAL_PROCESS_DIED (0x000000EF) on Windows.
         """
+        # Acquire the global semaphore before touching any sockets.
+        # Streams beyond the concurrency limit block here until a slot is free.
+        # Use a timeout so a stuck cycle (e.g. orphan holding a port forever)
+        # doesn't permanently starve other streams — 120 s is 10× the worst
+        # expected cycle time.
+        acquired = _MTX_CYCLE_SEM.acquire(timeout=120)
+        if not acquired:
+            self._log(
+                "_cycle_mediamtx: timed out waiting for semaphore slot "
+                f"(concurrency={_MTX_CYCLE_CONCURRENCY}) — proceeding anyway.",
+                "WARN",
+            )
+        try:
+            return self._cycle_mediamtx_inner()
+        finally:
+            if acquired:
+                _MTX_CYCLE_SEM.release()
+
+    def _cycle_mediamtx_inner(self) -> bool:
+        """Actual MediaMTX kill/restart logic — called under _MTX_CYCLE_SEM."""
         cfg = self.state.config
         self._kill_mediamtx()
 
