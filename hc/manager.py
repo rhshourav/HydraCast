@@ -11,9 +11,20 @@ v6.3 bug fixes
   first file (e.g. _FRI_) instead of today's correct file.  This was the primary
   cause of streams playing the wrong weekday file.
 
+• BUG FIX 1b — _apply_compliance_start: now passes cfg.folder_source to
+  prepare_compliance_start() so select_compliance_file() re-scans the folder from
+  disk rather than using the stale in-memory playlist.  Previously, if the disk
+  files had been uploaded or renamed after the server started, the in-memory
+  playlist would have stale paths that wouldn't match today's file, causing the
+  wrong file to be selected on every start/restart.  Also replaced the default=0
+  sentinel in next() with a true sentinel object so a genuine not-found is logged
+  as a warning rather than silently picking index 0 (the alphabetically-first
+  file).
+
 • BUG FIX 2 — _resume_compliance: same list.index() / object-identity bug fixed
-  with the same Path-based next() search.  Affected post-one-shot resumption when
-  folder_source re-scanning was active.
+  with the same Path-based next() + sentinel search.  Also now passes
+  cfg.folder_source so a midnight file change is picked up immediately after a
+  one-shot event finishes, rather than resuming on yesterday's file.
 
 • BUG FIX 3 — _scheduler_loop: added midnight-rollover detection for compliance
   streams that stay live across midnight.  Previously, streams running 24/7 never
@@ -216,6 +227,14 @@ class StreamManager:
                 loop_calculation= cfg.compliance_loop,
                 video_duration  = state.duration,   # 0 on first start — OK
                 reference_time  = reference_time,
+                # Pass folder_source so select_compliance_file() re-scans the
+                # folder from disk rather than using the stale in-memory playlist.
+                # Without this, a stream that was stopped and restarted (or just
+                # started for the first time) would use whatever playlist objects
+                # were loaded at boot — which may be ordered or named differently
+                # from the actual files on disk, causing today's file to be missed
+                # and the wrong day's file to play instead.
+                folder_source   = cfg.folder_source,
             )
         except Exception as exc:
             alert = f"Compliance error: {exc}"
@@ -237,13 +256,29 @@ class StreamManager:
             # via list.index() / __eq__, causing a silent ValueError fallback that
             # leaves playlist_index pointing at the wrong (often alphabetically
             # first) file.  Path comparison is always reliable across re-scans.
+            #
+            # Use _SENTINEL (not 0) as the default so a genuine not-found is
+            # distinguishable from "today's file is at index 0".  If the selected
+            # file truly isn't in the in-memory playlist (e.g. the disk re-scan
+            # found a file that the old playlist doesn't know about yet) we log
+            # a warning and leave playlist_index unchanged — _do_start's own
+            # folder-scan block will correct it moments later.
+            _SENTINEL = object()
             comp_idx = next(
                 (i for i, it in enumerate(cfg.playlist)
                  if it.file_path == item.file_path),
-                0,
+                _SENTINEL,
             )
-            state.playlist_index = comp_idx
-            state.playlist_order = list(range(len(cfg.playlist)))
+            if comp_idx is _SENTINEL:
+                log.warning(
+                    "[%s] _apply_compliance_start: today's file '%s' not found "
+                    "in in-memory playlist (%d entries) — leaving playlist_index "
+                    "unchanged; _do_start folder-scan will correct this.",
+                    cfg.name, item.file_path.name, len(cfg.playlist),
+                )
+            else:
+                state.playlist_index = comp_idx
+                state.playlist_order = list(range(len(cfg.playlist)))
 
         if seek > 0:
             state.initial_offset = seek
@@ -268,17 +303,31 @@ class StreamManager:
         if not cfg.compliance_enabled:
             return
 
-        item, file_error = select_compliance_file(cfg.playlist)
+        item, file_error = select_compliance_file(
+            cfg.playlist,
+            folder_source=cfg.folder_source,   # re-scan disk so a midnight file
+                                               # change is picked up immediately
+        )
         if item is not None:
-            # Use Path comparison for the same reason as _apply_compliance_start:
-            # the returned item may be a freshly-scanned object that won't match
-            # any object in cfg.playlist by identity.
+            # Use Path comparison + sentinel for the same reason as
+            # _apply_compliance_start: the returned item may be a freshly-scanned
+            # object that won't match any object in cfg.playlist by identity, and
+            # default=0 would silently pick the alphabetically-first file instead
+            # of today's file when there is no match.
+            _SENTINEL = object()
             comp_idx = next(
                 (i for i, it in enumerate(cfg.playlist)
                  if it.file_path == item.file_path),
-                0,
+                _SENTINEL,
             )
-            state.playlist_index = comp_idx
+            if comp_idx is _SENTINEL:
+                log.warning(
+                    "[%s] _resume_compliance: today's file '%s' not found "
+                    "in in-memory playlist — leaving playlist_index unchanged.",
+                    cfg.name, item.file_path.name,
+                )
+            else:
+                state.playlist_index = comp_idx
 
         seek, explanation = calculate_compliance_offset_after_event(
             event_end_time  = event_end_time,
