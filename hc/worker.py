@@ -1,6 +1,33 @@
 """
 hc/worker.py  —  LogBuffer, media probe helpers, and StreamWorker.
 
+FIXES (v5.3.0):
+  • Same-file loop gap eliminated (two changes):
+    1. probe_duration() is no longer called when the compliance clean-exit pin
+       resolves to the same file that just finished.  The duration is unchanged
+       on a same-file loop — the ffprobe subprocess was adding 1–3 s of dead air
+       on every daily loop boundary (and longer when 20+ streams hit the boundary
+       simultaneously on Windows, queueing ffprobe processes).
+    2. _start_ffmpeg_with_retry() gains a stability_wait parameter (default 4 s,
+       unchanged for post-_cycle_mediamtx starts).  The same-file loop path now
+       passes stability_wait=0.5 s because MediaMTX was not cycled — its path
+       handler is already registered and FFmpeg connects almost instantly.  The
+       previous hard-coded 4-second wait was the dominant source of the brief
+       disconnection visible in the stream timeline on every loop.
+
+FIXES (v5.2.0):
+  • _monitor(): clean (code 0) exit now always calls _auto_restart() when
+    _stop is not set — previously only broken-pipe exits restarted.  This
+    fixes streams that auto-stopped permanently after the playlist finished
+    (single-file with no -stream_loop, or multi-file after last item).
+
+  • _advance_playlist() log message fixed (correct 1-based item numbers).
+
+  • Folder-scan path (non-compliance): playlist_index is now preserved across
+    auto-restarts so sequential multi-file playlists continue from the next
+    file instead of always replaying file 0.  Index is only clamped if the
+    playlist shrank since the last scan; first start still resets to 0.
+
 FIXES (v5.1.0):
   • _auto_restart() now guards against _stop flag being set — prevents
     the stream re-appearing after a manual Stop (S key).
@@ -169,26 +196,78 @@ def grab_thumbnail(file_path: Path, seek_secs: float = 5.0) -> Optional[bytes]:
 
 
 # =============================================================================
-# HELPERS
+# CAMERA SOURCE HELPERS
 # =============================================================================
 
-def _double_bitrate(bitrate_str: str) -> str:
+def _resolve_camera(camera_id: str):
     """
-    Return a VBV buffer size string equal to 2× the given bitrate.
-
-    Supports "8000k" → "16000k", "8M" → "16M", "8000000" → "16000000".
-    Falls back to the original string on any parse error so FFmpeg receives
-    something and can emit its own diagnostic.
+    Look up a CameraConfig by ID from cameras.hcf.
+    Returns the CameraConfig, or None if not found / file missing.
     """
-    s = bitrate_str.strip()
     try:
-        if s.lower().endswith("k"):
-            return f"{int(float(s[:-1]) * 2)}k"
-        if s.lower().endswith("m"):
-            return f"{int(float(s[:-1]) * 2)}M"
-        return str(int(float(s) * 2))
-    except (ValueError, IndexError):
-        return s
+        from hc.json_manager import JSONManager
+        for c in JSONManager.load_cameras():
+            if c.camera_id == camera_id:
+                return c
+    except Exception as exc:
+        log.warning("_resolve_camera: failed to load cameras: %s", exc)
+    return None
+
+
+def _ffmpeg_cmd_camera(cam, cfg) -> List[str]:
+    """
+    Build an FFmpeg command that reads from a camera source and pushes to the
+    local MediaMTX RTSP endpoint.  The output side is identical to the playlist
+    push; only the input arguments change.
+
+    Always logs cam.url_masked — never cam.url — so passwords never appear in
+    logs.
+
+    Supported source_type / protocol combinations:
+      source_type "rtsp"   → -rtsp_transport tcp -i <url>
+      source_type "usb"    → -f v4l2 -i <host>   (Linux /dev/videoN)
+      source_type "dshow"  → -f dshow -i video="<host>"  (Windows)
+      protocol    "rtmp"   → -i <url>
+      protocol    "http"   → -i <url>  (MJPEG / HLS source)
+      protocol    "srt"    → -i srt://host:port?streamid=path
+      protocol    "udp"    → -i udp://host:port
+    """
+    _push_path   = cfg.rtsp_path if cfg.rtsp_path else "stream"
+    _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
+
+    # ── Build input arguments ─────────────────────────────────────────────────
+    if cam.source_type == "usb":
+        # Linux V4L2 device, e.g. /dev/video0
+        input_args = ["-f", "v4l2", "-i", cam.host]
+    elif cam.source_type == "dshow":
+        # Windows DirectShow device name
+        input_args = ["-f", "dshow", "-i", f"video={cam.host}"]
+    elif cam.protocol == "srt":
+        # SRT uses query-string format for stream ID
+        path = cam.path.lstrip("/")
+        srt_url = f"srt://{cam.host}:{cam.port}?streamid={path}" if path else \
+                  f"srt://{cam.host}:{cam.port}"
+        input_args = ["-re", "-i", srt_url]
+    elif cam.protocol == "udp":
+        # UDP has no auth; ignore username/password even if populated
+        input_args = ["-re", "-i", f"udp://{cam.host}:{cam.port}"]
+    elif cam.source_type == "rtsp" or cam.protocol == "rtsp":
+        input_args = ["-re", "-rtsp_transport", "tcp", "-i", cam.url]
+    else:
+        # rtmp, http, or any other network protocol
+        input_args = ["-re", "-i", cam.url]
+
+    cmd = [
+        str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error",
+        *input_args,
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p", "-g", "50",
+        "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
+        "-progress", "pipe:1", "-nostats",
+        "-f", "rtsp", "-rtsp_transport", "tcp",
+        _rtsp_target,
+    ]
+    return cmd
 
 
 # =============================================================================
@@ -202,19 +281,6 @@ class StreamWorker:
     MTX_READY_TIMEOUT = 40.0 if IS_WIN else 20.0
 
     _FFMPEG_PROGRESS_RE = re.compile(r"^(\w+)=(.+)$")
-
-    def __init__(self, state: StreamState, glog: LogBuffer) -> None:
-        self.state       = state
-        self.glog        = glog
-        self._stop       = threading.Event()
-        self._seeking    = threading.Event()
-        self._start_lock = threading.Lock()
-        # Ensure seek_start_pos always exists to prevent AttributeError
-        if not hasattr(self.state, "seek_start_pos"):
-            self.state.seek_start_pos = 0.0  # type: ignore[attr-defined]
-        # Track the currently-playing one-shot event (for API exposure)
-        if not hasattr(self.state, "active_oneshot_event"):
-            self.state.active_oneshot_event = None  # type: ignore[attr-defined]
 
     # ── Internal logging ───────────────────────────────────────────────────────
     def _log(self, msg: str, level: str = "INFO") -> None:
@@ -255,7 +321,7 @@ class StreamWorker:
             )
         else:
             self._log(
-                f"Playlist advanced: item {old_idx+1} → {self.state.playlist_index+1}"
+                f"Playlist advanced: item {old_idx + 1} → {self.state.playlist_index + 1}"
                 f" of {len(self.state.playlist_order)}"
             )
 
@@ -281,10 +347,15 @@ class StreamWorker:
         self._stop       = threading.Event()
         self._seeking    = threading.Event()
         self._start_lock = threading.Lock()
+        # Ensure seek_start_pos always exists to prevent AttributeError
         if not hasattr(self.state, "seek_start_pos"):
-            self.state.seek_start_pos = 0.0
+            self.state.seek_start_pos = 0.0  # type: ignore[attr-defined]
+        # Track the currently-playing one-shot event (for API exposure)
         if not hasattr(self.state, "active_oneshot_event"):
-            self.state.active_oneshot_event = None
+            self.state.active_oneshot_event = None  # type: ignore[attr-defined]
+        # Ensure active_source exists for hybrid/camera source switching
+        if not hasattr(self.state, "active_source"):
+            self.state.active_source = "playlist"  # type: ignore[attr-defined]
         start_checker("worker")          # [LG] background validator
 
 
@@ -810,17 +881,68 @@ class StreamWorker:
                 # fewer items than the current index.
                 old_count = len(cfg.playlist)
                 cfg.playlist = scanned_items
-                if not self.state.playlist_order:
-                    # First start: build order fresh.
+
+                # ── Compliance mode: always pin to today's day-tagged file ──────
+                # On a restart the stale playlist_index points at whatever file
+                # was playing last session — which may be the wrong weekday file.
+                # select_compliance_file() picks the correct _today_ tagged file
+                # so we reset the index to match it, rather than preserving the
+                # old index and letting the stream cycle through wrong-day files.
+                if cfg.compliance_enabled:
+                    try:
+                        from hc.compliance import select_compliance_file
+                        comp_item, comp_err = select_compliance_file(
+                            cfg.playlist,
+                            folder_source=cfg.folder_source,
+                        )
+                        if comp_item is not None:
+                            # Search by file_path so a freshly-scanned playlist
+                            # (new PlaylistItem objects) is matched correctly.
+                            # list.index() uses __eq__ which may fail on object
+                            # identity mismatches after a folder re-scan, causing
+                            # a ValueError fallback to index 0 — which is the
+                            # alphabetically-first file (e.g. _FRI_), NOT today's
+                            # _WED_ file.  Path comparison is always reliable.
+                            comp_idx = next(
+                                (i for i, it in enumerate(cfg.playlist)
+                                 if it.file_path == comp_item.file_path),
+                                0,
+                            )
+                            self.state.playlist_order = list(range(len(cfg.playlist)))
+                            self.state.playlist_index = comp_idx
+                            if comp_err:
+                                self.state.set_compliance_alert(comp_err)
+                            self._log(
+                                f"Compliance restart: pinned to today's file "
+                                f"'{comp_item.file_path.name}' (index {comp_idx})"
+                            )
+                        else:
+                            # Fallback: reset to 0 so we don't start mid-playlist
+                            self.state.playlist_index = 0
+                            self.state.playlist_order = list(range(len(cfg.playlist)))
+                            if comp_err:
+                                self.state.set_compliance_alert(comp_err)
+                    except Exception as _comp_exc:
+                        self._log(
+                            f"Compliance file selection on restart failed: {_comp_exc} "
+                            "— resetting to index 0",
+                            "WARN",
+                        )
+                        self.state.playlist_index = 0
+                        self.state.playlist_order = self._build_order()
+                elif not self.state.playlist_order:
+                    # First start (non-compliance): build order fresh.
                     self.state.playlist_index = 0
                     self.state.playlist_order = self._build_order()
                 else:
-                    # Rebuild order (handles shuffle + new file count).
+                    # Non-compliance restart: rebuild order and clamp index.
+                    # Preserve playlist_index so an auto-restart after a clean
+                    # file exit continues with the next file in sequence rather
+                    # than replaying file 0.
                     self.state.playlist_order = self._build_order()
-                    # Clamp index to valid range.
-                    self.state.playlist_index = (
-                        self.state.playlist_index % len(self.state.playlist_order)
-                    )
+                    # Clamp in case the playlist shrank since last scan.
+                    if self.state.playlist_index >= len(self.state.playlist_order):
+                        self.state.playlist_index = 0
 
                 item = self._current_item()
                 if item is None:
@@ -865,6 +987,62 @@ class StreamWorker:
         self.state.status   = StreamStatus.STARTING
         self.state.duration = probe_duration(item.file_path)
         self._log(f"File duration: {_fmt_duration(self.state.duration)}")
+
+        # ── Compliance file pinning for static (non-folder) playlists ─────────
+        # The folder-scan block above handles this for folder sources.
+        # For static playlists, after an error restart playlist_index may still
+        # point at the wrong day's file (e.g. _FRI_ when today is _WED_).
+        # Re-run select_compliance_file() here so every restart — including
+        # auto-restart after an error — picks today's correct tagged file.
+        if cfg.compliance_enabled and folder_root is None and len(cfg.playlist) > 1:
+            try:
+                from hc.compliance import select_compliance_file
+                comp_item, comp_err = select_compliance_file(
+                    cfg.playlist,
+                    folder_source=None,
+                )
+                if comp_item is not None:
+                    comp_idx = next(
+                        (i for i, it in enumerate(cfg.playlist)
+                         if it.file_path == comp_item.file_path),
+                        0,
+                    )
+                    if comp_idx != self.state.playlist_index:
+                        self._log(
+                            f"Compliance static-playlist pin: switching from "
+                            f"'{item.file_path.name}' → '{comp_item.file_path.name}' "
+                            f"(index {self.state.playlist_index} → {comp_idx})"
+                        )
+                        self.state.playlist_order = list(range(len(cfg.playlist)))
+                        self.state.playlist_index = comp_idx
+                        # Re-resolve item and resolved_path to the correct file
+                        item = self._current_item()
+                        if item is None:
+                            self.state.status    = StreamStatus.ERROR
+                            self.state.error_msg = "Compliance file pin: could not resolve item"
+                            self._log(self.state.error_msg, "ERROR")
+                            return False
+                        resolved_path = item.file_path
+                        item = PlaylistItem(
+                            file_path=resolved_path,
+                            start_position=item.start_position,
+                            weight=item.weight,
+                            priority=item.priority,
+                        )
+                        # Re-probe duration for the newly selected file
+                        self.state.duration = probe_duration(resolved_path)
+                        self._log(
+                            f"Compliance static pin confirmed: '{resolved_path.name}' "
+                            f"duration={_fmt_duration(self.state.duration)}"
+                        )
+                    if comp_err:
+                        self.state.set_compliance_alert(comp_err)
+            except Exception as _static_comp_exc:
+                self._log(
+                    f"Compliance static-playlist file selection failed: {_static_comp_exc} "
+                    "— continuing with current playlist index",
+                    "WARN",
+                )
 
         # ── Determine seek position ───────────────────────────────────────────
         if seek_override is not None:
@@ -1213,6 +1391,38 @@ class StreamWorker:
     def _start_ffmpeg(self, item: PlaylistItem, seek_pos: float,
                       oneshot: bool = False, loop_count: int = -1) -> bool:
         cfg = self.state.config
+
+        # ── Camera source branch ──────────────────────────────────────────────
+        # When active_source is "camera", bypass the playlist input entirely
+        # and use the camera-specific FFmpeg command instead.  Camera streams
+        # never loop (-stream_loop is meaningless for a live source) and never
+        # seek (seek_pos is ignored; the camera is always "live").
+        _active_source = getattr(self.state, "active_source", "playlist")
+        if _active_source == "camera" and cfg.camera_id:
+            cam = _resolve_camera(cfg.camera_id)
+            if cam is not None:
+                self._log(
+                    f"Launching FFmpeg | source=CAMERA | name={cam.name} | "
+                    f"url={cam.url_masked} | "
+                    f"vbr={cfg.video_bitrate} abr={cfg.audio_bitrate}"
+                )
+                cmd = _ffmpeg_cmd_camera(cam, cfg)
+                # Camera sources use seek_pos=0 in progress tracking; reset
+                # seek_start_pos so the progress bar does not drift.
+                self.state.seek_start_pos = 0.0  # type: ignore[attr-defined]
+                log.debug("[%s] FFmpeg camera command: %s", cfg.name,
+                          " ".join(cmd).replace(cam.url, cam.url_masked))
+                # Jump directly to Popen — skip all playlist-specific setup below.
+                return self._launch_ffmpeg_proc(cmd, cfg)
+            else:
+                self._log(
+                    f"Assigned camera (id={cfg.camera_id}) not found in registry "
+                    "— falling back to playlist source.",
+                    "WARN",
+                )
+                self.state.active_source = "playlist"  # type: ignore[attr-defined]
+
+        # ── Playlist source (existing logic) ──────────────────────────────────
         # One-shot events must NEVER loop — the _after() thread waits for proc.poll()
         # and relies on FFmpeg exiting naturally after the file ends.
         # loop_count=-1 means infinite; 0 means play once (no loop); N>0 means N extra loops.
@@ -1228,56 +1438,15 @@ class StreamWorker:
         # 400 Bad Request. The YAML uses "~all" which accepts any named path.
         _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
         _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
-
-        # ── Codec / bitrate arguments ─────────────────────────────────────────
-        # "copy" is a codec keyword (-c:v copy / -c:a copy), NOT a bitrate value.
-        # Passing "copy" to -b:v/-b:a is invalid and silently breaks encoding.
-        # When the user sets copy, we use stream-copy (no re-encoding at all).
-        # When a numeric bitrate is set we re-encode with high-quality settings:
-        #   • preset veryfast  — much better quality than ultrafast, small CPU cost
-        #   • -maxrate + -bufsize (2×)  — proper VBV rate-control, no burst overflow
-        _vbr = cfg.video_bitrate.strip().lower()
-        _abr = cfg.audio_bitrate.strip().lower()
-
-        if _vbr == "copy" and _abr == "copy":
-            # Full stream copy — fastest path, zero quality loss.
-            codec_args = ["-c:v", "copy", "-c:a", "copy"]
-        elif _vbr == "copy":
-            # Video copy, re-encode audio to AAC.
-            codec_args = [
-                "-c:v", "copy",
-                "-c:a", "aac", "-b:a", cfg.audio_bitrate,
-                "-ar", "44100", "-ac", "2",
-            ]
-        elif _abr == "copy":
-            # Re-encode video, copy audio.
-            codec_args = [
-                "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                "-b:v", cfg.video_bitrate,
-                "-maxrate", cfg.video_bitrate,
-                "-bufsize", _double_bitrate(cfg.video_bitrate),
-                "-pix_fmt", "yuv420p", "-g", "50",
-                "-c:a", "copy",
-            ]
-        else:
-            # Full re-encode — high-quality settings.
-            codec_args = [
-                "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                "-b:v", cfg.video_bitrate,
-                "-maxrate", cfg.video_bitrate,
-                "-bufsize", _double_bitrate(cfg.video_bitrate),
-                "-pix_fmt", "yuv420p", "-g", "50",
-                "-c:a", "aac", "-b:a", cfg.audio_bitrate,
-                "-ar", "44100", "-ac", "2",
-            ]
-
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error",
             "-re",
             "-ss", str(int(seek_pos)),
             *loop_flag,
             "-i", str(item.file_path),
-            *codec_args,
+            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p", "-g", "50",
+            "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", "44100", "-ac", "2",
             "-progress", "pipe:1", "-nostats",
             "-f", "rtsp", "-rtsp_transport", "tcp",
             _rtsp_target,
@@ -1292,6 +1461,15 @@ class StreamWorker:
         )
         log.debug("[%s] FFmpeg command: %s", cfg.name, " ".join(cmd))
 
+        return self._launch_ffmpeg_proc(cmd, cfg)
+
+    def _launch_ffmpeg_proc(self, cmd: List[str], cfg) -> bool:
+        """
+        Shared Popen launcher used by both the playlist path and the camera
+        path in _start_ffmpeg.  Handles stderr draining, CPU affinity, and
+        error classification so neither caller duplicates this logic.
+        """
+        import collections
         try:
             kw: Dict[str, Any] = dict(
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1307,7 +1485,6 @@ class StreamWorker:
             # and FFmpeg blocks waiting to write its error output, causing hangs.
             # We store the last 2 KB so _start_ffmpeg_with_retry and _monitor
             # can both read it after the process exits.
-            import collections
             stderr_buf: "collections.deque[str]" = collections.deque(maxlen=50)
 
             def _drain_stderr(p: subprocess.Popen, buf: "collections.deque[str]") -> None:
@@ -1327,7 +1504,7 @@ class StreamWorker:
             drain_t.start()
             # Attach buffer to proc so _start_ffmpeg_with_retry and _monitor
             # can retrieve the captured stderr text.
-            proc._stderr_buf  = stderr_buf   # type: ignore[attr-defined]
+            proc._stderr_buf   = stderr_buf  # type: ignore[attr-defined]
             proc._stderr_drain = drain_t     # type: ignore[attr-defined]
 
             if IS_LINUX and CPU_COUNT > 1:
@@ -1360,6 +1537,7 @@ class StreamWorker:
         self, item: PlaylistItem, seek_pos: float,
         max_retries: int = 6, retry_delay: float = 2.0,
         oneshot: bool = False, loop_count: int = -1,
+        stability_wait: float = 4.0,
     ) -> bool:
         """
         Launch FFmpeg and retry if MediaMTX returns 400 Bad Request.
@@ -1368,6 +1546,13 @@ class StreamWorker:
         behind the RTSP OPTIONS probe by 1-3 seconds.  We detect the 400 and
         retry with exponential backoff (2 s, 3 s, 4 s …) rather than a fixed
         delay, which self-corrects in 1-2 retries on Linux and 2-3 on Windows.
+
+        stability_wait controls how long we poll for FFmpeg to exit before
+        declaring success.  The default (4 s) covers the MediaMTX path-handler
+        registration race after a full _cycle_mediamtx().  Pass a shorter value
+        (e.g. 0.5 s) for same-file loops where MediaMTX was NOT cycled — in that
+        case FFmpeg connects almost immediately and the 4-second wait is pure
+        dead air on every daily loop boundary.
 
         stderr is captured by the drain thread in _start_ffmpeg into a deque
         attached to the process; we read from there instead of the pipe.
@@ -1381,10 +1566,10 @@ class StreamWorker:
             if proc is None:
                 return False
 
-            # Give FFmpeg up to 4 s to either stabilise or fail fast with 400.
-            # Using 4 s (up from 3) gives the path handler a bit more room on
-            # slower Windows systems before we declare it failed.
-            deadline = time.time() + 4.0
+            # Give FFmpeg up to stability_wait seconds to either stabilise or
+            # fail fast with 400.  For same-file loops (no MediaMTX cycle) use
+            # a short wait; for post-cycle starts use the full default (4 s).
+            deadline = time.time() + stability_wait
             while time.time() < deadline:
                 if proc.poll() is not None:
                     break
@@ -1456,17 +1641,13 @@ class StreamWorker:
         self._log("Starting black-screen feed …")
         _push_path = cfg.rtsp_path if cfg.rtsp_path else "stream"
         _rtsp_target = f"rtsp://127.0.0.1:{cfg.port}/{_push_path}"
-        # lavfi (synthetic) sources cannot be stream-copied — always encode.
-        # Use a modest fixed bitrate for the blank frame; quality doesn't matter here.
-        _vbr = "500k" if cfg.video_bitrate.strip().lower() == "copy" else cfg.video_bitrate
-        _abr = "64k"  if cfg.audio_bitrate.strip().lower() == "copy" else cfg.audio_bitrate
         cmd = [
             str(FFMPEG_PATH()), "-hide_banner", "-loglevel", "error", "-re",
             "-f", "lavfi", "-i", "color=black:size=1280x720:rate=25",
             "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
             "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-            "-b:v", _vbr, "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", _abr,
+            "-b:v", cfg.video_bitrate, "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", cfg.audio_bitrate,
             "-f", "rtsp", "-rtsp_transport", "tcp",
             _rtsp_target,
         ]
@@ -1620,7 +1801,57 @@ class StreamWorker:
         if (_clean_exit
                 and not self.state.oneshot_active
                 and len(self.state.config.playlist) > 1):
-            self._advance_playlist()
+            # ── Snapshot the file that just finished BEFORE any index mutation ──
+            # Used below to detect a compliance same-file pin (no-op transition),
+            # which must NOT trigger a full _cycle_mediamtx().  On a same-file
+            # loop the codec parameters are identical, so there is no publisher
+            # session mismatch — the cycle would just kill+restart MediaMTX
+            # unnecessarily, causing the cascade of "Port still in use after 8 s"
+            # warnings seen when 20+ compliance streams all hit their loop
+            # boundary simultaneously.
+            _prev_file = self.state.current_file()
+
+            # ── Compliance: pin to today's day-tagged file on every clean exit ──
+            # Without this guard, compliance streams cycle through all playlist
+            # files in order (e.g. _MON_ → _TUE_ → _WED_) because _advance_playlist
+            # only increments the index.  With compliance enabled the correct
+            # behaviour is to stay on (or return to) today's file every time the
+            # current file ends — never advance into a different day's file.
+            _comp_cfg = self.state.config
+            if _comp_cfg.compliance_enabled:
+                try:
+                    from hc.compliance import select_compliance_file
+                    _comp_today, _comp_err = select_compliance_file(
+                        _comp_cfg.playlist,
+                        folder_source=_comp_cfg.folder_source,
+                    )
+                    if _comp_today is not None:
+                        _comp_idx = next(
+                            (i for i, it in enumerate(_comp_cfg.playlist)
+                             if it.file_path == _comp_today.file_path),
+                            0,
+                        )
+                        self.state.playlist_order = list(range(len(_comp_cfg.playlist)))
+                        self.state.playlist_index = _comp_idx
+                        self._log(
+                            f"Compliance clean-exit pin: staying on today's file "
+                            f"'{_comp_today.file_path.name}' (index {_comp_idx})"
+                        )
+                        if _comp_err:
+                            self.state.set_compliance_alert(_comp_err)
+                    else:
+                        self._advance_playlist()
+                        if _comp_err:
+                            self.state.set_compliance_alert(_comp_err)
+                except Exception as _comp_adv_exc:
+                    self._log(
+                        f"Compliance clean-exit file pin failed: {_comp_adv_exc} "
+                        "— falling back to sequential advance",
+                        "WARN",
+                    )
+                    self._advance_playlist()
+            else:
+                self._advance_playlist()
             next_item = self._current_item()
 
             if next_item and not next_item.file_path.exists():
@@ -1638,7 +1869,19 @@ class StreamWorker:
 
             if next_item and next_item.file_path.exists():
                 self._log(f"Advancing to next file: {next_item.file_path.name}")
-                self.state.duration = probe_duration(next_item.file_path)
+                # Only re-probe duration when the file actually changed.
+                # For a same-file loop (compliance re-pinning to today's file)
+                # the duration is identical to what we already have — spawning
+                # an ffprobe subprocess here adds 1–3 s of unnecessary dead air
+                # on every daily loop boundary.  When the file changes we must
+                # re-probe because the new file may have a different length.
+                _file_changed = (
+                    _prev_file is None
+                    or next_item.file_path != _prev_file
+                )
+                if _file_changed:
+                    self.state.duration = probe_duration(next_item.file_path)
+                # else: keep self.state.duration from the file that just finished
                 try:
                     h, m, s = next_item.start_position.split(":")
                     spos    = int(h) * 3600 + int(m) * 60 + float(s)
@@ -1662,17 +1905,51 @@ class StreamWorker:
                             "using playlist start position",
                             "WARN",
                         )
-                # Cycle MediaMTX to clear the old publisher session; a direct
-                # _start_ffmpeg without cycling gets 400 Bad Request.
-                if not self._cycle_mediamtx():
+                # ── Decide whether a full MediaMTX cycle is needed ────────────
+                # _cycle_mediamtx() kills+restarts MediaMTX to clear the old
+                # publisher session.  This is necessary when the *file changes*,
+                # because the new file may have different codec parameters
+                # (SPS/PPS, resolution, framerate) that MediaMTX cached for the
+                # previous publisher.  Without cycling, the new FFmpeg push gets
+                # "400 Bad Request" from MediaMTX.
+                #
+                # When compliance pins back to the *same file* (the normal
+                # same-day loop: _THU_.mp4 → _THU_.mp4), the codec parameters
+                # are identical.  Cycling MediaMTX is unnecessary and harmful:
+                # with 20+ streams all hitting their loop boundary within a few
+                # seconds of each other, the simultaneous kill+restart storm
+                # exhausts the 8-second UDP-port-release window on Windows,
+                # producing an endless cascade of "Port still in use after 8 s"
+                # warnings and back-to-back MediaMTX restarts every ~10 s.
+                #
+                # Guard: skip the cycle when the file path hasn't changed.
+                # A true file change (e.g. midnight rollover _THU_ → _FRI_)
+                # still cycles normally.
+                _same_file = (
+                    _prev_file is not None
+                    and next_item.file_path == _prev_file
+                )
+                if _same_file:
                     self._log(
-                        "Playlist advance: MediaMTX cycle failed — "
-                        "triggering auto-restart.",
-                        "ERROR",
+                        "Same-file loop — skipping MediaMTX cycle "
+                        "(codec parameters unchanged)."
                     )
-                    self._auto_restart()
-                    return
-                self._start_ffmpeg_with_retry(next_item, spos)
+                    # MediaMTX was NOT cycled: its path handler is already
+                    # registered and FFmpeg connects almost instantly.  Use a
+                    # short stability_wait (0.5 s) instead of the default 4 s
+                    # to eliminate most of the dead-air gap on loop boundaries.
+                    self._start_ffmpeg_with_retry(next_item, spos, stability_wait=0.5)
+                else:
+                    # File changed: cycle MediaMTX to clear old publisher state.
+                    if not self._cycle_mediamtx():
+                        self._log(
+                            "Playlist advance: MediaMTX cycle failed — "
+                            "triggering auto-restart.",
+                            "ERROR",
+                        )
+                        self._auto_restart()
+                        return
+                    self._start_ffmpeg_with_retry(next_item, spos)
                 threading.Thread(target=self._monitor, daemon=True,
                                  name=f"mon-{self.state.config.port}").start()
                 return
@@ -1700,8 +1977,10 @@ class StreamWorker:
                     )
                 except Exception as _mail_exc:
                     log.debug("mailer hook error: %s", _mail_exc)
-            # Auto-restart on broken-pipe (loop end) just like a clean exit
-            if _is_broken_pipe and not self._stop.is_set():
+            # Auto-restart on any clean exit (broken-pipe OR normal code-0 end)
+            # so the stream stays live continuously.  The stop flag check prevents
+            # restart after a deliberate manual Stop.
+            if not self._stop.is_set():
                 self._auto_restart()
         else:
             self.state.status    = StreamStatus.ERROR
